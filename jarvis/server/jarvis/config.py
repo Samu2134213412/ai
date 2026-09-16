@@ -86,7 +86,11 @@ class Config:
         if not target.is_file():
             return cls()
         try:
-            raw = json.loads(target.read_text(encoding="utf-8"))
+            # utf-8-sig statt utf-8: Windows-PowerShell schreibt mit
+            # "Set-Content -Encoding UTF8" eine BOM an den Dateianfang, und
+            # der strenge utf-8-Decoder stolpert darüber. utf-8-sig liest
+            # beide Varianten -- mit BOM und ohne.
+            raw = json.loads(target.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"Konfiguration nicht lesbar: {target}\n  {exc}") from exc
         return cls.from_dict(raw)
