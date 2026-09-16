@@ -9,7 +9,7 @@ import pytest
 
 from codepilot import detect
 from codepilot.compat_proxy import estimate_tokens
-from codepilot.detect import ComponentStatus, model_status
+from codepilot.detect import ComponentStatus, describe_model, model_status
 from codepilot.providers import get_provider
 
 
@@ -197,3 +197,57 @@ def test_gateway_streams_messages_through(client, store, monkeypatch):
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
     assert resp.content == b"".join(chunks)
+
+
+# --------------------------------------------------------------- model sizes
+def test_describe_model_reports_real_fields():
+    entry = {
+        "name": "qwen3-coder:30b-a3b-q4_K_M",
+        "size": 18 * 1024 ** 3,
+        "details": {"parameter_size": "30.5B", "quantization_level": "Q4_K_M",
+                    "family": "qwen3moe"},
+    }
+    info = describe_model(entry)
+    assert info["name"] == "qwen3-coder:30b-a3b-q4_K_M"
+    assert info["size_gb"] == 18.0
+    assert info["parameter_size"] == "30.5B"
+    assert info["quantization"] == "Q4_K_M"
+    assert info["fits_hint"] == "fits comfortably"
+
+
+def test_describe_model_flags_oversized_models_as_a_caution_not_a_promise():
+    entry = {"name": "llama3.1:70b", "size": 42 * 1024 ** 3,
+              "details": {"parameter_size": "70.6B", "quantization_level": "Q4_K_M"}}
+    info = describe_model(entry)
+    assert info["fits_hint"].startswith("likely exceeds")
+
+
+def test_describe_model_handles_missing_size_gracefully():
+    info = describe_model({"name": "mystery:latest"})
+    assert info["size_gb"] is None
+    assert info["fits_hint"] is None
+    assert info["parameter_size"] is None
+
+
+async def test_detect_ollama_surfaces_model_details(mock_ollama):
+    mock_ollama()
+    status = await detect.detect_ollama("http://127.0.0.1:11434")
+    names = {d["name"] for d in status.extra["model_details"]}
+    assert names == set(status.extra["models"])
+
+
+async def test_models_endpoint_exposes_installed_details(client, paired, store, monkeypatch):
+    async def fake_health(self):
+        from codepilot.providers.base import ProviderHealth
+        return ProviderHealth(
+            online=True, model_available=True, model=store.current.ollama_model,
+            installed_models=["qwen3-coder:30b"],
+            installed_details=[{"name": "qwen3-coder:30b", "size_gb": 18.0,
+                                "parameter_size": "30.5B", "quantization": "Q4_K_M",
+                                "fits_hint": "fits comfortably"}],
+        )
+    from codepilot.providers.ollama import OllamaProvider
+    monkeypatch.setattr(OllamaProvider, "health", fake_health)
+    body = client.get("/api/models").json()
+    assert body["installed_details"][0]["size_gb"] == 18.0
+    assert body["installed_details"][0]["fits_hint"] == "fits comfortably"

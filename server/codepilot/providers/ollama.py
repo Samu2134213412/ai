@@ -35,6 +35,7 @@ class OllamaProvider(ModelProvider):
             detail=model.detail or status.detail,
             remedy=model.remedy or status.remedy,
             installed_models=status.extra.get("models", []),
+            installed_details=status.extra.get("model_details", []),
             version=status.version,
         )
 

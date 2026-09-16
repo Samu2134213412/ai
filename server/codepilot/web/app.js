@@ -251,24 +251,40 @@ routes.models = async (main) => {
   try { m = await api('/api/models/local'); }
   catch (err) { main.replaceChildren(notice('err', err.message)); return; }
 
+  const detailsByName = Object.fromEntries(
+    (m.installed_details || []).map((d) => [d.name, d]));
+
+  const isTight = (name) => (detailsByName[name]?.fits_hint || '').startsWith('likely exceeds');
+
   const rows = m.installed.length
     ? el('div', { class: 'card' }, el('table', {},
-        el('thead', {}, el('tr', {}, el('th', {}, 'Model'), el('th', {}, ''))),
-        el('tbody', {}, ...m.installed.map((name) => el('tr', {},
-          el('td', { class: 'mono' }, name),
-          el('td', {}, name === m.configured
-            ? el('span', { class: 'badge completed' }, 'in use')
-            : el('button', {
-                class: 'small',
-                onclick: async () => {
-                  await api('/api/settings', {
-                    method: 'PUT', body: JSON.stringify({ ollama_model: name }),
-                  });
-                  render(); refreshStatus();
-                },
-              }, 'Use this model')))))))
+        el('thead', {}, el('tr', {}, el('th', {}, 'Model'), el('th', {}, 'Size'),
+          el('th', {}, 'Parameters'), el('th', {}, 'Quantization'), el('th', {}, ''))),
+        el('tbody', {}, ...m.installed.map((name) => {
+          const d = detailsByName[name] || {};
+          return el('tr', {},
+            el('td', { class: 'mono' }, name, isTight(name)
+              ? el('span', { class: 'badge failed', style: 'margin-left:6px' }, 'tight VRAM') : null),
+            el('td', {}, d.size_gb != null ? `${d.size_gb} GB` : '—'),
+            el('td', { class: 'mono' }, d.parameter_size || '—'),
+            el('td', { class: 'mono' }, d.quantization || '—'),
+            el('td', {}, name === m.configured
+              ? el('span', { class: 'badge completed' }, 'in use')
+              : el('button', {
+                  class: 'small',
+                  onclick: async () => {
+                    await api('/api/settings', {
+                      method: 'PUT', body: JSON.stringify({ ollama_model: name }),
+                    });
+                    render(); refreshStatus();
+                  },
+                }, 'Use this model')),
+          );
+        }))))
     : el('div', { class: 'card empty' },
         m.online ? 'Ollama has no models pulled yet.' : 'Ollama is offline.');
+
+  const anyTight = m.installed.some(isTight);
 
   main.replaceChildren(
     el('div', { class: 'page-head' }, el('h1', {}, 'Models')),
@@ -284,7 +300,17 @@ routes.models = async (main) => {
       ...kv('Ollama', m.online ? 'online' : 'offline'),
       ...kv('Context length', `${m.context_length} tokens`))),
     el('h2', {}, `Installed models (${m.installed.length})`),
+    el('p', { class: 'subtitle', style: 'margin:-4px 0 10px' },
+      'Pick any of these as the default here, or per task from the phone. Bigger is not ',
+      'automatically better for an agent loop — a model that spills out of VRAM gets much slower, ',
+      'not just a little slower.'),
     rows,
+    anyTight ? notice('warn',
+      el('strong', {}, 'Models marked "tight VRAM" are larger than this machine likely has free ',
+        'video memory for. '),
+      'Ollama will still run them by offloading part of the model to the CPU, but expect generation to ',
+      'slow down a lot rather than gracefully. This is a caution based on typical overhead on a 24 GB ',
+      'card, not a guarantee — try it if you want to trade speed for a bigger model.') : null,
     notice('info',
       el('strong', {}, 'About context size. '),
       'A 30B model quantised to 4-bit uses roughly 18 GB of your 24 GB card, so the KV cache has a few GB to work with. ',

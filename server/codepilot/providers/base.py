@@ -12,6 +12,11 @@ class ProviderHealth:
     detail: str | None = None
     remedy: str | None = None
     installed_models: list[str] = field(default_factory=list)
+    #: One dict per installed model — size, parameter count, quantization and
+    #: an honest "fits under this card's VRAM or not" hint. Lets the UI offer a
+    #: real choice between the fast default and a bigger, slower model instead
+    #: of a bare list of names.
+    installed_details: list[dict] = field(default_factory=list)
     version: str | None = None
 
 

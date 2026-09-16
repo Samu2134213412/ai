@@ -85,6 +85,38 @@ def _parse_version(text: str) -> tuple[int, ...] | None:
     return tuple(int(g) for g in m.groups()) if m else None
 
 
+#: Rough VRAM budget we assume is actually free for model weights on a "24 GB
+#: card" once the OS, other apps and a KV cache have taken their share. This is
+#: deliberately conservative — it only ever produces a caution, never a promise.
+ASSUMED_FREE_VRAM_GB = 20.0
+
+
+def describe_model(entry: dict) -> dict:
+    """Turn one /api/tags entry into the fields the UI actually needs.
+
+    Ollama reports real byte sizes and, in ``details``, the model's parameter
+    count and quantization — this is measured data, not a guess. What *is* a
+    judgement call is the "fits" label, so it is phrased as a caution rather
+    than a promise: a bigger model does not merely run slower, once it stops
+    fitting in VRAM Ollama offloads part of it to the CPU and generation can
+    become an order of magnitude slower, not a graceful slowdown.
+    """
+    size_bytes = entry.get("size") or 0
+    size_gb = round(size_bytes / (1024 ** 3), 1) if size_bytes else None
+    details = entry.get("details") or {}
+    fits = None
+    if size_gb is not None:
+        fits = "fits comfortably" if size_gb <= ASSUMED_FREE_VRAM_GB else "likely exceeds VRAM — expect much slower generation"
+    return {
+        "name": entry.get("name"),
+        "size_gb": size_gb,
+        "parameter_size": details.get("parameter_size"),
+        "quantization": details.get("quantization_level"),
+        "family": details.get("family"),
+        "fits_hint": fits,
+    }
+
+
 async def detect_ollama(base_url: str, timeout: float = 5.0) -> ComponentStatus:
     url = base_url.rstrip("/")
     try:
@@ -94,7 +126,9 @@ async def detect_ollama(base_url: str, timeout: float = 5.0) -> ComponentStatus:
             version = ver_resp.json().get("version", "unknown")
             tags_resp = await client.get(f"{url}/api/tags")
             tags_resp.raise_for_status()
-            models = [m.get("name") for m in tags_resp.json().get("models", []) if m.get("name")]
+            raw_models = [m for m in tags_resp.json().get("models", []) if m.get("name")]
+            models = [m["name"] for m in raw_models]
+            model_details = [describe_model(m) for m in raw_models]
     except httpx.ConnectError:
         return ComponentStatus(
             "Ollama", False, detail=f"no server reachable at {url}",
@@ -111,7 +145,7 @@ async def detect_ollama(base_url: str, timeout: float = 5.0) -> ComponentStatus:
                   f"(added in {'.'.join(map(str, OLLAMA_MIN_VERSION))})")
         remedy = "Update Ollama: https://ollama.com/download"
     return ComponentStatus("Ollama", True, version=version, detail=detail, remedy=remedy,
-                           extra={"models": models, "url": url,
+                           extra={"models": models, "model_details": model_details, "url": url,
                                   "anthropic_api": bool(parsed and parsed >= OLLAMA_MIN_VERSION)})
 
 

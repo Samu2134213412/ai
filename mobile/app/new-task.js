@@ -17,6 +17,23 @@ const APPROVAL_MODES = [
   { value: 'plan', label: 'Plan only', hint: 'Claude Code investigates and proposes, but changes nothing.' },
 ];
 
+/** A short, honest line about a model option — real size/quant data from
+ * Ollama, plus a caution (never a promise) when it looks too big for the
+ * card's VRAM. Bigger is not automatically better for an agent loop: once a
+ * model spills into system RAM, generation slows down a lot, not gracefully. */
+function modelHint(name, models) {
+  if (name === models.configured && !models.model_available) return 'not pulled yet';
+  const detail = (models.installed_details || []).find((d) => d.name === name);
+  if (!detail) return undefined;
+  const parts = [];
+  if (detail.size_gb != null) parts.push(`${detail.size_gb} GB`);
+  if (detail.parameter_size) parts.push(detail.parameter_size);
+  if (detail.quantization) parts.push(detail.quantization);
+  const tight = (detail.fits_hint || '').startsWith('likely exceeds');
+  if (tight) parts.push('tight VRAM — slower');
+  return parts.join(' · ') || undefined;
+}
+
 export default function NewTaskScreen() {
   const params = useLocalSearchParams();
   const [projects, setProjects] = useState(null);
@@ -113,8 +130,7 @@ export default function NewTaskScreen() {
         <Text style={s.label}>Model</Text>
         <Chooser
           options={modelOptions.map((m) => ({
-            value: m, label: m,
-            hint: m === models.configured && !models.model_available ? 'not pulled yet' : undefined,
+            value: m, label: m, hint: modelHint(m, models),
           }))}
           value={model}
           onChange={setModel}
