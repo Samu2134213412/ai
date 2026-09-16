@@ -50,9 +50,10 @@ body{margin:0;background:var(--void);color:var(--text);
 /* ── Raum + Rasterung ───────────────────────────────────────── */
 #room{position:fixed;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(100% 70% at 50% 44%,rgba(20,150,200,.13),transparent 65%),
-    radial-gradient(80% 60% at 6% 96%,rgba(15,110,160,.12),transparent 72%),
-    linear-gradient(180deg,#04090f 0%,#03070c 60%,#020509 100%);}
+    radial-gradient(85% 62% at 50% 46%,rgba(150,70,12,.30),transparent 68%),
+    radial-gradient(60% 45% at 50% 46%,rgba(255,130,30,.14),transparent 70%),
+    radial-gradient(80% 60% at 4% 97%,rgba(15,90,130,.10),transparent 72%),
+    linear-gradient(180deg,#0a0603 0%,#060302 58%,#030101 100%);}
 #room::before{content:"";position:absolute;inset:0;opacity:.5;
   background:
     repeating-linear-gradient(0deg,rgba(40,215,255,.045) 0 1px,transparent 1px 44px),
@@ -63,6 +64,8 @@ body{margin:0;background:var(--void);color:var(--text);
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.42) 0 1px,transparent 1px 3px)}
 canvas.stage{position:fixed;inset:0;width:100%;height:100%;z-index:1;
   pointer-events:none;display:block}
+#vig{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(72% 64% at 50% 50%,transparent 38%,rgba(3,2,1,.62) 82%,rgba(3,2,1,.90) 100%)}
 
 /* ── Rahmen mit Klammerecken: das Leitmotiv der Vorlage ─────── */
 .fr{position:relative;border:1px solid var(--edge);
@@ -89,7 +92,9 @@ canvas.stage{position:fixed;inset:0;width:100%;height:100%;z-index:1;
 .clock .t{font-size:24px;font-weight:600;letter-spacing:.06em;color:var(--cyan);
   font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 14px rgba(40,215,255,.55)}
 .clock .d{font-size:10px;letter-spacing:.16em;color:var(--mute);text-transform:uppercase}
-.strip{display:flex;align-items:center;gap:0;padding:0 8px;overflow:hidden;flex:1 1 210px;min-width:0}
+.strip{display:flex;align-items:center;gap:0;padding:0 8px;flex:1 1 210px;min-width:0;
+  overflow-x:auto;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
 .strip span{font-family:var(--hud);font-size:10px;color:#20465c;padding:0 4px;
   font-variant-numeric:tabular-nums;flex:none}
 .strip span.now{color:var(--void);background:var(--cyan);font-weight:700;
@@ -228,7 +233,10 @@ body[data-st="failed"] .status .md{color:var(--red);text-shadow:0 0 24px rgba(25
   padding:3px 8px;border:1px solid var(--edge);background:rgba(4,14,22,.88);cursor:pointer;
   display:inline-flex;align-items:center;gap:5px;color:var(--mute)}
 .legend button .sw{width:7px;height:7px;border-radius:50%;flex:none}
-.legend button[aria-pressed="false"]{opacity:.38}
+.legend button[aria-pressed="true"]{color:var(--text);background:rgba(4,14,22,.92);
+  border-color:var(--edge-lit)}
+.legend button[aria-pressed="false"]{opacity:.4}
+.legend button[aria-pressed="false"] .sw{filter:grayscale(1)}
 
 /* ── Erinnerung bearbeiten ─────────────────────────────────── */
 .field{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
@@ -280,6 +288,13 @@ button.dg:hover{background:var(--red);color:var(--void)}
   .log{max-width:none}
   .views button{padding:0 12px;font-size:11px;min-height:34px}
 }
+@media (max-width:980px){
+  .netbar{gap:5px}
+  .netbar button{padding:6px 10px;font-size:9.5px;min-height:30px}
+  #find{flex:1 1 110px;width:auto;padding:5px 8px;font-size:11.5px}
+  #store{font-size:9.5px;padding:0 8px;min-height:30px!important}
+  .legend button{padding:2px 6px;font-size:8.5px}
+}
 @media (min-width:981px){ .tabs{display:none} }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms!important;transition-duration:.01ms!important}
@@ -288,6 +303,7 @@ button.dg:hover{background:var(--red);color:var(--void)}
 
 <div id="room"></div>
 <canvas class="stage" id="core" aria-hidden="true"></canvas>
+<div id="vig"></div>
 
 <div id="app">
   <header class="bar">
@@ -411,11 +427,12 @@ const bend = (p,d,a) => { const c=Math.cos(a),s=Math.sin(a),k=crs(p,d);
 let SEG,CLS,DOT,DCL;
 function build(dense){
   const S=[],C=[],D=[],E=[];
-  for(let t=0,n=dense?176:104;t<n;t++){
-    const r=0.86+Math.random()*0.28;
+  // Leiterbahnen: Geodaeten mit 90-Grad-Knicken
+  for(let t=0,n=dense?150:96;t<n;t++){
+    const r=0.84+Math.random()*0.32;
     let p=unit(), d=tan(p,Math.random()*6.283);
-    const steps=6+(Math.random()*24|0), len=0.028+Math.random()*0.046;
-    const c=Math.random()<0.16?2:(Math.random()<0.55?0:1);
+    const steps=6+(Math.random()*26|0), len=0.026+Math.random()*0.046;
+    const c=Math.random()<0.18?2:(Math.random()<0.55?0:1);
     for(let i=0;i<steps;i++){
       const q=walk(p,d,len);
       S.push(p[0]*r,p[1]*r,p[2]*r,q.p[0]*r,q.p[1]*r,q.p[2]*r); C.push(c);
@@ -423,16 +440,34 @@ function build(dense){
       const u=Math.random();
       if(u<0.20) d=bend(p,d,(Math.random()<0.5?1:-1)*Math.PI/2);
       else if(u<0.30) d=bend(p,d,(Math.random()-0.5)*1.6);
-      if(Math.random()<0.13){ D.push(p[0]*r,p[1]*r,p[2]*r); E.push(c); }
-    }
-    if(Math.random()<0.5){
-      const r2=r+0.07+Math.random()*0.19;
-      S.push(p[0]*r,p[1]*r,p[2]*r,p[0]*r2,p[1]*r2,p[2]*r2); C.push(2);
-      D.push(p[0]*r2,p[1]*r2,p[2]*r2); E.push(2);
+      if(Math.random()<0.16){ D.push(p[0]*r,p[1]*r,p[2]*r); E.push(c); }
     }
   }
-  for(let k=0;k<7;k++){                       // Ringe wie im Reaktor
-    const ax=unit(), r=0.90+Math.random()*0.20, b1=tan(ax,0), b2=crs(ax,b1);
+  // Nabe: der hellste, dichteste Bereich liegt direkt um das Zentrum.
+  for(let t=0,n=dense?70:42;t<n;t++){
+    const r=0.28+Math.random()*0.34;
+    let p=unit(), d=tan(p,Math.random()*6.283);
+    const steps=8+(Math.random()*18|0), len=0.045+Math.random()*0.055;
+    const c=Math.random()<0.42?2:0;
+    for(let i=0;i<steps;i++){
+      const q=walk(p,d,len);
+      S.push(p[0]*r,p[1]*r,p[2]*r,q.p[0]*r,q.p[1]*r,q.p[2]*r); C.push(c);
+      p=q.p; d=q.d;
+      if(Math.random()<0.28) d=bend(p,d,(Math.random()<0.5?1:-1)*Math.PI/2);
+      if(Math.random()<0.22){ D.push(p[0]*r,p[1]*r,p[2]*r); E.push(2); }
+    }
+  }
+  // Speichen. Eine im Raum radiale Linie projiziert immer durch die
+  // Bildmitte -- daher das Strahlen aus dem Zentrum der Vorlage.
+  for(let i=0,n=dense?80:48;i<n;i++){
+    const d=unit(), r1=0.13+Math.random()*0.12, r2=1.02+Math.random()*0.34;
+    S.push(d[0]*r1,d[1]*r1,d[2]*r1,d[0]*r2,d[1]*r2,d[2]*r2);
+    C.push(Math.random()<0.45?2:0);
+    if(Math.random()<0.55){ D.push(d[0]*r2,d[1]*r2,d[2]*r2); E.push(2); }
+  }
+  // Ringe
+  for(let k=0;k<7;k++){
+    const ax=unit(), r=0.88+Math.random()*0.24, b1=tan(ax,0), b2=crs(ax,b1);
     const c=k<3?2:0;
     for(let i=0;i<160;i++){
       if(Math.random()<0.22) continue;
@@ -442,33 +477,46 @@ function build(dense){
       C.push(c);
     }
   }
+  // Streulichter fuer das Bokeh
+  for(let i=0,n=dense?200:120;i<n;i++){
+    const d=unit(), r=0.32+Math.random()*1.05;
+    D.push(d[0]*r,d[1]*r,d[2]*r); E.push(Math.random()<0.30?2:0);
+  }
   SEG=Float32Array.from(S); CLS=C; DOT=Float32Array.from(D); DCL=E;
 }
 function fit(){
-  DPR=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight;
+  DPR=Math.min(devicePixelRatio||1,1.75); W=innerWidth; H=innerHeight;
   cv.width=W*DPR|0; cv.height=H*DPR|0;
   gl.width=(W*DPR/3)|0; gl.height=(H*DPR/3)|0;
   const ph=phone();
-  CX=ph?W/2:W*0.5; CY=ph?H*0.34:H*0.52;
-  RR=ph?Math.min(W,H)*0.31:Math.min(W,H)*0.385;
+  CX=W*0.5; CY=ph?H*0.34:H*0.52;
+  RR=ph?Math.min(W,H)*0.46:Math.min(W,H)*0.62;
 }
 
 // Farbsaetze je Zustand: [Grundton, Nebenton, Spitzlicht]
 const PAL = {
-  idle:     [[40,190,235],[26,120,170],[190,240,255]],
-  listening:[[60,210,255],[36,150,200],[215,248,255]],
-  thinking: [[255,178,36],[255,122,28],[255,232,176]],
-  executing:[[255,214,120],[255,162,40],[255,252,232]],
-  failed:   [[255,77,94],[190,40,58],[255,190,196]]
+  idle:     [[255,148,38],[198,78,14],[255,226,166]],
+  listening:[[255,166,54],[214,96,22],[255,234,186]],
+  thinking: [[255,182,58],[236,116,26],[255,240,200]],
+  executing:[[255,224,140],[255,172,52],[255,253,238]],
+  failed:   [[255,77,94],[188,38,56],[255,192,198]]
 };
 let cur = PAL.idle.map((c) => c.slice()), tgt = PAL.idle;
+
+// Neun Buendel = 3 Farbklassen x 3 Unschaerfestufen. Die Stufe ist der
+// Abstand zur Fokusebene: scharf, leicht weich, reines Bokeh.
 const bk=[]; for(let i=0;i<9;i++) bk.push([]);
 const dk=[[],[],[]];
-let rx=0.36, ry=0, spin=0.0015, lum=0.80, lumT=0.80, waves=[];
+const ZF=0.62;                       // Fokusebene, leicht vor der Kugelmitte
+const SHARP_A=[1.0,0.42,0];          // Deckkraft im scharfen Durchgang
+const GLOW_W=[2.0,4.6,8.4];          // Strichbreite im Unschaerfedurchgang
+const GLOW_A=[0.52,0.40,0.26];
+let rx=0.42, ry=0, spin=0.0012, lum=0.68, lumT=0.68, irisV=1, irisT=1, waves=[];
 
 function draw(){
   if(!reduce) ry+=spin;
   lum+=(lumT-lum)*0.06;
+  irisV+=(irisT-irisV)*0.05;
   for(let i=0;i<3;i++) for(let j=0;j<3;j++) cur[i][j]+=(tgt[i][j]-cur[i][j])*0.07;
   for(let i=waves.length-1;i>=0;i--){ waves[i]+=0.015; if(waves[i]>2) waves.splice(i,1); }
 
@@ -479,60 +527,120 @@ function draw(){
   const prj=(arr,i,o)=>{ const x=arr[i],y=arr[i+1],z=arr[i+2];
     const x1=x*cb+z*sb, z1=-x*sb+z*cb, y2=y*ca-z1*sa, z2=y*sa+z1*ca, k=F/(F-z2);
     o[0]=CX+x1*RR*k; o[1]=CY+y2*RR*k; o[2]=z2; };
+  const lvl=(z)=>{ const d=Math.abs(z-ZF); return d<0.45?0:(d<0.95?1:2); };
+
   for(let s=0,c=0;s<SEG.length;s+=6,c++){
     prj(SEG,s,A); prj(SEG,s+3,B);
-    const z=(A[2]+B[2])*0.5, d=z>0.35?2:(z>-0.25?1:0);
-    bk[CLS[c]*3+d].push(A[0],A[1],B[0],B[1]);
+    bk[CLS[c]*3+lvl((A[2]+B[2])*0.5)].push(A[0],A[1],B[0],B[1]);
   }
-  for(let s=0,c=0;s<DOT.length;s+=3,c++){ prj(DOT,s,A);
-    if(A[2]>-0.15) dk[DCL[c]].push(A[0],A[1],A[2]); }
+  for(let s=0,c=0;s<DOT.length;s+=3,c++){
+    prj(DOT,s,A);
+    const d=Math.abs(A[2]-ZF);
+    dk[DCL[c]===2?2:(d<0.45?0:1)].push(A[0],A[1],d);
+  }
 
+  // Unschaerfedurchgang in Drittelaufloesung
   gx.setTransform(DPR/3,0,0,DPR/3,0,0); gx.clearRect(0,0,W,H);
   gx.globalCompositeOperation="lighter"; gx.lineCap="round";
-  lines(gx,3.3,0.60);
+  for(let k=0;k<9;k++) strokeBundle(gx,k,GLOW_W[k%3],GLOW_A[k%3]);
+  bokeh(gx);
 
   cx.setTransform(DPR,0,0,DPR,0,0); cx.clearRect(0,0,W,H);
   cx.globalCompositeOperation="lighter";
-  cx.filter="blur(7px)"; cx.globalAlpha=0.9*lum; cx.drawImage(gl,0,0,W,H);
+  cx.filter="blur(6px)"; cx.globalAlpha=0.95*lum; cx.drawImage(gl,0,0,W,H);
   cx.filter="none"; cx.globalAlpha=1; cx.lineCap="round";
-  lines(cx,1.0,1.0); dots(cx); heart(cx); rings(cx);
+  for(let k=0;k<9;k++){ const a=SHARP_A[k%3]; if(a) strokeBundle(cx,k,k%3?0.7:0.95,a); }
+  glints(cx);
+  iris(cx);
+  rings(cx);
   requestAnimationFrame(draw);
 }
-function lines(c,lw,mul){
-  const dp=[0.24,0.56,1.0];
-  for(let k=0;k<9;k++){
-    const a=bk[k]; if(!a.length) continue;
-    const col=cur[(k/3)|0], al=dp[k%3]*mul*lum;
-    c.strokeStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${al.toFixed(3)})`;
-    c.lineWidth=lw*(k%3===2?1.15:0.85);
-    c.beginPath();
-    for(let i=0;i<a.length;i+=4){ c.moveTo(a[i],a[i+1]); c.lineTo(a[i+2],a[i+3]); }
-    c.stroke();
-  }
+function strokeBundle(c,k,lw,al){
+  const a=bk[k]; if(!a.length) return;
+  const col=cur[(k/3)|0];
+  c.strokeStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${(al*lum).toFixed(3)})`;
+  c.lineWidth=lw*((k/3|0)===2?1.2:0.9);
+  c.beginPath();
+  for(let i=0;i<a.length;i+=4){ c.moveTo(a[i],a[i+1]); c.lineTo(a[i+2],a[i+3]); }
+  c.stroke();
 }
-function dots(c){
+// Unscharfe Punkte werden zu Scheiben -- das Bokeh der Vorlage. Nach
+// Unschaerfestufe gebuendelt: zwoelf Fuellungen pro Bild statt Hunderte.
+const BT=6, tier=[]; for(let i=0;i<BT*2;i++) tier.push([]);
+function bokeh(c){
+  for(const t of tier) t.length=0;
   for(let k=0;k<3;k++){
-    const a=dk[k]; if(!a.length) continue; const col=cur[k];
-    c.fillStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${(0.72*lum).toFixed(3)})`;
+    const a=dk[k], hot=k===2?1:0;
+    for(let i=0;i<a.length;i+=3){
+      const d=a[i+2]<1.9?a[i+2]:1.9;
+      tier[hot*BT+Math.min(BT-1,(d/1.9*BT)|0)].push(a[i],a[i+1]);
+    }
+  }
+  for(let t=0;t<tier.length;t++){
+    const a=tier[t]; if(!a.length) continue;
+    const hot=t>=BT, d=((t%BT)+0.5)/BT*1.9, col=cur[hot?2:0];
+    const r=1.3+d*5.4, al=(hot?0.50:0.30)/(1+d*1.5)*lum;
+    c.fillStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${al.toFixed(3)})`;
     c.beginPath();
-    for(let i=0;i<a.length;i+=3){ const r=a[i+2]>0.45?1.5:0.9;
-      c.moveTo(a[i]+r,a[i+1]); c.arc(a[i],a[i+1],r,0,6.283); }
+    for(let i=0;i<a.length;i+=2){ c.moveTo(a[i]+r,a[i+1]); c.arc(a[i],a[i+1],r,0,6.283); }
     c.fill();
   }
 }
-function heart(c){
-  const r=RR*0.30, g=c.createRadialGradient(CX,CY,0,CX,CY,r), h=cur[2], m=cur[0];
-  g.addColorStop(0,`rgba(${h[0]|0},${h[1]|0},${h[2]|0},${0.46*lum})`);
-  g.addColorStop(0.36,`rgba(${m[0]|0},${m[1]|0},${m[2]|0},${0.22*lum})`);
+// Die wenigen Punkte in der Fokusebene bleiben hart.
+function glints(c){
+  const a=dk[0]; if(!a.length) return; const col=cur[2];
+  c.fillStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${(0.85*lum).toFixed(3)})`;
+  c.beginPath();
+  for(let i=0;i<a.length;i+=3){ const r=1.0+(0.45-a[i+2])*2.2;
+    if(r>0.3){ c.moveTo(a[i]+r,a[i+1]); c.arc(a[i],a[i+1],r,0,6.283); } }
+  c.fill();
+}
+// Iris: ein kleines echtes Loch, umlegt von einer Mechanik aus
+// konzentrischen Boegen und einem mitlaufenden Zahnkranz.
+function iris(c){
+  const R0=RR*0.125*irisV, ASP=0.84, h=cur[2], m=cur[0];
+  c.globalCompositeOperation="destination-out";
+  c.save(); c.translate(CX,CY); c.scale(1,ASP);
+  const g=c.createRadialGradient(0,0,0,0,0,R0);
+  g.addColorStop(0,"rgba(0,0,0,1)"); g.addColorStop(0.70,"rgba(0,0,0,1)");
   g.addColorStop(1,"rgba(0,0,0,0)");
-  c.fillStyle=g; c.beginPath(); c.arc(CX,CY,r,0,6.283); c.fill();
+  c.fillStyle=g; c.beginPath(); c.arc(0,0,R0,0,6.283); c.fill();
+  c.restore();
+
+  c.globalCompositeOperation="lighter";
+  c.save(); c.translate(CX,CY); c.scale(1,ASP);
+  // heisser Rand des Lochs
+  c.strokeStyle=`rgba(${h[0]|0},${h[1]|0},${h[2]|0},${(0.95*lum).toFixed(3)})`;
+  c.lineWidth=2.8; c.beginPath(); c.arc(0,0,R0*0.80,0,6.283); c.stroke();
+  c.strokeStyle=`rgba(${m[0]|0},${m[1]|0},${m[2]|0},${(0.70*lum).toFixed(3)})`;
+  c.lineWidth=1.4; c.beginPath(); c.arc(0,0,R0*0.98,0,6.283); c.stroke();
+  // Zahnkranz, laeuft mit der Kugel mit
+  c.strokeStyle=`rgba(${h[0]|0},${h[1]|0},${h[2]|0},${(0.65*lum).toFixed(3)})`;
+  c.lineWidth=1.6; c.beginPath();
+  for(let i=0;i<44;i++){
+    const a=ry*2.4+i/44*6.283, r1=R0*1.04, r2=R0*(i%4===0?1.42:1.20);
+    c.moveTo(Math.cos(a)*r1,Math.sin(a)*r1); c.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);
+  }
+  c.stroke();
+  // Mechanik: konzentrische Boegen mit Luecken
+  for(let k=0;k<7;k++){
+    const r=R0*(1.65+k*0.52), seg=5+k, off=ry*(k%2?-1.6:1.9)+k;
+    c.strokeStyle=`rgba(${(k%2?m:h)[0]|0},${(k%2?m:h)[1]|0},${(k%2?m:h)[2]|0},${((0.42-k*0.04)*lum).toFixed(3)})`;
+    c.lineWidth=k===0?2.0:1.1;
+    for(let i=0;i<seg;i++){
+      const a0=off+i/seg*6.283, a1=a0+6.283/seg*(0.52+0.2*(i%2));
+      c.beginPath(); c.arc(0,0,r,a0,a1); c.stroke();
+    }
+  }
+  c.restore();
 }
 function rings(c){
   for(const t of waves){
     const a=Math.max(0,1-t/2), h=cur[2];
     c.strokeStyle=`rgba(${h[0]|0},${h[1]|0},${h[2]|0},${(a*0.46).toFixed(3)})`;
-    c.lineWidth=2*a+0.4;
-    c.beginPath(); c.arc(CX,CY,RR*(0.55+t*0.8),0,6.283); c.stroke();
+    c.lineWidth=2.4*a+0.4;
+    c.save(); c.translate(CX,CY); c.scale(1,0.84);
+    c.beginPath(); c.arc(0,0,RR*(0.18+t*0.80),0,6.283); c.stroke(); c.restore();
   }
 }
 addEventListener("resize", () => { fit(); layout(); });
@@ -542,14 +650,14 @@ fit(); build(!phone()); requestAnimationFrame(draw);
    2  ZUSTAND
    ═══════════════════════════════════════════════════════════════ */
 const MODE = {
-  idle:{t:"Bereit",s:0.0015,l:0.80}, listening:{t:"Höre zu",s:0.0024,l:0.95},
-  thinking:{t:"Denke",s:0.0050,l:1.10}, executing:{t:"Führe aus",s:0.0030,l:1.40},
-  failed:{t:"Fehlgeschlagen",s:0.0010,l:0.90}
+  idle:{t:"Bereit",s:0.0012,l:0.68,i:1.0}, listening:{t:"Höre zu",s:0.0020,l:0.86,i:1.1},
+  thinking:{t:"Denke",s:0.0048,l:1.06,i:1.25}, executing:{t:"Führe aus",s:0.0026,l:1.55,i:2.1},
+  failed:{t:"Fehlgeschlagen",s:0.0008,l:0.80,i:0.8}
 };
 let wTimer=0;
 function setMode(m, detail){
   const c=MODE[m]||MODE.idle;
-  spin=reduce?0:c.s; lumT=c.l; tgt=PAL[m]||PAL.idle;
+  spin=reduce?0:c.s; lumT=c.l; irisT=c.i; tgt=PAL[m]||PAL.idle;
   document.body.dataset.st=m;
   $("md").textContent=c.t; $("sd").innerHTML=detail||"";
   clearInterval(wTimer);
@@ -608,7 +716,8 @@ function tickClock(){
   const days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(), s=$("strip");
   if(s.childElementCount!==days){ s.innerHTML="";
     for(let i=1;i<=days;i++){ const n=el("span"); n.textContent=String(i).padStart(2,"0");
-      if(i===d.getDate()) n.className="now"; s.appendChild(n); } }
+      if(i===d.getDate()) n.className="now"; s.appendChild(n); }
+    s.querySelector(".now")?.scrollIntoView({block:"nearest",inline:"center"}); }
 }
 tickClock(); setInterval(tickClock,20000);
 
@@ -775,7 +884,7 @@ function paint(){
   for(const [x,y] of MEM.links){
     const a=map.get(x), b=map.get(y); if(!a||!b||!vis(a)||!vis(b)) continue;
     const lit=sel&&(sel===a.id||sel===b.id);
-    ncx.strokeStyle=lit?"rgba(40,215,255,.75)":"rgba(24,86,114,.5)";
+    ncx.strokeStyle=lit?"rgba(40,215,255,.85)":"rgba(32,110,144,.72)";
     ncx.lineWidth=lit?1.6:1;
     ncx.beginPath(); ncx.moveTo(toX(a.x),toY(a.y)); ncx.lineTo(toX(b.x),toY(b.y)); ncx.stroke();
   }

@@ -10,14 +10,20 @@ Die Oberfläche unterscheidet sichtbar vier Zustände:
 
 | Zustand | Bedeutung | Darstellung |
 |---|---|---|
-| `idle` | nichts läuft | langsame Drehung, gedämpft |
-| `thinking` | **das Modell plant** | schnelle Drehung, heller Kern |
-| `executing` | **ein Werkzeug läuft tatsächlich** | Druckwellen laufen nach außen |
+| `idle` | nichts läuft | gedämpfte Glut, träge Drehung, Iris geschlossen |
+| `thinking` | **das Modell plant** | heller, schnellere Drehung |
+| `executing` | **ein Werkzeug läuft tatsächlich** | Weißglut, Iris reißt auf, Druckwellen nach außen |
 | `failed` | Aktion fehlgeschlagen | Rotstich, Drehung fällt ab |
 
-Das ist der Punkt: `thinking` und `executing` sehen verschieden aus. Behauptet
-das Modell einen Erfolg, ohne dass ein Werkzeug lief, fehlen die Druckwellen —
-die Lüge ist am Bildschirm sichtbar, bevor man die Festplatte prüft.
+Das ist der Punkt: `executing` sieht anders aus als alles andere. Behauptet das
+Modell einen Erfolg, ohne dass ein Werkzeug lief, bleibt der Kern gedämpft, die
+Iris geschlossen und es kommen keine Druckwellen — die Lüge ist am Bildschirm
+sichtbar, bevor man die Festplatte prüft.
+
+Ruhezustand und Denken teilen sich den Goldton. Das Erkennungsmerkmal ist
+deshalb bewusst nicht die Farbe allein, sondern **Weißglut plus Iris plus
+Druckwellen** — drei Signale, die nur gemeinsam auftreten und nur dann, wenn
+ein Tool-Result vorliegt.
 
 Jede Antwort im Verlauf trägt zusätzlich ihren Beleg:
 
@@ -53,12 +59,30 @@ Adapter bricht, hebelt die ganze Oberfläche aus.
 
 ## Technik
 
-Die Kugel ist Canvas 2D, keine Bibliothek, kein WebGL. Leiterbahnen laufen als
-Geodäten über die Kugel und biegen gelegentlich um 90° — daher der
-Platinen-Charakter der Vorlage. Gezeichnet wird in zwei Durchgängen: ein Halo in
-Drittelauflösung, weichgezeichnet und additiv darübergelegt, dann die scharfen
-Linien. Segmente werden nach Farbklasse und Tiefe gebündelt, sodass pro Bild
-neun `stroke()`-Aufrufe genügen statt einiger tausend. Auf dem Telefon wird die
-Geometrie ausgedünnt und `devicePixelRatio` auf 2 gedeckelt.
+Die Kugel ist Canvas 2D, keine Bibliothek, kein WebGL.
+
+* **Leiterbahnen** laufen als Geodäten über die Kugel und biegen gelegentlich um
+  90° — daher der Platinen-Charakter.
+* **Speichen** sind im Raum radiale Strecken. Eine solche Linie projiziert immer
+  durch die Bildmitte, deshalb strahlen sie von selbst aus dem Zentrum.
+* **Tiefenunschärfe**: jedes Segment bekommt nach seinem Abstand zur Fokusebene
+  eine von drei Stufen. Scharfe Segmente gehen in den harten Durchgang, unscharfe
+  nur in den weichgezeichneten — daraus entsteht das Bokeh.
+* **Bokeh-Punkte** werden nach Unschärfestufe gebündelt: zwölf Füllungen pro Bild
+  statt mehrerer hundert Einzelkreise.
+* **Iris**: ein echtes Loch, mit `destination-out` in die Leinwand gestanzt, sodass
+  der Raum dahinter durchscheint. Darum ein heißer Rand, ein mitlaufender
+  Zahnkranz und konzentrische Bögen.
+* Segmente sind nach Farbklasse und Unschärfestufe gebündelt — neun `stroke()`-
+  Aufrufe pro Durchgang statt einiger tausend.
+
+Auf dem Telefon wird die Geometrie ausgedünnt; `devicePixelRatio` ist auf 1,75
+gedeckelt, weil die Kugel weiches Licht ist und keine Schrift.
+
+Gemessen in diesem Container **ohne GPU** (reine Software-Rasterung, also ein
+Boden, keine Vorhersage): 17 fps bei 1440×900, 34 fps bei 390×844. Die
+Vorversion lag unter denselben Bedingungen bei 19 fps. Auf einer RX 7900 XTX ist
+Canvas 2D hardwarebeschleunigt und liegt um ein Vielfaches darüber — nachmessen,
+sobald es auf deiner Maschine läuft.
 
 `prefers-reduced-motion` hält die Drehung an und unterdrückt die Druckwellen.
