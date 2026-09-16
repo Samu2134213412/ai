@@ -92,8 +92,16 @@ class CodePilotLink:
         handle = open(log, "ab", buffering=0)  # noqa: SIM115 - lebt im Kindprozess weiter
         handle.write(f"\n=== Start durch Jarvis: {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"
                      .encode("utf-8"))
+        # Windows gibt einer umgeleiteten Ausgabe die Codepage des Prozesses
+        # (cp1252 auf deutschen Installationen). Druckt das Kind dann ein
+        # Häkchen, stirbt es an UnicodeEncodeError, bevor es je antwortet --
+        # genau daran ist der Selbststart zuerst gescheitert. Also UTF-8
+        # vorgeben, statt darauf zu hoffen, dass das Kind nichts Exotisches
+        # druckt.
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8:replace"
         kwargs: dict = {"cwd": str(workdir), "stdout": handle, "stderr": handle,
-                        "stdin": subprocess.DEVNULL}
+                        "stdin": subprocess.DEVNULL, "env": env}
         if os.name == "nt":
             kwargs["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP
                                        | getattr(subprocess, "DETACHED_PROCESS", 0))
