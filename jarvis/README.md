@@ -88,12 +88,22 @@ erwartet.
 | Pfad | Inhalt |
 |---|---|
 | `web/` | Oberfläche: Kommandozentrale und Wissensnetz, eine Datei, keine Abhängigkeiten |
-| `server/` | **fehlt noch** — Router, Werkzeuge, Gedächtnis, WebSocket |
+| `server/` | Router, Werkzeuge, Gedächtnis, Agent, Wächter, WebSocket — siehe `server/README.md` |
 
-## Nächste Schritte
+## Stand
 
-1. Alten Jarvis-Code einlesen und den Ist-Zustand am Code feststellen
-2. Werkzeugschicht mit erzwungenem Beleg: kein Erfolg ohne Tool-Result
-3. Direct Action Router aus dem alten Code übernehmen und härten
-4. Gedächtnis persistent, mit Abruf über `memory_search`
-5. `codepilot_task` als Werkzeug an CodePilot Remote anbinden
+Fertig und getestet (109 Tests):
+
+* Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
+* Direct Action Router für eindeutige Befehle
+* Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
+* Agent mit Ollama-Werkzeugaufruf
+* `codepilot_task` als Brücke zum Coding-Agenten
+* WebSocket an alle Geräte gleichzeitig
+
+Offen:
+
+1. Alten Jarvis-Code einlesen und gegen diese Fassung abgleichen
+2. Chat-Modell auf der echten Maschine wählen und messen
+3. `screen_capture`, `web_search`, `mouse_keyboard`, `open_program`
+4. Skills: Abläufe als wiederverwendbare Einheiten

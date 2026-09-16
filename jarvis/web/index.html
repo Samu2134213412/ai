@@ -350,7 +350,7 @@ button.dg:hover{background:var(--red);color:var(--void)}
     </div>
 
     <div class="col" data-t="brain">
-      <section class="fr pan">
+      <section class="fr pan" style="flex:none">
         <h2>Modelle</h2>
         <div class="in" id="brains"></div>
       </section>
@@ -785,6 +785,7 @@ let MEM={nodes:[],links:[]}, sel=null, joinMode=false, joinFrom=null, filter="",
 let store={kind:"none",save:async()=>{}};
 
 async function openStore(){
+  if(store.kind === "server") return;   // der Server führt bereits das Gedächtnis
   // 1. db-Fähigkeit: gleicher Stand auf Handy und PC
   try{
     const db = await (window.claude?.use?.("db"));
@@ -1052,6 +1053,12 @@ $("bar").addEventListener("submit",(e)=>{
   const v=$("cmd").value.trim(); if(!v) return;
   $("cmd").value="";
   if(view!=="cmd") showView("cmd");
+  if(live && sock && sock.readyState === 1){
+    // Der Server schickt die eigene Nachricht zurück, damit alle Geräte
+    // denselben Verlauf sehen. Deshalb hier nichts lokal anhängen.
+    sock.send(JSON.stringify({type:"command", text:v}));
+    return;
+  }
   say({who:"me",text:esc(v)});
   if(!live){
     setMode("failed");
@@ -1126,12 +1133,115 @@ window.JARVIS={
   get memoryState(){ return clone({nodes:MEM.nodes,links:MEM.links}); }
 };
 
+/* ═══════════════════════════════════════════════════════════════
+   9  VERBINDUNG zum Jarvis-Server.
+      Dieselbe Datei läuft mit und ohne Server. Liegt sie auf dem
+      Jarvis-Server, verbindet sie sich und arbeitet echt. Liegt sie
+      irgendwo sonst, schlägt der Versuch fehl und sie bleibt bei der
+      ehrlichen Demo-Ansicht -- sie täuscht keine Verbindung vor.
+   ═══════════════════════════════════════════════════════════════ */
+let sock = null, retry = 0, retryTimer = 0;
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+
+function evidenceHtml(list){
+  if(!Array.isArray(list) || !list.length) return null;
+  return list.map((r) => {
+    const parts = Object.entries(r.evidence || {})
+      .map(([k, v]) => `${esc(k)}=${esc(v)}`).join(" · ");
+    const head = r.ok ? "<b>success=true</b>" : "<b>fehlgeschlagen</b>";
+    return `${esc(r.tool)} → ${head}`
+         + (parts ? ` · ${parts}` : "")
+         + (r.duration_ms ? ` · ${r.duration_ms} ms` : "");
+  }).join("<br>");
+}
+const asHtml = (t) => esc(t || "").replace(/\n/g, "<br>");
+
+function applyHello(m){
+  JARVIS.connect({host: m.host, model: m.model});
+  if(Array.isArray(m.modelle)) JARVIS.models(m.modelle);
+  if(Array.isArray(m.werkzeuge)) JARVIS.tools(m.werkzeuge);
+  if(m.telemetrie) JARVIS.telemetry(m.telemetrie);
+  if(m.gedaechtnis && Array.isArray(m.gedaechtnis.nodes)){
+    // Der Server führt das Gedächtnis. Seine Fassung gewinnt.
+    MEM = {nodes: m.gedaechtnis.nodes, links: m.gedaechtnis.links || []};
+    store = {kind:"server", save(){
+      if(sock && sock.readyState === 1)
+        sock.send(JSON.stringify({type:"memory", graph:{nodes:MEM.nodes, links:MEM.links}}));
+    }};
+    setStore("db", "Jarvis-Server");
+    seedPositions(true); renderLegend(); paint();
+  }
+  if(Array.isArray(m.probleme) && m.probleme.length)
+    say({who:"jarvis", prov:"talk",
+         text:"Der Server meldet: " + m.probleme.map(esc).join(" · ")});
+  if(m.ollama && !m.ollama.online)
+    say({who:"jarvis", prov:"fail",
+         text:"Ollama ist nicht erreichbar. Ich kann denken lassen, sobald es läuft.",
+         evidence: esc(m.ollama.hinweis || ""), fail:true});
+}
+
+function onFrame(m){
+  switch(m.type){
+    case "hello": applyHello(m); break;
+    case "state": setMode(m.mode, asHtml(m.detail)); break;
+    case "message":
+      say({who: m.who === "me" ? "me" : "jarvis", text: asHtml(m.text),
+           prov: m.provenance || "talk", evidence: evidenceHtml(m.evidence),
+           fail: m.provenance === "fail"});
+      break;
+    case "tool.finished":
+      pushWave(m.ok ? 55 + Math.random() * 40 : 18);
+      break;
+    case "telemetry": JARVIS.telemetry(m); break;
+    case "memory":
+      if(Array.isArray(m.nodes) && !$("insIn").contains(document.activeElement)){
+        MEM = {nodes: m.nodes, links: m.links || []};
+        seedPositions(false); renderLegend(); paint();
+      }
+      break;
+  }
+}
+
+function connect(){
+  clearTimeout(retryTimer);
+  let url;
+  try{
+    url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host
+        + "/ws" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+    sock = new WebSocket(url);
+  }catch(e){ return; }          // z. B. file:// oder blockiert -- Demo bleibt
+
+  sock.addEventListener("message", (ev) => {
+    try{ onFrame(JSON.parse(ev.data)); }catch(e){}
+  });
+  sock.addEventListener("open", () => { retry = 0; });
+  sock.addEventListener("close", () => {
+    sock = null;
+    if(live){
+      JARVIS.disconnect();
+      say({who:"jarvis", prov:"fail",
+           text:"Verbindung zum Jarvis-Server verloren. Ich führe nichts mehr aus.",
+           fail:true});
+    }
+    // Zurückhaltend erneut versuchen, aber nicht endlos: auf einer Seite ohne
+    // Server soll kein Dauerklopfen im Netzwerk-Log stehen.
+    if(retry < 6) retryTimer = setTimeout(connect, Math.min(1000 * 2 ** retry++, 30000));
+  });
+  sock.addEventListener("error", () => {});
+}
+connect();
+
 openStore();
-say({who:"jarvis",prov:"talk",
-  text:"Kommandozentrale geladen. Es besteht <b>keine</b> Verbindung zu einem Jarvis-Server — "
-     +"ich kann daher nichts auf deinem Rechner tun. „Ablauf abspielen“ zeigt dreimal, "
-     +"wie ein echter Vorgang aussieht: eine Datei, ein Coding-Auftrag über CodePilot, "
-     +"und ein Fall, für den das Werkzeug fehlt."});
+// Erst nach kurzer Frist begrüßen: meldet sich ein Server, ist die
+// Demo-Ansage falsch und unterbleibt.
+setTimeout(() => {
+  if(live) return;
+  say({who:"jarvis",prov:"talk",
+    text:"Kommandozentrale geladen. Es besteht <b>keine</b> Verbindung zu einem Jarvis-Server — "
+       +"ich kann daher nichts auf deinem Rechner tun. „Ablauf abspielen“ zeigt dreimal, "
+       +"wie ein echter Vorgang aussieht: eine Datei, ein Coding-Auftrag über CodePilot, "
+       +"und ein Fall, für den das Werkzeug fehlt."});
+}, 1200);
 })();
 </script>
 </body>
