@@ -7,265 +7,366 @@
 img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Jarvis Core</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@400;500;600;700&display=swap">
 </head>
 <body>
 <style>
-/* Jarvis Core — bewusst einfarbige dunkle HUD-Welt (kein Light-Theme).
-   Alle Farben explizit gesetzt, damit die Seite auf jedem Host-Grund haelt. */
+/* Jarvis — bewusst einfarbige dunkle HUD-Welt, kein Light-Theme.
+   FARBSYSTEM (traegt die Grundregel des Projekts):
+     Cyan      = Maschine im Ruhezustand, Struktur, Wissen
+     Gold      = das Modell denkt
+     Weissglut = ein Werkzeug laeuft TATSAECHLICH
+     Rot       = fehlgeschlagen
+   Wer Gold sieht, sieht Planung. Wer Weissglut sieht, sieht Handlung. */
 :root{
-  --void:#05080f;
-  --deep:#0a1220;
-  --steel:#0e1a2b;
-  --edge:#1b2b42;
-  --amber:#ffb224;
-  --amber-hot:#ffe6a6;
-  --ember:#ff7a1c;
-  --ice:#57c2e0;
-  --mute:#8496ad;
-  --text:#dbe6f3;
-  --ok:#3ecf8e;
-  --bad:#ff5f63;
-  --ui:"Chakra Petch",system-ui,sans-serif;
+  --void:#03070c;
+  --deep:#061019;
+  --steel:#0a1a28;
+  --edge:#123448;
+  --edge-lit:#1d5a78;
+  --cyan:#28d7ff;
+  --cyan-dim:#1a7ea3;
+  --cyan-pale:#bdeeff;
+  --gold:#ffb224;
+  --hot:#fff0c4;
+  --red:#ff4d5e;
+  --green:#34e0a1;
+  --mute:#5f8299;
+  --text:#cfe8f5;
+  --hud:"Saira Condensed",system-ui,sans-serif;
   --body:"IBM Plex Sans",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
   color-scheme:dark;
 }
 html,body{height:100%}
-body{
-  margin:0;background:var(--void);color:var(--text);
-  font-family:var(--body);font-size:14px;line-height:1.55;
-  overflow:hidden;-webkit-font-smoothing:antialiased;
-}
+body{margin:0;background:var(--void);color:var(--text);
+  font-family:var(--body);font-size:14px;line-height:1.5;overflow:hidden;
+  -webkit-font-smoothing:antialiased}
 *{box-sizing:border-box}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--edge-lit);border-radius:3px}
+::-webkit-scrollbar-track{background:transparent}
 
-/* --- Raum hinter der Kugel: dunkle Halle mit Lichtstreifen --- */
+/* ── Raum + Rasterung ───────────────────────────────────────── */
 #room{position:fixed;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(120% 80% at 50% 46%, rgba(255,140,30,.10), transparent 62%),
-    radial-gradient(90% 60% at 8% 12%, rgba(60,140,190,.16), transparent 70%),
-    radial-gradient(90% 60% at 94% 88%, rgba(40,110,160,.14), transparent 70%),
-    linear-gradient(180deg,#070c16 0%,#05080f 55%,#04070d 100%);
-}
-#room::after{content:"";position:absolute;inset:0;
-  background:repeating-linear-gradient(90deg,rgba(120,180,220,.05) 0 1px,transparent 1px 148px);
-  mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 78%);
-  -webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 78%);
-}
-#orb{position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:block}
+    radial-gradient(100% 70% at 50% 44%,rgba(20,150,200,.13),transparent 65%),
+    radial-gradient(80% 60% at 6% 96%,rgba(15,110,160,.12),transparent 72%),
+    linear-gradient(180deg,#04090f 0%,#03070c 60%,#020509 100%);}
+#room::before{content:"";position:absolute;inset:0;opacity:.5;
+  background:
+    repeating-linear-gradient(0deg,rgba(40,215,255,.045) 0 1px,transparent 1px 44px),
+    repeating-linear-gradient(90deg,rgba(40,215,255,.045) 0 1px,transparent 1px 44px);
+  mask-image:radial-gradient(85% 75% at 50% 45%,#000 20%,transparent 92%);
+  -webkit-mask-image:radial-gradient(85% 75% at 50% 45%,#000 20%,transparent 92%)}
+#room::after{content:"";position:absolute;inset:0;opacity:.35;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.42) 0 1px,transparent 1px 3px)}
+canvas.stage{position:fixed;inset:0;width:100%;height:100%;z-index:1;
+  pointer-events:none;display:block}
 
-/* --- HUD-Gitter --- */
-#hud{position:relative;z-index:2;height:100%;display:grid;
-  grid-template-columns:clamp(240px,20vw,290px) 1fr clamp(250px,22vw,320px);
-  grid-template-rows:auto 1fr auto;
-  gap:14px;padding:12px clamp(16px,2vw,22px);
-  padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(12px + env(safe-area-inset-bottom,0px));
-}
+/* ── Rahmen mit Klammerecken: das Leitmotiv der Vorlage ─────── */
+.fr{position:relative;border:1px solid var(--edge);
+  background:linear-gradient(180deg,rgba(8,26,40,.80),rgba(4,14,22,.68));
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.fr::before,.fr::after{content:"";position:absolute;width:11px;height:11px;
+  border:1px solid var(--cyan);pointer-events:none;opacity:.85}
+.fr::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.fr::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
 
-/* --- Kopfzeile --- */
-.top{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.mark{display:flex;align-items:baseline;gap:9px;font-family:var(--ui)}
-.mark b{font-size:19px;font-weight:700;letter-spacing:.20em;color:var(--amber-hot);
-  text-shadow:0 0 18px rgba(255,150,30,.55)}
-.mark span{font-size:10px;letter-spacing:.26em;color:var(--mute);text-transform:uppercase}
-.top .spacer{flex:1 1 auto}
-.chip{display:inline-flex;align-items:center;gap:7px;
-  font-family:var(--ui);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
-  padding:5px 11px;border:1px solid var(--edge);border-radius:2px;
-  background:rgba(10,18,32,.72);color:var(--mute);white-space:nowrap}
-.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--mute);flex:none}
-.chip.warn{border-color:#5a4418;color:#f0c169;background:rgba(48,32,8,.6)}
-.chip.warn .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
-.chip.live{border-color:#1c5a42;color:var(--ok);background:rgba(8,38,28,.6)}
-.chip.live .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+/* ── Grundgerüst ───────────────────────────────────────────── */
+#app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;
+  gap:9px;padding:9px clamp(10px,1.4vw,16px);
+  padding-block:calc(9px + env(safe-area-inset-top,0px)) calc(9px + env(safe-area-inset-bottom,0px))}
 
-/* --- Panels --- */
-.panel{border:1px solid var(--edge);border-radius:3px;
-  background:linear-gradient(180deg,rgba(14,26,43,.80),rgba(8,15,26,.72));
-  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
-  display:flex;flex-direction:column;min-height:0;overflow:hidden}
-.panel > h2{margin:0;padding:9px 12px;flex:none;
-  font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;
-  color:var(--mute);border-bottom:1px solid var(--edge);
-  display:flex;align-items:center;gap:8px}
-.panel > h2::before{content:"";width:3px;height:11px;background:var(--amber);flex:none;
-  box-shadow:0 0 9px rgba(255,178,36,.8)}
-.panel .body{padding:11px 12px;overflow-y:auto;overscroll-behavior:contain;flex:1 1 auto;min-height:0}
-.col{display:flex;flex-direction:column;gap:12px;min-height:0}
-.col.left{grid-column:1;grid-row:2}
-.col.right{grid-column:3;grid-row:2}
+/* ── Kopfleiste ────────────────────────────────────────────── */
+.bar{display:flex;align-items:stretch;gap:9px;flex:none;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 13px}
+.brand b{font-family:var(--hud);font-size:22px;font-weight:700;letter-spacing:.30em;
+  color:var(--cyan-pale);text-shadow:0 0 16px rgba(40,215,255,.7);line-height:1}
+.brand i{font-family:var(--hud);font-style:normal;font-size:9px;letter-spacing:.22em;
+  color:var(--mute);text-transform:uppercase}
+.clock{display:flex;align-items:baseline;gap:9px;padding:6px 14px;font-family:var(--hud)}
+.clock .t{font-size:24px;font-weight:600;letter-spacing:.06em;color:var(--cyan);
+  font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 14px rgba(40,215,255,.55)}
+.clock .d{font-size:10px;letter-spacing:.16em;color:var(--mute);text-transform:uppercase}
+.strip{display:flex;align-items:center;gap:0;padding:0 8px;overflow:hidden;flex:1 1 210px;min-width:0}
+.strip span{font-family:var(--hud);font-size:10px;color:#20465c;padding:0 4px;
+  font-variant-numeric:tabular-nums;flex:none}
+.strip span.now{color:var(--void);background:var(--cyan);font-weight:700;
+  box-shadow:0 0 12px rgba(40,215,255,.8)}
+.bar .sp{flex:1 1 auto}
 
-/* --- Telemetrie --- */
-.tele{display:flex;flex-direction:column;gap:11px}
-.tele .row{display:grid;grid-template-columns:1fr auto;gap:3px 10px;align-items:baseline}
-.tele .k{font-family:var(--ui);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--mute)}
-.tele .v{font-family:var(--mono);font-size:12.5px;color:var(--text);font-variant-numeric:tabular-nums}
-.bar{grid-column:1/-1;height:3px;background:#122034;border-radius:2px;overflow:hidden;margin-top:3px}
-.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ember),var(--amber));
-  box-shadow:0 0 10px rgba(255,150,40,.7)}
-.bar.cool i{background:linear-gradient(90deg,#2b7ea0,var(--ice));box-shadow:0 0 10px rgba(87,194,224,.6)}
-.hw{font-family:var(--mono);font-size:10.5px;color:var(--mute);line-height:1.7;
-  padding-top:9px;margin-top:2px;border-top:1px solid var(--edge)}
-
-/* --- Werkzeugliste --- */
-.tool{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;
-  padding:7px 0;border-bottom:1px solid rgba(27,43,66,.6)}
-.tool:last-child{border-bottom:0}
-.tool .glyph{width:16px;text-align:center;font-family:var(--mono);font-size:12px;line-height:1}
-.tool .nm{font-family:var(--mono);font-size:12px;color:var(--text);overflow-wrap:anywhere}
-.tool .st{font-family:var(--ui);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+.tag{display:inline-flex;align-items:center;gap:7px;padding:0 12px;
+  font-family:var(--hud);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
   color:var(--mute);white-space:nowrap}
-.tool[data-s="ok"] .glyph{color:var(--ok)}
-.tool[data-s="ok"] .st{color:var(--ok)}
-.tool[data-s="none"] .glyph{color:#4a5a70}
-.tool[data-s="unknown"] .glyph{color:var(--amber)}
-.tool[data-s="unknown"] .st{color:#e0aa52}
-.note{font-size:11.5px;color:var(--mute);line-height:1.6;
-  padding:9px 10px;border-left:2px solid var(--amber);background:rgba(255,178,36,.06);margin-top:11px}
+.tag .led{width:6px;height:6px;border-radius:50%;background:#2a4759;flex:none}
+.tag.on{color:var(--green)}.tag.on .led{background:var(--green);box-shadow:0 0 9px var(--green)}
+.tag.off{color:#d8973a}.tag.off .led{background:#d8973a;box-shadow:0 0 9px #d8973a}
 
-/* --- Gedaechtnis --- */
-.mem{display:flex;flex-direction:column;gap:9px}
-.mem article{border-left:2px solid var(--edge);padding:1px 0 1px 10px}
-.mem h3{margin:0 0 1px;font-family:var(--ui);font-size:11px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--ice)}
-.mem p{margin:0;font-size:12.5px;color:var(--text)}
-.mem time{font-family:var(--mono);font-size:10px;color:var(--mute)}
+/* ── Ansichtsumschalter ────────────────────────────────────── */
+.views{display:flex;gap:0;flex:none}
+.views button{font-family:var(--hud);font-size:12px;font-weight:600;letter-spacing:.2em;
+  text-transform:uppercase;padding:0 18px;min-height:38px;cursor:pointer;
+  color:var(--mute);background:transparent;border:1px solid var(--edge);border-right:0}
+.views button:last-child{border-right:1px solid var(--edge)}
+.views button[aria-pressed="true"]{color:var(--void);background:var(--cyan);
+  border-color:var(--cyan);box-shadow:0 0 18px rgba(40,215,255,.45)}
+.views button:focus-visible{outline:2px solid var(--cyan-pale);outline-offset:2px;z-index:1}
 
-/* --- Mittelspalte: Zustand + Verlauf --- */
-.center{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:space-between;
-  gap:12px;min-height:0;pointer-events:none}
-.center > *{pointer-events:auto}
-.state{align-self:center;text-align:center;font-family:var(--ui);flex:none;
-  padding:8px 26px 10px;
-  background:radial-gradient(58% 130% at 50% 50%,rgba(4,7,13,.88),rgba(4,7,13,.55) 58%,rgba(4,7,13,0) 82%)}
-.state .mode{font-size:clamp(20px,3.4vw,30px);font-weight:700;letter-spacing:.3em;
-  text-transform:uppercase;color:var(--amber-hot);text-shadow:0 0 26px rgba(255,150,30,.7);margin:0}
-.state .sub{margin:4px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--mute);min-height:1.5em}
-.state .sub b{color:var(--ice);font-weight:500}
+/* ── Arbeitsfläche ─────────────────────────────────────────── */
+main{flex:1 1 auto;min-height:0;display:grid;gap:9px}
+#vCmd{grid-template-columns:clamp(212px,17vw,258px) 1fr clamp(224px,19vw,290px)}
+#vNet{grid-template-columns:1fr clamp(238px,21vw,310px)}
+main[hidden]{display:none!important}
+.col{display:flex;flex-direction:column;gap:9px;min-height:0}
+
+.pan{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.pan > h2{margin:0;padding:7px 11px;flex:none;display:flex;align-items:center;gap:8px;
+  font-family:var(--hud);font-size:10.5px;font-weight:600;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--cyan-dim);border-bottom:1px solid var(--edge)}
+.pan > h2::before{content:"";width:2px;height:10px;background:var(--cyan);flex:none;
+  box-shadow:0 0 8px var(--cyan)}
+.pan > h2 .rt{margin-left:auto;font-size:9.5px;letter-spacing:.14em;color:var(--mute)}
+.pan .in{padding:10px 11px;overflow-y:auto;overscroll-behavior:contain;flex:1 1 auto;min-height:0}
+
+/* ── Rundinstrumente ───────────────────────────────────────── */
+.gauges{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g{display:flex;flex-direction:column;align-items:center;gap:2px}
+.g svg{width:100%;height:auto;max-width:96px;display:block}
+.g .lab{font-family:var(--hud);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--mute)}
+.g .num{font-family:var(--hud);font-size:15px;font-weight:600;fill:var(--cyan);
+  font-variant-numeric:tabular-nums}
+.g .unit{font-family:var(--hud);font-size:7.5px;fill:var(--mute);letter-spacing:.14em}
+.spec{font-family:var(--mono);font-size:10px;color:var(--mute);line-height:1.75;
+  margin-top:10px;padding-top:9px;border-top:1px solid var(--edge)}
+.spec b{color:var(--cyan-dim);font-weight:500}
+
+/* ── Modellblöcke: die beiden Ollama-Hirne ─────────────────── */
+.brain{padding:8px 9px;border:1px solid var(--edge);margin-bottom:8px;position:relative}
+.brain:last-of-type{margin-bottom:0}
+.brain .role{font-family:var(--hud);font-size:9.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--cyan-dim)}
+.brain .id{font-family:var(--mono);font-size:12px;color:var(--text);overflow-wrap:anywhere}
+.brain .via{font-family:var(--mono);font-size:10px;color:var(--mute);margin-top:3px}
+.brain .vr{display:flex;align-items:center;gap:6px;margin-top:6px;
+  font-family:var(--hud);font-size:9.5px;letter-spacing:.1em;color:var(--mute)}
+.brain .vr .track{flex:1 1 auto;height:3px;background:#0d2735;overflow:hidden}
+.brain .vr .track i{display:block;height:100%;background:var(--cyan-dim)}
+.brain[data-on="1"]{border-color:var(--edge-lit)}
+.brain[data-on="1"] .vr .track i{background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));
+  box-shadow:0 0 10px rgba(40,215,255,.6)}
+
+/* ── Werkzeuge ─────────────────────────────────────────────── */
+.tl{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
+  padding:5px 0;border-bottom:1px solid rgba(18,52,72,.55)}
+.tl:last-child{border-bottom:0}
+.tl .gl{width:13px;text-align:center;font-family:var(--mono);font-size:11px;color:#2d5468}
+.tl .nm{font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
+.tl .st{font-family:var(--hud);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mute);white-space:nowrap}
+.tl[data-s="ok"] .gl,.tl[data-s="ok"] .st{color:var(--green)}
+.tl[data-s="unknown"] .gl,.tl[data-s="unknown"] .st{color:#d8973a}
+.hint{font-size:11px;color:var(--mute);line-height:1.55;margin:10px 0 0;
+  padding:8px 9px;border-left:2px solid var(--cyan-dim);background:rgba(40,215,255,.05)}
+
+/* ── Mitte: Zustand + Dialog ───────────────────────────────── */
+.mid{display:flex;flex-direction:column;justify-content:space-between;gap:9px;
+  min-height:0;pointer-events:none}
+.mid > *{pointer-events:auto}
+.status{align-self:center;text-align:center;font-family:var(--hud);flex:none;
+  padding:10px 30px 12px;
+  background:radial-gradient(56% 130% at 50% 50%,rgba(3,7,12,.90),rgba(3,7,12,.5) 60%,transparent 84%)}
+.status .md{margin:0;font-size:clamp(19px,3vw,29px);font-weight:700;letter-spacing:.34em;
+  text-transform:uppercase;color:var(--cyan-pale);text-shadow:0 0 24px rgba(40,215,255,.75);
+  transition:color .35s,text-shadow .35s}
+.status .sd{margin:3px 0 0;font-family:var(--mono);font-size:11px;color:var(--mute);min-height:1.5em}
+.status .sd b{color:var(--cyan);font-weight:500}
+body[data-st="thinking"] .status .md{color:var(--gold);text-shadow:0 0 26px rgba(255,178,36,.8)}
+body[data-st="executing"] .status .md{color:var(--hot);text-shadow:0 0 34px rgba(255,220,140,.95)}
+body[data-st="failed"] .status .md{color:var(--red);text-shadow:0 0 24px rgba(255,77,94,.8)}
 
 .log{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
-  display:flex;flex-direction:column;gap:9px;padding:2px 2px 2px 0;
-  max-width:62ch;width:100%;margin:0 auto}
-.msg{border:1px solid var(--edge);border-radius:3px;padding:9px 11px;
-  background:rgba(8,15,26,.80);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
-.msg.me{border-color:#24405e;background:rgba(14,28,46,.80)}
-.msg .who{font-family:var(--ui);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;
-  color:var(--mute);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
-.msg p{margin:0;font-size:13.5px;overflow-wrap:anywhere}
-.msg code{font-family:var(--mono);font-size:12px;color:var(--amber-hot);
-  background:rgba(255,178,36,.10);padding:1px 4px;border-radius:2px}
-.prov{font-family:var(--ui);font-size:9px;letter-spacing:.13em;text-transform:uppercase;
-  padding:2px 7px;border-radius:2px;border:1px solid;white-space:nowrap}
-.prov.tool{color:var(--ok);border-color:#1c5a42;background:rgba(8,38,28,.55)}
-.prov.talk{color:var(--mute);border-color:var(--edge);background:transparent}
-.prov.fail{color:var(--bad);border-color:#5e2226;background:rgba(48,12,14,.55)}
-.prov.demo{color:#e0aa52;border-color:#5a4418;background:rgba(48,32,8,.5)}
-.evidence{margin-top:7px;padding-top:6px;border-top:1px dashed var(--edge);
-  font-family:var(--mono);font-size:11px;color:var(--mute);overflow-wrap:anywhere}
-.evidence b{color:var(--ok);font-weight:500}
-.evidence.fail b{color:var(--bad)}
+  display:flex;flex-direction:column;gap:8px;max-width:64ch;width:100%;margin:0 auto;padding-right:2px}
+.msg{border:1px solid var(--edge);padding:8px 10px;background:rgba(4,14,22,.86);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.msg.me{border-color:#1b4660;background:rgba(9,26,40,.86)}
+.msg .who{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px;
+  font-family:var(--hud);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute)}
+.msg p{margin:0;font-size:13px;overflow-wrap:anywhere}
+.msg code{font-family:var(--mono);font-size:11.5px;color:var(--cyan-pale);
+  background:rgba(40,215,255,.10);padding:1px 4px}
+.pv{font-family:var(--hud);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+  padding:1px 6px;border:1px solid;white-space:nowrap}
+.pv.tool{color:var(--green);border-color:#17624a;background:rgba(6,40,30,.6)}
+.pv.talk{color:var(--mute);border-color:var(--edge)}
+.pv.fail{color:var(--red);border-color:#5d1f26;background:rgba(48,10,14,.6)}
+.pv.demo{color:#d8973a;border-color:#5a4418;background:rgba(46,32,8,.55)}
+.ev{margin-top:6px;padding-top:5px;border-top:1px dashed var(--edge);
+  font-family:var(--mono);font-size:10.5px;color:var(--mute);overflow-wrap:anywhere}
+.ev b{color:var(--green);font-weight:500}
+.ev.bad b{color:var(--red)}
 
-/* --- Befehlszeile --- */
-.dock{grid-column:1/-1;grid-row:3;display:flex;gap:9px;align-items:stretch;flex-wrap:wrap}
-.dock form{flex:1 1 320px;display:flex;gap:9px;min-width:0}
+/* ── Aktivitätsband ────────────────────────────────────────── */
+.wave{flex:none;height:42px;display:flex;align-items:stretch;gap:1px;padding:5px 9px}
+.wave i{flex:1 1 auto;align-self:flex-end;background:var(--cyan-dim);min-height:1px;
+  transition:height .28s ease-out}
+
+/* ── Wissensnetz ───────────────────────────────────────────── */
+#netWrap{position:relative;min-height:0;overflow:hidden}
+#net{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#net:active{cursor:grabbing}
+.netbar{position:absolute;left:9px;top:9px;right:9px;display:flex;gap:6px;
+  flex-wrap:wrap;align-items:center;pointer-events:none;z-index:2}
+.netbar > *{pointer-events:auto}
+#find{font-family:var(--mono);font-size:12px;color:var(--text);width:min(190px,45vw);
+  background:rgba(4,14,22,.9);border:1px solid var(--edge);padding:6px 9px}
+#find:focus{outline:2px solid var(--cyan);outline-offset:1px}
+.legend{position:absolute;left:9px;bottom:9px;display:flex;gap:5px;flex-wrap:wrap;
+  max-width:calc(100% - 18px);z-index:2}
+.legend button{font-family:var(--hud);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  padding:3px 8px;border:1px solid var(--edge);background:rgba(4,14,22,.88);cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px;color:var(--mute)}
+.legend button .sw{width:7px;height:7px;border-radius:50%;flex:none}
+.legend button[aria-pressed="false"]{opacity:.38}
+
+/* ── Erinnerung bearbeiten ─────────────────────────────────── */
+.field{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
+.field label{font-family:var(--hud);font-size:9.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--mute)}
+.field input,.field textarea,.field select{font-family:var(--body);font-size:13px;color:var(--text);
+  background:rgba(3,10,17,.9);border:1px solid var(--edge);padding:7px 9px;width:100%}
+.field textarea{min-height:84px;resize:vertical;line-height:1.5}
+.field input:focus,.field textarea:focus,.field select:focus{outline:2px solid var(--cyan);
+  outline-offset:1px;border-color:var(--cyan)}
+.linkrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-family:var(--mono);font-size:11.5px;padding:4px 0;border-bottom:1px solid rgba(18,52,72,.5)}
+.linkrow button{padding:1px 7px;font-size:9px;min-height:0}
+.empty{color:var(--mute);font-size:11.5px;font-style:italic}
+
+/* ── Knöpfe ────────────────────────────────────────────────── */
+button{font-family:var(--hud);font-size:11px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--void);background:var(--cyan);border:0;
+  padding:8px 15px;cursor:pointer;min-height:34px}
+button:hover{background:var(--cyan-pale)}
+button:focus-visible{outline:2px solid var(--cyan-pale);outline-offset:2px}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.gh{background:rgba(4,14,22,.88);color:var(--mute);border:1px solid var(--edge)}
+button.gh:hover{color:var(--cyan);border-color:var(--cyan);background:rgba(4,14,22,.95)}
+button.gh[aria-pressed="true"]{color:var(--void);background:var(--cyan);border-color:var(--cyan)}
+button.dg{background:rgba(4,14,22,.88);color:var(--red);border:1px solid #5d1f26}
+button.dg:hover{background:var(--red);color:var(--void)}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ── Befehlszeile ──────────────────────────────────────────── */
+.dock{flex:none;display:flex;gap:7px;flex-wrap:wrap}
+.dock form{flex:1 1 300px;display:flex;gap:7px;min-width:0}
 #cmd{flex:1 1 auto;min-width:0;font-family:var(--body);font-size:14px;color:var(--text);
-  background:rgba(8,15,26,.86);border:1px solid var(--edge);border-radius:3px;
-  padding:11px 13px;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
-#cmd::placeholder{color:#5d6d84}
-#cmd:focus{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber)}
-button{font-family:var(--ui);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--void);background:linear-gradient(180deg,var(--amber-hot),var(--amber));
-  border:0;border-radius:3px;padding:11px 17px;cursor:pointer;white-space:nowrap}
-button:hover{filter:brightness(1.1)}
-button:focus-visible{outline:2px solid var(--amber-hot);outline-offset:2px}
-button.ghost{background:transparent;color:var(--mute);border:1px solid var(--edge)}
-button.ghost:hover{color:var(--amber);border-color:var(--amber);filter:none}
+  background:rgba(4,14,22,.9);border:1px solid var(--edge);padding:10px 12px;
+  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+#cmd::placeholder{color:#3d6076}
+#cmd:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--cyan)}
 
-/* --- Tabs: nur Telefon --- */
-.tabs{display:none;grid-column:1/-1;gap:6px}
-.tabs button{flex:1 1 0;padding:9px 4px;font-size:10px;letter-spacing:.1em;
-  background:rgba(8,15,26,.90);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
-.tabs button[aria-selected="true"]{color:var(--amber);border-color:var(--amber)}
-
-@media (max-width:900px){
-  #hud{grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr) auto;gap:10px;padding-inline:14px}
-  .tabs{display:flex;grid-row:2}
-  .center{grid-column:1;grid-row:3;justify-content:flex-end}
-  .col.left,.col.right{grid-column:1;grid-row:3}
-  .state .mode{font-size:22px}
+/* ── Telefon ───────────────────────────────────────────────── */
+.tabs{display:none;gap:5px;flex:none}
+.tabs button{flex:1 1 0;padding:7px 3px;font-size:9.5px;letter-spacing:.1em}
+@media (max-width:980px){
+  #vCmd,#vNet{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
+  .tabs{display:flex}
+  .col[hidden],.mid[hidden],#netWrap[hidden],#insp[hidden]{display:none!important}
+  .brand b{font-size:18px}.clock .t{font-size:19px}
+  .strip{display:none}
+  .status .md{font-size:19px;letter-spacing:.26em}
   .log{max-width:none}
-  .dock{grid-row:4}
-  .pane[hidden]{display:none!important}
+  .views button{padding:0 12px;font-size:11px;min-height:34px}
 }
-@media (min-width:901px){ .tabs{display:none} }
-
+@media (min-width:981px){ .tabs{display:none} }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
 </style>
 
 <div id="room"></div>
-<canvas id="orb" aria-hidden="true"></canvas>
+<canvas class="stage" id="core" aria-hidden="true"></canvas>
 
-<main id="hud">
-  <header class="top">
-    <div class="mark"><b>JARVIS</b><span>Core</span></div>
-    <div class="spacer"></div>
-    <span class="chip warn" id="link"><i class="dot"></i><span id="linkText">Kein Server — Demo-Ansicht</span></span>
-    <span class="chip" id="modelChip"><i class="dot"></i>Modell: nicht verbunden</span>
+<div id="app">
+  <header class="bar">
+    <div class="fr brand"><b>JARVIS</b><i>Lokaler Agent</i></div>
+    <div class="fr clock"><span class="t" id="clk">--:--</span><span class="d" id="dat">—</span></div>
+    <div class="fr strip" id="strip"></div>
+    <div class="sp"></div>
+    <div class="views" role="group" aria-label="Ansicht">
+      <button id="bCmd" aria-pressed="true">Kommando</button>
+      <button id="bNet" aria-pressed="false">Wissensnetz</button>
+    </div>
+    <div class="fr tag off" id="link"><i class="led"></i><span id="linkT">Kein Server</span></div>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Bereiche">
-    <button class="ghost" data-pane="center" aria-selected="true">Dialog</button>
-    <button class="ghost" data-pane="left">System</button>
-    <button class="ghost" data-pane="right">Gedächtnis</button>
-  </nav>
+  <nav class="tabs" id="tabs" role="group" aria-label="Bereich"></nav>
 
-  <div class="col left pane" data-pane="left">
-    <section class="panel">
-      <h2>Systemzustand</h2>
-      <div class="body">
-        <div class="tele">
-          <div class="row"><span class="k">CPU-Last</span><span class="v" id="vCpu">—</span>
-            <span class="bar"><i id="bCpu" style="width:0%"></i></span></div>
-          <div class="row"><span class="k">Arbeitsspeicher</span><span class="v" id="vRam">—</span>
-            <span class="bar"><i id="bRam" style="width:0%"></i></span></div>
-          <div class="row"><span class="k">GPU-Speicher</span><span class="v" id="vGpu">—</span>
-            <span class="bar cool"><i id="bGpu" style="width:0%"></i></span></div>
+  <!-- ══════════ KOMMANDO ══════════ -->
+  <main id="vCmd">
+    <div class="col" data-t="sys">
+      <section class="fr pan">
+        <h2>System<span class="rt" id="sysRt">ohne Verbindung</span></h2>
+        <div class="in">
+          <div class="gauges" id="gauges"></div>
+          <div class="spec">
+            <b>CPU</b> Ryzen 7 7800X3D<br>
+            <b>GPU</b> RX 7900 XTX · 24 GB<br>
+            <b>OS</b> Windows 11<br>
+            <b>Node</b> Raspberry Pi 4 · 2 GB
+          </div>
         </div>
-        <div class="hw">
-          Ryzen 7 7800X3D<br>Radeon RX 7900 XTX · 24 GB<br>Windows 11
-        </div>
-        <p class="note">Ohne Serververbindung stehen hier keine Messwerte. Die Balken
-        bleiben leer, statt Zahlen zu erfinden.</p>
-      </div>
-    </section>
-  </div>
-
-  <div class="center pane" data-pane="center">
-    <div class="state">
-      <p class="mode" id="mode">Bereit</p>
-      <p class="sub" id="sub">Warte auf Verbindung zum Jarvis-Server</p>
+      </section>
+      <section class="fr pan" style="flex:none">
+        <h2>Auslastung</h2>
+        <div class="wave" id="wave"></div>
+      </section>
     </div>
-    <div class="log" id="log" role="log" aria-live="polite"></div>
-  </div>
 
-  <div class="col right pane" data-pane="right" hidden>
-    <section class="panel">
-      <h2>Werkzeuge</h2>
-      <div class="body">
-        <div id="tools"></div>
-        <p class="note">Der Zustand jedes Werkzeugs wird vom Server gemeldet.
-        „Unbestätigt“ heißt: noch nicht am Code geprüft.</p>
+    <div class="mid" data-t="dlg">
+      <div class="status">
+        <p class="md" id="md">Bereit</p>
+        <p class="sd" id="sd">Warte auf Verbindung zum Jarvis-Server</p>
       </div>
-    </section>
-    <section class="panel">
-      <h2>Gedächtnis</h2>
-      <div class="body">
-        <div class="mem" id="mem"></div>
+      <div class="log" id="log" role="log" aria-live="polite"></div>
+    </div>
+
+    <div class="col" data-t="brain">
+      <section class="fr pan">
+        <h2>Modelle</h2>
+        <div class="in" id="brains"></div>
+      </section>
+      <section class="fr pan">
+        <h2>Werkzeuge</h2>
+        <div class="in">
+          <div id="tools"></div>
+          <p class="hint">„Unbestätigt“ heißt: noch nicht am Jarvis-Code geprüft.
+          Der Server meldet den echten Zustand.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ══════════ WISSENSNETZ ══════════ -->
+  <main id="vNet" hidden>
+    <div class="fr" id="netWrap" data-t="net">
+      <canvas id="net"></canvas>
+      <div class="netbar">
+        <input id="find" type="search" placeholder="Im Wissen suchen …" aria-label="Im Wissen suchen">
+        <button id="add">+ Erinnerung</button>
+        <button class="gh" id="join" aria-pressed="false">Verbinden</button>
+        <span class="fr tag" id="store" style="min-height:34px"><i class="led"></i><span id="storeT">lädt …</span></span>
       </div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <section class="fr pan" id="insp" data-t="insp">
+      <h2>Erinnerung<span class="rt" id="insRt"></span></h2>
+      <div class="in" id="insIn"></div>
     </section>
-  </div>
+  </main>
 
   <div class="dock">
     <form id="bar" autocomplete="off">
@@ -273,396 +374,655 @@ button.ghost:hover{color:var(--amber);border-color:var(--amber);filter:none}
              aria-label="Befehl an Jarvis">
       <button type="submit">Senden</button>
     </form>
-    <button class="ghost" id="play" type="button">Ablauf abspielen</button>
+    <button class="gh" id="play" type="button">Ablauf abspielen</button>
   </div>
-</main>
+</div>
 
 <script>
 (() => {
 "use strict";
 const $ = (id) => document.getElementById(id);
+const el = (t, c) => { const n = document.createElement(t); if(c) n.className = c; return n; };
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const phone = () => innerWidth < 981;
 
-/* ══════════════════════════════════════════════════════════════
-   1. Die Kugel — Canvas 2D, additiv, ohne Bibliothek.
-      Leiterbahnen laufen als Geodaeten ueber die Kugel und biegen
-      gelegentlich um 90°; daher der Platinen-Charakter.
-   ══════════════════════════════════════════════════════════════ */
-const cv = $("orb"), ctx = cv.getContext("2d", {alpha:true});
+/* ═══════════════════════════════════════════════════════════════
+   1  KERN. Die Kugel faerbt sich nach Zustand:
+      Cyan ruht · Gold denkt · Weissglut handelt · Rot scheitert.
+   ═══════════════════════════════════════════════════════════════ */
+const cv = $("core"), cx = cv.getContext("2d");
 const gl = document.createElement("canvas"), gx = gl.getContext("2d");
-let W=0, H=0, DPR=1, CX=0, CY=0, R=1;
+let W=0,H=0,DPR=1,CX=0,CY=0,RR=1;
 
-const rnd = (a,b) => a + Math.random()*(b-a);
-const norm = (v) => { const m=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/m,v[1]/m,v[2]/m]; };
-const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-function randUnit(){ const u=Math.random()*2-1, t=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u);
-  return [s*Math.cos(t), u, s*Math.sin(t)]; }
-function tangentAt(p, ang){
-  const a = Math.abs(p[1])<0.9 ? [0,1,0] : [1,0,0];
-  const t1 = norm(cross(a,p)), t2 = cross(p,t1);
-  return norm([t1[0]*Math.cos(ang)+t2[0]*Math.sin(ang),
-               t1[1]*Math.cos(ang)+t2[1]*Math.sin(ang),
-               t1[2]*Math.cos(ang)+t2[2]*Math.sin(ang)]);
-}
-function step(p, d, a){                       // ein Schritt entlang der Geodaete
-  const c=Math.cos(a), s=Math.sin(a);
-  return { p: norm([p[0]*c+d[0]*s, p[1]*c+d[1]*s, p[2]*c+d[2]*s]),
-           d: norm([-p[0]*s+d[0]*c, -p[1]*s+d[1]*c, -p[2]*s+d[2]*c]) };
-}
-function turn(p, d, ang){                     // Drehung in der Tangentialebene
-  const c=Math.cos(ang), s=Math.sin(ang), k=cross(p,d);
-  return norm([d[0]*c+k[0]*s, d[1]*c+k[1]*s, d[2]*c+k[2]*s]);
-}
+const unit = () => { const u=Math.random()*2-1,t=Math.random()*6.283,s=Math.sqrt(1-u*u);
+  return [s*Math.cos(t),u,s*Math.sin(t)]; };
+const nrm = (v) => { const m=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/m,v[1]/m,v[2]/m]; };
+const crs = (a,b) => [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const tan = (p,a) => { const x=Math.abs(p[1])<0.9?[0,1,0]:[1,0,0];
+  const t1=nrm(crs(x,p)),t2=crs(p,t1),c=Math.cos(a),s=Math.sin(a);
+  return nrm([t1[0]*c+t2[0]*s,t1[1]*c+t2[1]*s,t1[2]*c+t2[2]*s]); };
+const walk = (p,d,a) => { const c=Math.cos(a),s=Math.sin(a);
+  return {p:nrm([p[0]*c+d[0]*s,p[1]*c+d[1]*s,p[2]*c+d[2]*s]),
+          d:nrm([-p[0]*s+d[0]*c,-p[1]*s+d[1]*c,-p[2]*s+d[2]*c])}; };
+const bend = (p,d,a) => { const c=Math.cos(a),s=Math.sin(a),k=crs(p,d);
+  return nrm([d[0]*c+k[0]*s,d[1]*c+k[1]*s,d[2]*c+k[2]*s]); };
 
-// CLS 0 = Bernstein, 1 = Glut, 2 = heisser Faden
-let SEG=[], CLS=[], DOT=[], DCL=[];
+let SEG,CLS,DOT,DCL;
 function build(dense){
-  SEG=[]; CLS=[]; DOT=[]; DCL=[];
-  const traces = dense ? 168 : 96;
-  for(let t=0;t<traces;t++){
-    const r = rnd(0.86,1.14);
-    let p = randUnit(), d = tangentAt(p, Math.random()*Math.PI*2);
-    const n = 6 + (Math.random()*24|0), len = rnd(0.028,0.072);
-    const cls = Math.random()<0.16 ? 2 : (Math.random()<0.55 ? 0 : 1);
-    for(let i=0;i<n;i++){
-      const q = step(p,d,len);
-      SEG.push(p[0]*r,p[1]*r,p[2]*r, q.p[0]*r,q.p[1]*r,q.p[2]*r); CLS.push(cls);
+  const S=[],C=[],D=[],E=[];
+  for(let t=0,n=dense?176:104;t<n;t++){
+    const r=0.86+Math.random()*0.28;
+    let p=unit(), d=tan(p,Math.random()*6.283);
+    const steps=6+(Math.random()*24|0), len=0.028+Math.random()*0.046;
+    const c=Math.random()<0.16?2:(Math.random()<0.55?0:1);
+    for(let i=0;i<steps;i++){
+      const q=walk(p,d,len);
+      S.push(p[0]*r,p[1]*r,p[2]*r,q.p[0]*r,q.p[1]*r,q.p[2]*r); C.push(c);
       p=q.p; d=q.d;
-      const u = Math.random();
-      if(u<0.20) d = turn(p,d,(Math.random()<0.5?1:-1)*Math.PI/2);
-      else if(u<0.30) d = turn(p,d,rnd(-0.8,0.8));
-      if(Math.random()<0.13){ DOT.push(p[0]*r,p[1]*r,p[2]*r); DCL.push(cls); }
+      const u=Math.random();
+      if(u<0.20) d=bend(p,d,(Math.random()<0.5?1:-1)*Math.PI/2);
+      else if(u<0.30) d=bend(p,d,(Math.random()-0.5)*1.6);
+      if(Math.random()<0.13){ D.push(p[0]*r,p[1]*r,p[2]*r); E.push(c); }
     }
-    if(Math.random()<0.5){                     // radialer Dorn nach aussen
-      const r2 = r + rnd(0.07,0.26);
-      SEG.push(p[0]*r,p[1]*r,p[2]*r, p[0]*r2,p[1]*r2,p[2]*r2); CLS.push(2);
-      DOT.push(p[0]*r2,p[1]*r2,p[2]*r2); DCL.push(2);
-    }
-  }
-  for(let k=0;k<6;k++){                        // grosse Ringe wie in der Vorlage
-    const ax = randUnit(), r = rnd(0.90,1.10);
-    const b1 = tangentAt(ax,0), b2 = cross(ax,b1);
-    const N = 150, cls = k<2 ? 2 : 0;
-    for(let i=0;i<N;i++){
-      const a1=i/N*Math.PI*2, a2=(i+1)/N*Math.PI*2;
-      if(Math.random()<0.24) continue;         // Luecken -> kein sauberer Kreis
-      SEG.push((b1[0]*Math.cos(a1)+b2[0]*Math.sin(a1))*r,(b1[1]*Math.cos(a1)+b2[1]*Math.sin(a1))*r,(b1[2]*Math.cos(a1)+b2[2]*Math.sin(a1))*r,
-               (b1[0]*Math.cos(a2)+b2[0]*Math.sin(a2))*r,(b1[1]*Math.cos(a2)+b2[1]*Math.sin(a2))*r,(b1[2]*Math.cos(a2)+b2[2]*Math.sin(a2))*r);
-      CLS.push(cls);
+    if(Math.random()<0.5){
+      const r2=r+0.07+Math.random()*0.19;
+      S.push(p[0]*r,p[1]*r,p[2]*r,p[0]*r2,p[1]*r2,p[2]*r2); C.push(2);
+      D.push(p[0]*r2,p[1]*r2,p[2]*r2); E.push(2);
     }
   }
-  SEG=Float32Array.from(SEG); DOT=Float32Array.from(DOT);
-}
-
-function resize(){
-  DPR = Math.min(devicePixelRatio||1, 2);
-  W = innerWidth; H = innerHeight;
-  cv.width = W*DPR|0; cv.height = H*DPR|0;
-  gl.width = (W*DPR/3)|0; gl.height = (H*DPR/3)|0;
-  const phone = W < 901;
-  CX = W/2; CY = phone ? H*0.33 : H*0.5;
-  R  = phone ? Math.min(W,H)*0.33 : Math.min(W,H)*0.40;
-}
-
-const RGB = [[255,178,36],[255,122,28],[255,232,176]];
-const bucket = [];                              // 3 Klassen × 3 Tiefen
-for(let i=0;i<9;i++) bucket.push([]);
-const dotB = [[],[],[]];
-
-let rx=0.34, ry=0, spin=0.0016, warm=0.85, warmT=0.85, tint=0, pulses=[];
-
-function frame(now){
-  if(!reduce) ry += spin;
-  warm += (warmT-warm)*0.07;
-  for(let i=pulses.length-1;i>=0;i--){ pulses[i]+=0.016; if(pulses[i]>1.9) pulses.splice(i,1); }
-
-  const cx1=Math.cos(rx), sx1=Math.sin(rx), cy1=Math.cos(ry), sy1=Math.sin(ry);
-  for(const b of bucket) b.length=0;
-  for(const b of dotB) b.length=0;
-
-  const F=3.1;
-  const put=(arr,i,out)=>{
-    const x=arr[i], y=arr[i+1], z=arr[i+2];
-    const x1 = x*cy1 + z*sy1, z1 = -x*sy1 + z*cy1;
-    const y2 = y*cx1 - z1*sx1, z2 = y*sx1 + z1*cx1;
-    const k = F/(F-z2);
-    out[0]=CX+x1*R*k; out[1]=CY+y2*R*k; out[2]=z2;
-  };
-  const A=[0,0,0], B=[0,0,0];
-  for(let s=0,c=0; s<SEG.length; s+=6, c++){
-    put(SEG,s,A); put(SEG,s+3,B);
-    const z=(A[2]+B[2])*0.5;
-    const d = z>0.35 ? 2 : (z>-0.25 ? 1 : 0);
-    const b = bucket[CLS[c]*3+d];
-    b.push(A[0],A[1],B[0],B[1]);
+  for(let k=0;k<7;k++){                       // Ringe wie im Reaktor
+    const ax=unit(), r=0.90+Math.random()*0.20, b1=tan(ax,0), b2=crs(ax,b1);
+    const c=k<3?2:0;
+    for(let i=0;i<160;i++){
+      if(Math.random()<0.22) continue;
+      const a1=i/160*6.283,a2=(i+1)/160*6.283;
+      S.push((b1[0]*Math.cos(a1)+b2[0]*Math.sin(a1))*r,(b1[1]*Math.cos(a1)+b2[1]*Math.sin(a1))*r,(b1[2]*Math.cos(a1)+b2[2]*Math.sin(a1))*r,
+             (b1[0]*Math.cos(a2)+b2[0]*Math.sin(a2))*r,(b1[1]*Math.cos(a2)+b2[1]*Math.sin(a2))*r,(b1[2]*Math.cos(a2)+b2[2]*Math.sin(a2))*r);
+      C.push(c);
+    }
   }
-  for(let s=0,c=0; s<DOT.length; s+=3, c++){
-    put(DOT,s,A);
-    if(A[2] > -0.15) dotB[DCL[c]].push(A[0],A[1],A[2]);
-  }
-
-  // Halo: gleiche Geometrie in Drittelaufloesung, spaeter weichgezeichnet
-  gx.setTransform(DPR/3,0,0,DPR/3,0,0);
-  gx.clearRect(0,0,W,H);
-  gx.globalCompositeOperation="lighter";
-  gx.lineCap="round";
-  strokeAll(gx, 3.4, 0.62);
-  core(gx, 1.0);
-
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  ctx.clearRect(0,0,W,H);
-  ctx.globalCompositeOperation="lighter";
-  ctx.filter = "blur(7px)";
-  ctx.globalAlpha = 0.92*warm;
-  ctx.drawImage(gl, 0,0,W,H);
-  ctx.filter="none"; ctx.globalAlpha=1;
-
-  ctx.lineCap="round";
-  strokeAll(ctx, 1.0, 1.0);
-  dots(ctx);
-  core(ctx, 0.55);
-  rings(ctx);
-
-  requestAnimationFrame(frame);
+  SEG=Float32Array.from(S); CLS=C; DOT=Float32Array.from(D); DCL=E;
+}
+function fit(){
+  DPR=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight;
+  cv.width=W*DPR|0; cv.height=H*DPR|0;
+  gl.width=(W*DPR/3)|0; gl.height=(H*DPR/3)|0;
+  const ph=phone();
+  CX=ph?W/2:W*0.5; CY=ph?H*0.34:H*0.52;
+  RR=ph?Math.min(W,H)*0.31:Math.min(W,H)*0.385;
 }
 
-function strokeAll(c, lw, mul){
-  const depthA=[0.26,0.58,1.0];
+// Farbsaetze je Zustand: [Grundton, Nebenton, Spitzlicht]
+const PAL = {
+  idle:     [[40,190,235],[26,120,170],[190,240,255]],
+  listening:[[60,210,255],[36,150,200],[215,248,255]],
+  thinking: [[255,178,36],[255,122,28],[255,232,176]],
+  executing:[[255,214,120],[255,162,40],[255,252,232]],
+  failed:   [[255,77,94],[190,40,58],[255,190,196]]
+};
+let cur = PAL.idle.map((c) => c.slice()), tgt = PAL.idle;
+const bk=[]; for(let i=0;i<9;i++) bk.push([]);
+const dk=[[],[],[]];
+let rx=0.36, ry=0, spin=0.0015, lum=0.80, lumT=0.80, waves=[];
+
+function draw(){
+  if(!reduce) ry+=spin;
+  lum+=(lumT-lum)*0.06;
+  for(let i=0;i<3;i++) for(let j=0;j<3;j++) cur[i][j]+=(tgt[i][j]-cur[i][j])*0.07;
+  for(let i=waves.length-1;i>=0;i--){ waves[i]+=0.015; if(waves[i]>2) waves.splice(i,1); }
+
+  const ca=Math.cos(rx),sa=Math.sin(rx),cb=Math.cos(ry),sb=Math.sin(ry),F=3.1;
+  for(const b of bk) b.length=0;
+  for(const b of dk) b.length=0;
+  const A=[0,0,0],B=[0,0,0];
+  const prj=(arr,i,o)=>{ const x=arr[i],y=arr[i+1],z=arr[i+2];
+    const x1=x*cb+z*sb, z1=-x*sb+z*cb, y2=y*ca-z1*sa, z2=y*sa+z1*ca, k=F/(F-z2);
+    o[0]=CX+x1*RR*k; o[1]=CY+y2*RR*k; o[2]=z2; };
+  for(let s=0,c=0;s<SEG.length;s+=6,c++){
+    prj(SEG,s,A); prj(SEG,s+3,B);
+    const z=(A[2]+B[2])*0.5, d=z>0.35?2:(z>-0.25?1:0);
+    bk[CLS[c]*3+d].push(A[0],A[1],B[0],B[1]);
+  }
+  for(let s=0,c=0;s<DOT.length;s+=3,c++){ prj(DOT,s,A);
+    if(A[2]>-0.15) dk[DCL[c]].push(A[0],A[1],A[2]); }
+
+  gx.setTransform(DPR/3,0,0,DPR/3,0,0); gx.clearRect(0,0,W,H);
+  gx.globalCompositeOperation="lighter"; gx.lineCap="round";
+  lines(gx,3.3,0.60);
+
+  cx.setTransform(DPR,0,0,DPR,0,0); cx.clearRect(0,0,W,H);
+  cx.globalCompositeOperation="lighter";
+  cx.filter="blur(7px)"; cx.globalAlpha=0.9*lum; cx.drawImage(gl,0,0,W,H);
+  cx.filter="none"; cx.globalAlpha=1; cx.lineCap="round";
+  lines(cx,1.0,1.0); dots(cx); heart(cx); rings(cx);
+  requestAnimationFrame(draw);
+}
+function lines(c,lw,mul){
+  const dp=[0.24,0.56,1.0];
   for(let k=0;k<9;k++){
-    const arr=bucket[k]; if(!arr.length) continue;
-    const col=RGB[(k/3)|0], a=depthA[k%3]*mul*warm;
-    c.strokeStyle=`rgba(${col[0]},${Math.round(col[1]*(1-tint*0.55))},${Math.round(col[2]*(1-tint*0.7))},${a.toFixed(3)})`;
+    const a=bk[k]; if(!a.length) continue;
+    const col=cur[(k/3)|0], al=dp[k%3]*mul*lum;
+    c.strokeStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${al.toFixed(3)})`;
     c.lineWidth=lw*(k%3===2?1.15:0.85);
     c.beginPath();
-    for(let i=0;i<arr.length;i+=4){ c.moveTo(arr[i],arr[i+1]); c.lineTo(arr[i+2],arr[i+3]); }
+    for(let i=0;i<a.length;i+=4){ c.moveTo(a[i],a[i+1]); c.lineTo(a[i+2],a[i+3]); }
     c.stroke();
   }
 }
 function dots(c){
   for(let k=0;k<3;k++){
-    const arr=dotB[k]; if(!arr.length) continue;
-    const col=RGB[k];
-    c.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${(0.75*warm).toFixed(3)})`;
+    const a=dk[k]; if(!a.length) continue; const col=cur[k];
+    c.fillStyle=`rgba(${col[0]|0},${col[1]|0},${col[2]|0},${(0.72*lum).toFixed(3)})`;
     c.beginPath();
-    for(let i=0;i<arr.length;i+=3){
-      const r=(arr[i+2]>0.45?1.5:0.9);
-      c.moveTo(arr[i]+r,arr[i+1]); c.arc(arr[i],arr[i+1],r,0,6.283);
-    }
+    for(let i=0;i<a.length;i+=3){ const r=a[i+2]>0.45?1.5:0.9;
+      c.moveTo(a[i]+r,a[i+1]); c.arc(a[i],a[i+1],r,0,6.283); }
     c.fill();
   }
 }
-function core(c, k){
-  const r=R*0.30*k;
-  const g=c.createRadialGradient(CX,CY,0,CX,CY,r);
-  g.addColorStop(0,`rgba(255,244,214,${0.50*warm})`);
-  g.addColorStop(0.35,`rgba(255,176,60,${0.26*warm})`);
-  g.addColorStop(1,"rgba(255,120,20,0)");
+function heart(c){
+  const r=RR*0.30, g=c.createRadialGradient(CX,CY,0,CX,CY,r), h=cur[2], m=cur[0];
+  g.addColorStop(0,`rgba(${h[0]|0},${h[1]|0},${h[2]|0},${0.46*lum})`);
+  g.addColorStop(0.36,`rgba(${m[0]|0},${m[1]|0},${m[2]|0},${0.22*lum})`);
+  g.addColorStop(1,"rgba(0,0,0,0)");
   c.fillStyle=g; c.beginPath(); c.arc(CX,CY,r,0,6.283); c.fill();
 }
 function rings(c){
-  for(const t of pulses){
-    const a=Math.max(0,1-t/1.9);
-    c.strokeStyle=`rgba(255,232,176,${(a*0.5).toFixed(3)})`;
-    c.lineWidth=2.0*a+0.4;
-    c.beginPath(); c.arc(CX,CY,R*(0.55+t*0.85),0,6.283); c.stroke();
+  for(const t of waves){
+    const a=Math.max(0,1-t/2), h=cur[2];
+    c.strokeStyle=`rgba(${h[0]|0},${h[1]|0},${h[2]|0},${(a*0.46).toFixed(3)})`;
+    c.lineWidth=2*a+0.4;
+    c.beginPath(); c.arc(CX,CY,RR*(0.55+t*0.8),0,6.283); c.stroke();
   }
 }
+addEventListener("resize", () => { fit(); layout(); });
+fit(); build(!phone()); requestAnimationFrame(draw);
 
-addEventListener("resize", resize);
-resize(); build(innerWidth>=901); requestAnimationFrame(frame);
-
-/* ══════════════════════════════════════════════════════════════
-   2. Zustand. Die Kugel unterscheidet sichtbar zwischen
-      DENKEN (das Modell plant) und AUSFUEHREN (ein Werkzeug laeuft).
-      Genau diese Trennung macht eine erfundene Erfolgsmeldung sichtbar.
-   ══════════════════════════════════════════════════════════════ */
-const MODES = {
-  idle:     {label:"Bereit",      spin:0.0016, warm:0.85, tint:0},
-  listening:{label:"Höre zu",     spin:0.0024, warm:1.00, tint:0},
-  thinking: {label:"Denke",       spin:0.0052, warm:1.15, tint:0},
-  executing:{label:"Führe aus",   spin:0.0030, warm:1.40, tint:0},
-  failed:   {label:"Fehlgeschlagen", spin:0.0012, warm:0.95, tint:1}
+/* ═══════════════════════════════════════════════════════════════
+   2  ZUSTAND
+   ═══════════════════════════════════════════════════════════════ */
+const MODE = {
+  idle:{t:"Bereit",s:0.0015,l:0.80}, listening:{t:"Höre zu",s:0.0024,l:0.95},
+  thinking:{t:"Denke",s:0.0050,l:1.10}, executing:{t:"Führe aus",s:0.0030,l:1.40},
+  failed:{t:"Fehlgeschlagen",s:0.0010,l:0.90}
 };
-let pulseTimer = 0;
+let wTimer=0;
 function setMode(m, detail){
-  const c = MODES[m] || MODES.idle;
-  spin = reduce ? 0 : c.spin; warmT = c.warm; tint = c.tint;
-  $("mode").textContent = c.label;
-  $("sub").innerHTML = detail || "";
-  clearInterval(pulseTimer);
-  if(m === "executing" && !reduce){
-    pulses.push(0);
-    pulseTimer = setInterval(() => pulses.push(0), 620);
+  const c=MODE[m]||MODE.idle;
+  spin=reduce?0:c.s; lumT=c.l; tgt=PAL[m]||PAL.idle;
+  document.body.dataset.st=m;
+  $("md").textContent=c.t; $("sd").innerHTML=detail||"";
+  clearInterval(wTimer);
+  if(m==="executing"&&!reduce){ waves.push(0); wTimer=setInterval(()=>waves.push(0),600); }
+}
+setMode("idle","Warte auf Verbindung zum Jarvis-Server");
+
+/* ═══════════════════════════════════════════════════════════════
+   3  DIALOG — jede Aussage traegt ihren Beleg
+   ═══════════════════════════════════════════════════════════════ */
+const PROV={tool:["tool","Tool-Beleg"],talk:["talk","kein Tool"],fail:["fail","fehlgeschlagen"]};
+function say({who,text,prov="talk",demo=false,evidence=null,fail=false}){
+  const n=el("article","msg"+(who==="me"?" me":"")), tags=[];
+  if(demo) tags.push('<span class="pv demo">Demo</span>');
+  if(who!=="me"){ const p=PROV[prov]||PROV.talk; tags.push(`<span class="pv ${p[0]}">${p[1]}</span>`); }
+  n.innerHTML=`<div class="who">${who==="me"?"Du":"Jarvis"}${tags.join("")}</div><p>${text}</p>`
+    +(evidence?`<div class="ev${fail?" bad":""}">${evidence}</div>`:"");
+  $("log").appendChild(n); $("log").scrollTop=$("log").scrollHeight; return n;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4  INSTRUMENTE, UHR, MODELLE, WERKZEUGE
+   ═══════════════════════════════════════════════════════════════ */
+const GA=[["cpu","CPU","%"],["ram","RAM","GB"],["gpu","VRAM","GB"],["dsk","Disk","%"]];
+$("gauges").innerHTML=GA.map(([k,l,u])=>{
+  let ticks="";
+  for(let i=0;i<40;i++){ const a=(-220+i*(260/39))*Math.PI/180, r1=i%5===0?30:32.5;
+    ticks+=`<line x1="${(50+Math.cos(a)*r1).toFixed(1)}" y1="${(50+Math.sin(a)*r1).toFixed(1)}"
+      x2="${(50+Math.cos(a)*35).toFixed(1)}" y2="${(50+Math.sin(a)*35).toFixed(1)}"
+      stroke="#164a63" stroke-width="${i%5===0?1.4:0.7}"/>`; }
+  return `<div class="g"><svg viewBox="0 0 100 100" role="img" aria-label="${l}">
+    ${ticks}
+    <circle cx="50" cy="50" r="24" fill="none" stroke="#0e2d3e" stroke-width="5"/>
+    <circle id="arc_${k}" cx="50" cy="50" r="24" fill="none" stroke="#28d7ff" stroke-width="5"
+      stroke-linecap="butt" stroke-dasharray="0 151" transform="rotate(-220 50 50)"
+      style="filter:drop-shadow(0 0 4px rgba(40,215,255,.85))"/>
+    <text id="num_${k}" class="num" x="50" y="52" text-anchor="middle">—</text>
+    <text class="unit" x="50" y="63" text-anchor="middle">${u}</text>
+  </svg><span class="lab">${l}</span></div>`;
+}).join("");
+function gauge(k,pct,label){
+  const a=$("arc_"+k), n=$("num_"+k); if(!a) return;
+  const len=Math.max(0,Math.min(100,pct))/100*(260/360)*2*Math.PI*24;
+  a.setAttribute("stroke-dasharray",`${len.toFixed(1)} 151`);
+  n.textContent=label;
+}
+
+const bars=[]; for(let i=0;i<48;i++){ const b=el("i"); b.style.height="2px"; $("wave").appendChild(b); bars.push(b); }
+function pushWave(v){ bars.shift().remove(); const b=el("i");
+  b.style.height=Math.max(2,Math.min(100,v))+"%"; $("wave").appendChild(b); bars.push(b); }
+
+function tickClock(){
+  const d=new Date();
+  $("clk").textContent=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  $("dat").textContent=d.toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"short"});
+  const days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(), s=$("strip");
+  if(s.childElementCount!==days){ s.innerHTML="";
+    for(let i=1;i<=days;i++){ const n=el("span"); n.textContent=String(i).padStart(2,"0");
+      if(i===d.getDate()) n.className="now"; s.appendChild(n); } }
+}
+tickClock(); setInterval(tickClock,20000);
+
+const BRAINS=[
+  {role:"Gespräch · Planen · Gedächtnis",id:"—",via:"Ollama · direkt",vram:0,on:0},
+  {role:"Code · Dateien · Terminal",id:"—",via:"CodePilot → Claude Code → Ollama",vram:0,on:0}
+];
+function renderBrains(){
+  $("brains").innerHTML=BRAINS.map((b)=>`
+    <div class="brain" data-on="${b.on}">
+      <div class="role">${esc(b.role)}</div>
+      <div class="id">${esc(b.id)}</div>
+      <div class="via">${esc(b.via)}</div>
+      <div class="vr"><span>VRAM</span><span class="track"><i style="width:${b.vram}%"></i></span>
+        <span>${b.vram?b.vram+"%":"—"}</span></div>
+    </div>`).join("");
+}
+renderBrains();
+
+const TOOLS=[["write_file","unknown"],["read_file","unknown"],["run_command","unknown"],
+  ["get_system_info","unknown"],["get_cpu_info","unknown"],["get_ram_info","unknown"],
+  ["search_files","unknown"],["memory_search","none"],["codepilot_task","none"],
+  ["screen_capture","none"],["web_search","none"],["mouse_keyboard","none"]];
+const TS={ok:["✓","bereit"],unknown:["?","unbestätigt"],none:["·","fehlt"]};
+function renderTools(list){
+  $("tools").innerHTML=list.map(([n,s])=>{ const t=TS[s]||TS.none;
+    return `<div class="tl" data-s="${s}"><span class="gl">${t[0]}</span>
+      <span class="nm">${esc(n)}</span><span class="st">${t[1]}</span></div>`; }).join("");
+}
+renderTools(TOOLS);
+
+/* ═══════════════════════════════════════════════════════════════
+   5  WISSENSNETZ. Knoten sind Erinnerungen, Kanten ihre Bezuege.
+      Speicher: db-Fähigkeit (geraeteuebergreifend) → sonst
+      localStorage (nur dieses Geraet) → sonst fluechtig.
+   ═══════════════════════════════════════════════════════════════ */
+const CAT={
+  regel:   {n:"Regel",    c:"#ff4d5e"},
+  projekt: {n:"Projekt",  c:"#28d7ff"},
+  hardware:{n:"Hardware", c:"#7f8cff"},
+  vorliebe:{n:"Vorliebe", c:"#34e0a1"},
+  skill:   {n:"Skill",    c:"#ffb224"},
+  fakt:    {n:"Fakt",     c:"#9aa8b8"}
+};
+const SEED={
+  nodes:[
+    {id:"n1",label:"Grundregel",cat:"regel",text:"Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein Werkzeug tatsächlich lief und Erfolg zurückgab. Fehlt das Werkzeug: sagen, dass es fehlt. Schlägt es fehl: den echten Fehler nennen."},
+    {id:"n2",label:"Jarvis",cat:"projekt",text:"Persönlicher Assistent auf dem eigenen PC. Deutsch, Langzeitgedächtnis, bedient Programme und Dateien, sieht den Bildschirm, lernt Abläufe als Skills."},
+    {id:"n3",label:"CodePilot Remote",cat:"projekt",text:"Vorhandenes Projekt im Repo: startet echtes Claude Code gegen Ollama, mit MCP-Freigaben und Pfad-Containment. 5008 Zeilen, 77 Tests grün."},
+    {id:"n4",label:"Haupt-PC",cat:"hardware",text:"Ryzen 7 7800X3D, Radeon RX 7900 XTX mit 24 GB, Windows 11. Trägt beide Modelle, wenn das Chat-Modell klein genug bleibt."},
+    {id:"n5",label:"Raspberry Pi 4",cat:"hardware",text:"2 GB RAM, SD-Karte. Kandidat für Dauerdienste, nicht für das schwere Modell."},
+    {id:"n6",label:"Chat-Modell",cat:"projekt",text:"Ollama-Modell für Gespräch, Planung und Gedächtnisabruf. Muss verlässlich Tools aufrufen — genau daran scheiterte llama3.2:3b."},
+    {id:"n7",label:"Code-Modell",cat:"projekt",text:"qwen3-coder:30b, angesprochen über CodePilot statt direkt. Liefert Diffs und Testausgaben als überprüfbares Ergebnis."},
+    {id:"n8",label:"Deutsch",cat:"vorliebe",text:"Jarvis antwortet auf Deutsch."},
+    {id:"n9",label:"Lokal statt Cloud",cat:"vorliebe",text:"Läuft lokal. Keine laufenden API-Kosten, private Daten bleiben auf dem Rechner."},
+    {id:"n10",label:"Direct Action Router",cat:"skill",text:"Eindeutige Befehle werden deterministisch erkannt und direkt an das Werkzeug geleitet, statt sie dem Modell zu überlassen. Löste die Dateierstellung."},
+    {id:"n11",label:"llama3.2:3b zu klein",cat:"fakt",text:"Behauptete Erfolge ohne Tool-Aufruf: eine gaming.txt, die nie entstand, ein py_compile, das nie lief. Ursache des Misstrauens gegen reine Prompt-Lösungen."},
+    {id:"n12",label:"VRAM-Grenze",cat:"fakt",text:"24 GB. qwen3-coder:30b belegt in Q4 etwa 18 GB. Für ein zweites, dauerhaft geladenes Modell bleiben rund 5 GB."}
+  ],
+  links:[["n1","n11"],["n1","n10"],["n1","n2"],["n2","n6"],["n2","n7"],["n2","n8"],["n2","n9"],
+    ["n7","n3"],["n6","n11"],["n4","n12"],["n12","n7"],["n12","n6"],["n2","n5"],["n3","n4"],["n10","n6"]]
+};
+
+let MEM={nodes:[],links:[]}, sel=null, joinMode=false, joinFrom=null, filter="", hidden=new Set();
+let store={kind:"none",save:async()=>{}};
+
+async function openStore(){
+  // 1. db-Fähigkeit: gleicher Stand auf Handy und PC
+  try{
+    const db = await (window.claude?.use?.("db"));
+    if(db){
+      const ref = db.doc("jarvis/memory");
+      let first = true;
+      ref.onSnapshot((snap) => {
+        const d = snap.exists ? snap.data() : null;
+        if(d && Array.isArray(d.nodes)){ MEM = {nodes:d.nodes, links:d.links||[]}; }
+        else if(first){ MEM = clone(SEED); }
+        const fresh = first; first = false;
+        seedPositions(fresh); renderLegend(); paint();
+        // Nicht neu zeichnen, solange jemand im Formular tippt.
+        if(sel && !$("insIn").contains(document.activeElement)) inspect(sel);
+      }, () => setStore("lokal", "gerätelokal"));
+      store = {kind:"db", save: async () => {
+        try{ await ref.set({nodes:MEM.nodes, links:MEM.links, updatedAt:new Date().toISOString()}); }
+        catch(e){ setStore("lokal","Schreiben abgelehnt"); saveLocal(); }
+      }};
+      setStore("db","Handy + PC");
+      return;
+    }
+  }catch(e){}
+  // 2. Nur dieses Gerät
+  try{
+    const raw = localStorage.getItem("jarvis.memory");
+    MEM = raw ? JSON.parse(raw) : clone(SEED);
+  }catch(e){ MEM = clone(SEED); }
+  store = {kind:"local", save: saveLocal};
+  setStore("lokal","nur dieses Gerät");
+  seedPositions(); renderLegend(); paint();
+}
+function saveLocal(){ try{ localStorage.setItem("jarvis.memory", JSON.stringify(MEM)); }catch(e){} }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function setStore(kind,label){
+  const t=$("store"); t.className="fr tag "+(kind==="db"?"on":"off");
+  $("storeT").textContent=(kind==="db"?"Synchron · ":"Lokal · ")+label;
+}
+function persist(){ store.save(); paint(); }
+
+/* ── Kräftesimulation ──────────────────────────────────────── */
+const nc = $("net"), ncx = nc.getContext("2d");
+let NW=0,NH=0,NDPR=1,alpha=0,anim=0,drag=null,pan={x:0,y:0},pointer=null;
+const anchors = {};
+function seedPositions(restart){
+  const keys=Object.keys(CAT);
+  keys.forEach((k,i)=>{ const a=i/keys.length*6.283-1.2;
+    anchors[k]={x:Math.cos(a)*0.62,y:Math.sin(a)*0.62}; });
+  for(const n of MEM.nodes){
+    if(typeof n.x!=="number"||!isFinite(n.x)){
+      const a=anchors[n.cat]||{x:0,y:0};
+      n.x=a.x+(Math.random()-0.5)*0.3; n.y=a.y+(Math.random()-0.5)*0.3;
+    }
+    n.vx=0; n.vy=0;
+  }
+  if(restart!==false){ alpha=1; run(); } else paint();
+}
+function sim(){
+  const N=MEM.nodes, L=MEM.links;
+  for(let i=0;i<N.length;i++){
+    const a=N[i];
+    for(let j=i+1;j<N.length;j++){
+      const b=N[j]; let dx=b.x-a.x, dy=b.y-a.y, d2=dx*dx+dy*dy;
+      if(d2<1e-6){ dx=(Math.random()-0.5)*0.01; dy=(Math.random()-0.5)*0.01; d2=1e-4; }
+      const f=0.0016/d2, d=Math.sqrt(d2);
+      if(d<0.5){ a.vx-=dx/d*f; a.vy-=dy/d*f; b.vx+=dx/d*f; b.vy+=dy/d*f; }
+    }
+  }
+  for(const [x,y] of L){
+    const a=N.find((n)=>n.id===x), b=N.find((n)=>n.id===y); if(!a||!b) continue;
+    const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1e-4, f=(d-0.24)*0.045;
+    a.vx+=dx/d*f; a.vy+=dy/d*f; b.vx-=dx/d*f; b.vy-=dy/d*f;
+  }
+  for(const n of N){
+    const a=anchors[n.cat]||{x:0,y:0};
+    n.vx+=(a.x-n.x)*0.010; n.vy+=(a.y-n.y)*0.010;
+    n.vx-=n.x*0.004; n.vy-=n.y*0.004;
+    if(drag&&drag.id===n.id){ n.vx=0; n.vy=0; continue; }
+    n.x+=n.vx*alpha; n.y+=n.vy*alpha; n.vx*=0.84; n.vy*=0.84;
+  }
+  alpha*=0.992;
+}
+function nfit(){
+  const r=nc.getBoundingClientRect(); NDPR=Math.min(devicePixelRatio||1,2);
+  NW=r.width; NH=r.height; nc.width=NW*NDPR|0; nc.height=NH*NDPR|0;
+}
+const SC=()=>Math.min(NW,NH)*0.46;
+const toX=(x)=>NW/2+x*SC()+pan.x, toY=(y)=>NH/2+y*SC()+pan.y;
+function paint(){
+  if(!NW) nfit();
+  ncx.setTransform(NDPR,0,0,NDPR,0,0); ncx.clearRect(0,0,NW,NH);
+  const vis=(n)=>!hidden.has(n.cat)&&(!filter||
+    (n.label+" "+(n.text||"")).toLowerCase().includes(filter));
+  const map=new Map(MEM.nodes.map((n)=>[n.id,n]));
+
+  ncx.lineWidth=1;
+  for(const [x,y] of MEM.links){
+    const a=map.get(x), b=map.get(y); if(!a||!b||!vis(a)||!vis(b)) continue;
+    const lit=sel&&(sel===a.id||sel===b.id);
+    ncx.strokeStyle=lit?"rgba(40,215,255,.75)":"rgba(24,86,114,.5)";
+    ncx.lineWidth=lit?1.6:1;
+    ncx.beginPath(); ncx.moveTo(toX(a.x),toY(a.y)); ncx.lineTo(toX(b.x),toY(b.y)); ncx.stroke();
+  }
+  ncx.font='500 11px "IBM Plex Sans",sans-serif'; ncx.textAlign="center";
+  for(const n of MEM.nodes){
+    if(!vis(n)) continue;
+    const X=toX(n.x), Y=toY(n.y), c=(CAT[n.cat]||CAT.fakt).c;
+    const on=sel===n.id, jf=joinFrom===n.id, r=on||jf?9:6.5;
+    ncx.globalCompositeOperation="lighter";
+    const g=ncx.createRadialGradient(X,Y,0,X,Y,r*3.4);
+    g.addColorStop(0,c+"88"); g.addColorStop(1,"rgba(0,0,0,0)");
+    ncx.fillStyle=g; ncx.beginPath(); ncx.arc(X,Y,r*3.4,0,6.283); ncx.fill();
+    ncx.globalCompositeOperation="source-over";
+    ncx.fillStyle=c; ncx.beginPath(); ncx.arc(X,Y,r,0,6.283); ncx.fill();
+    if(on||jf){ ncx.strokeStyle=jf?"#ffb224":"#eafaff"; ncx.lineWidth=2;
+      ncx.beginPath(); ncx.arc(X,Y,r+4.5,0,6.283); ncx.stroke(); }
+    ncx.fillStyle=on?"#eafaff":"#8fb6c9";
+    ncx.fillText(n.label, X, Y+r+14);
   }
 }
+function run(){ cancelAnimationFrame(anim); const step=()=>{
+  if(alpha>0.004||drag){ sim(); paint(); anim=requestAnimationFrame(step); } else paint(); };
+  anim=requestAnimationFrame(step); }
 
-/* ══════════════════════════════════════════════════════════════
-   3. Verlauf. Jede Aussage traegt ihren Beleg.
-   ══════════════════════════════════════════════════════════════ */
-const PROV = {
-  tool: ["tool","Tool-Beleg"],
-  talk: ["talk","kein Tool"],
-  fail: ["fail","fehlgeschlagen"],
-  demo: ["demo","Demo"]
-};
-function say({who, text, prov="talk", demo=false, evidence=null, fail=false}){
-  const el = document.createElement("article");
-  el.className = "msg" + (who === "me" ? " me" : "");
-  const tags = [];
-  if(demo) tags.push(`<span class="prov demo">Demo</span>`);
-  if(who !== "me"){ const p = PROV[prov]; tags.push(`<span class="prov ${p[0]}">${p[1]}</span>`); }
-  el.innerHTML =
-    `<div class="who">${who === "me" ? "Du" : "Jarvis"}${tags.join("")}</div><p>${text}</p>` +
-    (evidence ? `<div class="evidence${fail?" fail":""}">${evidence}</div>` : "");
-  const log = $("log");
-  log.appendChild(el);
-  log.scrollTop = log.scrollHeight;
-  return el;
+/* ── Zeigerbedienung ───────────────────────────────────────── */
+function hit(px,py){
+  let best=null,bd=18*18;
+  for(const n of MEM.nodes){
+    if(hidden.has(n.cat)) continue;
+    const dx=toX(n.x)-px, dy=toY(n.y)-py, d=dx*dx+dy*dy;
+    if(d<bd){ bd=d; best=n; }
+  }
+  return best;
 }
+nc.addEventListener("pointerdown",(e)=>{
+  nc.setPointerCapture(e.pointerId);
+  const r=nc.getBoundingClientRect(), px=e.clientX-r.left, py=e.clientY-r.top;
+  const n=hit(px,py);
+  if(n){
+    if(joinMode){
+      if(!joinFrom){ joinFrom=n.id; paint(); }
+      else if(joinFrom!==n.id){ addLink(joinFrom,n.id); joinFrom=null; setJoin(false); }
+      return;
+    }
+    sel=n.id; drag={id:n.id}; inspect(n.id); alpha=Math.max(alpha,0.3); run();
+  } else { pointer={x:e.clientX,y:e.clientY,px:pan.x,py:pan.y}; sel=null; inspect(null); paint(); }
+});
+nc.addEventListener("pointermove",(e)=>{
+  const r=nc.getBoundingClientRect();
+  if(drag){
+    const n=MEM.nodes.find((k)=>k.id===drag.id); if(!n) return;
+    n.x=(e.clientX-r.left-NW/2-pan.x)/SC(); n.y=(e.clientY-r.top-NH/2-pan.y)/SC();
+    paint();
+  } else if(pointer){
+    pan.x=pointer.px+(e.clientX-pointer.x); pan.y=pointer.py+(e.clientY-pointer.y); paint();
+  }
+});
+const endDrag=()=>{ if(drag){ drag=null; persist(); alpha=Math.max(alpha,0.12); run(); } pointer=null; };
+nc.addEventListener("pointerup",endDrag);
+nc.addEventListener("pointercancel",endDrag);
 
-/* ══════════════════════════════════════════════════════════════
-   4. Werkzeuge. Status kommt vom Server — hier bewusst „unbestätigt“,
-      weil der Jarvis-Code noch nicht gegengelesen wurde.
-   ══════════════════════════════════════════════════════════════ */
-const TOOLS = [
-  ["write_file","unknown"], ["read_file","unknown"], ["run_command","unknown"],
-  ["get_system_info","unknown"], ["get_cpu_info","unknown"], ["get_ram_info","unknown"],
-  ["search_files","unknown"], ["screen_capture","none"], ["web_search","none"],
-  ["memory_search","none"], ["mouse_keyboard","none"]
-];
-const ST = {ok:["✓","bereit"], unknown:["?","unbestätigt"], none:["·","fehlt"]};
-$("tools").innerHTML = TOOLS.map(([n,s]) =>
-  `<div class="tool" data-s="${s}"><span class="glyph">${ST[s][0]}</span>
-   <span class="nm">${n}</span><span class="st">${ST[s][1]}</span></div>`).join("");
+/* ── Legende / Filter ──────────────────────────────────────── */
+function renderLegend(){
+  $("legend").innerHTML=Object.entries(CAT).map(([k,v])=>{
+    const n=MEM.nodes.filter((x)=>x.cat===k).length;
+    return `<button class="gh" data-cat="${k}" aria-pressed="${!hidden.has(k)}">
+      <span class="sw" style="background:${v.c}"></span>${v.n} ${n}</button>`; }).join("");
+  $("legend").querySelectorAll("button").forEach((b)=>b.addEventListener("click",()=>{
+    const k=b.dataset.cat; hidden.has(k)?hidden.delete(k):hidden.add(k);
+    b.setAttribute("aria-pressed",String(!hidden.has(k))); paint(); }));
+}
+$("find").addEventListener("input",(e)=>{ filter=e.target.value.trim().toLowerCase(); paint(); });
 
-$("mem").innerHTML = [
-  ["Hardware","Ryzen 7 7800X3D, RX 7900 XTX, Windows 11. Zweitgerät: Raspberry Pi 4, 2 GB.","dauerhaft"],
-  ["Grundregel","Erfolg nur melden, wenn ein Werkzeug gelaufen ist und Erfolg zurückgab.","dauerhaft"],
-  ["Projekt","Jarvis zieht nach jarvis/ und nutzt die CodePilot-Schichten mit.","16.09."],
-  ["Offen","Modellwechsel weg von llama3.2:3b — zu klein für verlässliches Tool-Calling.","16.09."]
-].map(([h,p,t]) => `<article><h3>${h}</h3><p>${p}</p><time>${t}</time></article>`).join("");
+/* ── Erinnerung bearbeiten ─────────────────────────────────── */
+function inspect(id){
+  const box=$("insIn"), n=MEM.nodes.find((x)=>x.id===id);
+  $("insRt").textContent=n?(CAT[n.cat]||CAT.fakt).n:"";
+  if(!n){
+    box.innerHTML=`<p class="empty">Einen Knoten antippen, um ihn zu bearbeiten.
+      „+ Erinnerung“ legt einen neuen an, „Verbinden“ zieht eine Kante zwischen zwei Knoten.</p>`;
+    return;
+  }
+  const opts=Object.entries(CAT).map(([k,v])=>
+    `<option value="${k}"${k===n.cat?" selected":""}>${v.n}</option>`).join("");
+  const nb=MEM.links.filter((l)=>l[0]===id||l[1]===id)
+    .map((l)=>{ const o=MEM.nodes.find((x)=>x.id===(l[0]===id?l[1]:l[0]));
+      return o?`<div class="linkrow"><span>${esc(o.label)}</span>
+        <button class="gh" data-un="${o.id}">trennen</button></div>`:""; }).join("");
+  box.innerHTML=`
+    <div class="field"><label for="fLab">Titel</label>
+      <input id="fLab" value="${esc(n.label)}"></div>
+    <div class="field"><label for="fCat">Art</label>
+      <select id="fCat">${opts}</select></div>
+    <div class="field"><label for="fTxt">Was Jarvis weiß</label>
+      <textarea id="fTxt">${esc(n.text||"")}</textarea></div>
+    <div class="field"><label>Verbunden mit</label>
+      ${nb||'<p class="empty">noch nichts</p>'}</div>
+    <div class="btnrow"><button id="fSave">Speichern</button>
+      <button class="dg" id="fDel">Löschen</button></div>`;
+  const save=()=>{ n.label=$("fLab").value.trim()||"Ohne Titel"; n.cat=$("fCat").value;
+    n.text=$("fTxt").value.trim(); persist(); renderLegend(); inspect(id); };
+  $("fSave").addEventListener("click",save);
+  $("fDel").addEventListener("click",()=>{
+    MEM.nodes=MEM.nodes.filter((x)=>x.id!==id);
+    MEM.links=MEM.links.filter((l)=>l[0]!==id&&l[1]!==id);
+    sel=null; persist(); renderLegend(); inspect(null); });
+  box.querySelectorAll("[data-un]").forEach((b)=>b.addEventListener("click",()=>{
+    const o=b.dataset.un;
+    MEM.links=MEM.links.filter((l)=>!((l[0]===id&&l[1]===o)||(l[0]===o&&l[1]===id)));
+    persist(); inspect(id); }));
+}
+function addLink(a,b){
+  if(!MEM.links.some((l)=>(l[0]===a&&l[1]===b)||(l[0]===b&&l[1]===a))) MEM.links.push([a,b]);
+  persist(); if(sel) inspect(sel);
+}
+function setJoin(on){ joinMode=on; joinFrom=null;
+  $("join").setAttribute("aria-pressed",String(on)); paint(); }
+$("join").addEventListener("click",()=>setJoin(!joinMode));
+$("add").addEventListener("click",()=>{
+  const id="n"+Date.now().toString(36);
+  const a=anchors.fakt||{x:0,y:0};
+  MEM.nodes.push({id,label:"Neue Erinnerung",cat:"fakt",text:"",
+    x:a.x+(Math.random()-0.5)*0.2,y:a.y+(Math.random()-0.5)*0.2,vx:0,vy:0});
+  sel=id; persist(); renderLegend(); inspect(id);
+  alpha=0.5; run(); if(phone()) showTab("insp");
+  setTimeout(()=>$("fLab")?.focus(),40);
+});
 
-/* ══════════════════════════════════════════════════════════════
-   5. Eingabe. Ohne Server wird nichts ausgefuehrt — und das
-      sagt die Oberflaeche auch genau so.
-   ══════════════════════════════════════════════════════════════ */
-let live = false;
-$("bar").addEventListener("submit", (e) => {
+/* ═══════════════════════════════════════════════════════════════
+   6  ANSICHTEN
+   ═══════════════════════════════════════════════════════════════ */
+const TABS={cmd:[["sys","System"],["dlg","Dialog"],["brain","Modelle"]],
+            net:[["net","Netz"],["insp","Erinnerung"]]};
+let view="cmd", tab="dlg";
+function showView(v){
+  view=v; $("vCmd").hidden=v!=="cmd"; $("vNet").hidden=v!=="net";
+  $("bCmd").setAttribute("aria-pressed",String(v==="cmd"));
+  $("bNet").setAttribute("aria-pressed",String(v==="net"));
+  tab=TABS[v][0][0]; if(v==="cmd") tab="dlg";
+  buildTabs(); layout();
+  if(v==="net"){ nfit(); alpha=Math.max(alpha,0.25); run(); }
+}
+function buildTabs(){
+  $("tabs").innerHTML=TABS[view].map(([k,l])=>
+    `<button class="gh" data-tab="${k}" aria-pressed="${k===tab}">${l}</button>`).join("");
+  $("tabs").querySelectorAll("button").forEach((b)=>
+    b.addEventListener("click",()=>showTab(b.dataset.tab)));
+}
+function showTab(k){ tab=k; buildTabs(); layout(); if(view==="net"&&k==="net"){ nfit(); paint(); } }
+function layout(){
+  const ph=phone();
+  document.querySelectorAll("[data-t]").forEach((n)=>{ n.hidden=ph&&n.dataset.t!==tab; });
+  if(view==="net"&&(!ph||tab==="net")){ nfit(); paint(); }
+}
+$("bCmd").addEventListener("click",()=>showView("cmd"));
+$("bNet").addEventListener("click",()=>showView("net"));
+buildTabs(); layout();
+
+/* ═══════════════════════════════════════════════════════════════
+   7  EINGABE — ohne Server wird nichts ausgefuehrt
+   ═══════════════════════════════════════════════════════════════ */
+let live=false;
+$("bar").addEventListener("submit",(e)=>{
   e.preventDefault();
-  const v = $("cmd").value.trim(); if(!v) return;
-  $("cmd").value = "";
-  say({who:"me", text: escapeHtml(v)});
+  const v=$("cmd").value.trim(); if(!v) return;
+  $("cmd").value="";
+  if(view!=="cmd") showView("cmd");
+  say({who:"me",text:esc(v)});
   if(!live){
     setMode("failed");
-    say({who:"jarvis", prov:"fail",
+    say({who:"jarvis",prov:"fail",
       text:"Kein Jarvis-Server verbunden. Der Befehl wurde <b>nicht</b> ausgeführt.",
-      evidence:"kein Tool-Aufruf · kein Ergebnis · keine Änderung auf der Festplatte", fail:true});
-    setTimeout(() => setMode("idle","Warte auf Verbindung zum Jarvis-Server"), 2200);
+      evidence:"kein Tool-Aufruf · kein Ergebnis · keine Änderung auf der Festplatte",fail:true});
+    setTimeout(()=>setMode("idle","Warte auf Verbindung zum Jarvis-Server"),2200);
   }
 });
-function escapeHtml(s){ return s.replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
-/* --- Vorfuehrung: beide Faelle, die frueher schiefgingen --- */
-const SCRIPTS = [
-  {
-    ask: "Erstelle auf dem Desktop eine Datei notizen.txt mit meiner Einkaufsliste.",
-    plan: "wähle Werkzeug <b>write_file</b>",
-    tool: "write_file",
-    run: "schreibe C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt",
-    ok: true,
-    text: "Die Datei <code>notizen.txt</code> liegt auf dem Desktop.",
-    ev: "write_file → <b>success=true</b> · C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt · 84 Bytes · 41 ms"
-  },
-  {
-    ask: "Mach einen Screenshot und sag mir, was offen ist.",
-    plan: "suche Werkzeug für Bildschirmaufnahme",
-    tool: null,
-    run: null,
-    ok: false,
-    text: "Das kann ich aktuell noch nicht ausführen, weil mir dafür kein Tool zur Verfügung steht.",
-    ev: "screen_capture → <b>nicht registriert</b> · kein Aufruf abgesetzt"
-  }
+const SCR=[
+  {ask:"Erstelle auf dem Desktop eine Datei notizen.txt mit meiner Einkaufsliste.",
+   plan:"Chat-Modell wählt <b>write_file</b>",tool:"write_file",
+   run:"schreibe C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt",
+   text:"Die Datei <code>notizen.txt</code> liegt auf dem Desktop.",
+   ev:"write_file → <b>success=true</b> · C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt · 84 Bytes · 41 ms",prov:"tool"},
+  {ask:"Bau in meinem Repo einen Test für die Pfadprüfung und lass ihn laufen.",
+   plan:"Aufgabe ist Code → weiterreichen an <b>codepilot_task</b>",tool:"codepilot_task",
+   run:"qwen3-coder:30b über Claude Code · 3 Werkzeugaufrufe",
+   text:"Test geschrieben und ausgeführt: <code>test_paths.py</code>, 4 Fälle, alle grün.",
+   ev:"codepilot_task → <b>success=true</b> · +38 −0 in tests/test_paths.py · pytest: 4 passed · 6,2 s",prov:"tool"},
+  {ask:"Mach einen Screenshot und sag mir, was offen ist.",
+   plan:"suche Werkzeug für Bildschirmaufnahme",tool:null,run:null,
+   text:"Das kann ich aktuell noch nicht ausführen, weil mir dafür kein Tool zur Verfügung steht.",
+   ev:"screen_capture → <b>nicht registriert</b> · kein Aufruf abgesetzt",prov:"fail"}
 ];
-let si = 0, playing = false;
-$("play").addEventListener("click", () => {
-  if(playing) return; playing = true;
-  const s = SCRIPTS[si % SCRIPTS.length]; si++;
-  $("play").disabled = true;
-  say({who:"me", text: s.ask});
-  setMode("thinking", s.plan);
-  setTimeout(() => {
+let si=0, busy=false;
+$("play").addEventListener("click",()=>{
+  if(busy) return; busy=true; $("play").disabled=true;
+  if(view!=="cmd") showView("cmd");
+  const s=SCR[si++%SCR.length];
+  say({who:"me",text:s.ask});
+  setMode("thinking",s.plan);
+  const idle=()=>setMode("idle","Warte auf Verbindung zum Jarvis-Server");
+  setTimeout(()=>{
     if(s.tool){
-      setMode("executing", `<b>${s.tool}</b> · ${s.run}`);
-      setTimeout(() => {
-        setMode("idle","Warte auf Verbindung zum Jarvis-Server");
-        say({who:"jarvis", prov:"tool", demo:true, text:s.text, evidence:s.ev});
-        playing = false; $("play").disabled = false;
-      }, 1500);
+      setMode("executing",`<b>${s.tool}</b> · ${s.run}`);
+      let k=0; const w=setInterval(()=>pushWave(30+Math.random()*60),140);
+      setTimeout(()=>{ clearInterval(w); idle();
+        say({who:"jarvis",prov:s.prov,demo:true,text:s.text,evidence:s.ev});
+        busy=false; $("play").disabled=false; },1800);
     } else {
-      setMode("idle","Warte auf Verbindung zum Jarvis-Server");
-      say({who:"jarvis", prov:"fail", demo:true, text:s.text, evidence:s.ev, fail:true});
-      playing = false; $("play").disabled = false;
+      idle(); say({who:"jarvis",prov:"fail",demo:true,text:s.text,evidence:s.ev,fail:true});
+      busy=false; $("play").disabled=false;
     }
-  }, 1400);
+  },1500);
 });
 
-/* --- Reiter auf dem Telefon --- */
-const panes = [...document.querySelectorAll(".pane")];
-document.querySelectorAll(".tabs button").forEach((b) => {
-  b.addEventListener("click", () => {
-    document.querySelectorAll(".tabs button").forEach((o) => o.setAttribute("aria-selected", String(o === b)));
-    panes.forEach((p) => { p.hidden = p.dataset.pane !== b.dataset.pane; });
-  });
-});
-function layout(){
-  const phone = innerWidth < 901;
-  panes.forEach((p) => { p.hidden = phone ? p.dataset.pane !== currentTab() : false; });
-}
-function currentTab(){
-  const b = document.querySelector('.tabs button[aria-selected="true"]');
-  return b ? b.dataset.pane : "center";
-}
-addEventListener("resize", layout);
-layout();
-
-/* ══════════════════════════════════════════════════════════════
-   6. Schnittstelle fuer den echten Server.
-      Der Backend-Adapter ruft nur diese vier Funktionen auf.
-   ══════════════════════════════════════════════════════════════ */
-window.JARVIS = {
-  connect(info){
-    live = true;
-    $("link").className = "chip live";
-    $("linkText").textContent = "Verbunden · " + (info?.host || "localhost");
-    $("modelChip").textContent = "Modell: " + (info?.model || "unbekannt");
-    setMode("idle", "Bereit");
-  },
-  disconnect(){
-    live = false;
-    $("link").className = "chip warn";
-    $("linkText").textContent = "Kein Server — Demo-Ansicht";
-    $("modelChip").textContent = "Modell: nicht verbunden";
-    setMode("idle", "Warte auf Verbindung zum Jarvis-Server");
-  },
-  state: setMode,
-  message: say,
+/* ═══════════════════════════════════════════════════════════════
+   8  SCHNITTSTELLE fuer den echten Jarvis-Server
+   ═══════════════════════════════════════════════════════════════ */
+window.JARVIS={
+  connect(i){ live=true;
+    $("link").className="fr tag on"; $("linkT").textContent="Verbunden · "+(i?.host||"localhost");
+    $("sysRt").textContent="live"; setMode("idle","Bereit"); },
+  disconnect(){ live=false;
+    $("link").className="fr tag off"; $("linkT").textContent="Kein Server";
+    $("sysRt").textContent="ohne Verbindung";
+    setMode("idle","Warte auf Verbindung zum Jarvis-Server"); },
+  state:setMode, message:say,
   telemetry(t){
-    const set = (v,b,txt,pct) => { $(v).textContent = txt; $(b).style.width = Math.max(0,Math.min(100,pct)) + "%"; };
-    if(t.cpu != null) set("vCpu","bCpu", t.cpu.toFixed(0)+" %", t.cpu);
-    if(t.ram) set("vRam","bRam", `${t.ram.used} / ${t.ram.total} GB`, t.ram.used/t.ram.total*100);
-    if(t.gpu) set("vGpu","bGpu", `${t.gpu.used} / ${t.gpu.total} GB`, t.gpu.used/t.gpu.total*100);
+    if(t.cpu!=null){ gauge("cpu",t.cpu,Math.round(t.cpu)); pushWave(t.cpu); }
+    if(t.ram) gauge("ram",t.ram.used/t.ram.total*100,t.ram.used.toFixed(0));
+    if(t.gpu) gauge("gpu",t.gpu.used/t.gpu.total*100,t.gpu.used.toFixed(0));
+    if(t.disk!=null) gauge("dsk",t.disk,Math.round(t.disk));
   },
-  tools(list){
-    $("tools").innerHTML = list.map(({name,status}) =>
-      `<div class="tool" data-s="${status}"><span class="glyph">${(ST[status]||ST.none)[0]}</span>
-       <span class="nm">${name}</span><span class="st">${(ST[status]||ST.none)[1]}</span></div>`).join("");
-  }
+  models(list){ list.forEach((m,i)=>{ if(!BRAINS[i]) return;
+    BRAINS[i].id=m.id||"—"; BRAINS[i].vram=m.vram||0; BRAINS[i].on=m.loaded?1:0;
+    if(m.via) BRAINS[i].via=m.via; }); renderBrains(); },
+  tools(list){ renderTools(list.map((t)=>[t.name,t.status])); },
+  memory(next){ if(next&&Array.isArray(next.nodes)){ MEM=next; seedPositions(); renderLegend(); paint(); } },
+  get memoryState(){ return clone({nodes:MEM.nodes,links:MEM.links}); }
 };
 
-say({who:"jarvis", prov:"talk",
-  text:"Oberfläche geladen. Es besteht <b>keine</b> Verbindung zu einem Jarvis-Server — "
-     + "ich kann daher nichts auf deinem Rechner tun. Mit „Ablauf abspielen“ siehst du, "
-     + "wie ein echter Vorgang aussieht: erst <b>Denke</b>, dann <b>Führe aus</b>, dann ein Ergebnis mit Beleg."});
+openStore();
+say({who:"jarvis",prov:"talk",
+  text:"Kommandozentrale geladen. Es besteht <b>keine</b> Verbindung zu einem Jarvis-Server — "
+     +"ich kann daher nichts auf deinem Rechner tun. „Ablauf abspielen“ zeigt dreimal, "
+     +"wie ein echter Vorgang aussieht: eine Datei, ein Coding-Auftrag über CodePilot, "
+     +"und ein Fall, für den das Werkzeug fehlt."});
 })();
 </script>
 </body>

@@ -118,13 +118,27 @@ bauen, sondern dessen bewährte Schichten mitbenutzen.** Jarvis zieht nach
 
 ---
 
-## 5. Offene Punkte
+## 5. Getroffene Entscheidungen
+
+1. **Zwei Modelle statt einem.** Ein Chat-Modell für Gespräch, Planung und
+   Gedächtnis; `qwen3-coder:30b` für Code, angesprochen über CodePilot Remote
+   statt direkt. Begründung und VRAM-Rechnung in `../jarvis/README.md`.
+2. **Der Coding-Agent ist ein Werkzeug.** `codepilot_task` meldet Erfolg genau
+   dann, wenn CodePilot einen Diff und eine Testausgabe geliefert hat. Damit
+   gilt die Grundregel auch eine Ebene höher.
+3. **Die Oberfläche ist eine Webseite**, keine zwei Apps — damit läuft dieselbe
+   Bedienung auf PC und Handy. Liegt in `../jarvis/web/`.
+4. **Farbe trägt Bedeutung.** Cyan = Ruhezustand, Gold = das Modell denkt,
+   Weißglut = ein Werkzeug läuft tatsächlich, Rot = fehlgeschlagen. Ein
+   erfundener Erfolg hat kein Weißglut und keine Druckwellen.
+
+## 6. Offene Punkte
 
 1. **Jarvis-Code fehlt.** Er wird vom Windows-PC nach `Samu2134213412/jarvis`
    gepusht und dann hier angebunden und analysiert.
 2. **Die Übergabe bricht in Abschnitt 6 ab** (mitten in `search_file_`). Die
    vollständige Tool-Liste und alle folgenden Abschnitte fehlen noch.
-3. **Modellwahl ist ungeklärt.** `llama3.2:3b` ist für zuverlässiges Tool-Calling
-   zu klein — das ist die Ursache des Halluzinationsproblems, nicht nur ein
-   Symptom. Auf einer RX 7900 XTX (24 GB) ist deutlich mehr möglich. Zu
-   entscheiden, sobald der Code vorliegt.
+3. **Welches Chat-Modell** konkret — zu entscheiden, sobald klar ist, welche
+   Werkzeugschnittstelle der alte Code erwartet.
+4. **Jarvis-Server fehlt vollständig.** Ohne ihn führt die Oberfläche nichts aus
+   und sagt das auch so.
