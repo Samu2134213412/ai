@@ -50,7 +50,10 @@ class Config:
 
     # -- Modell -------------------------------------------------------------
     ollama_url: str = "http://127.0.0.1:11434"
-    model: str = "qwen2.5:7b"
+    #: Mittelweg auf 24 GB VRAM: bleibt nicht zwingend neben dem Coder geladen,
+    #: aber deutlich verlässlicher bei Werkzeugaufrufen als ein 3B-Modell.
+    #: Siehe jarvis/README.md für die Abwägung.
+    model: str = "qwen3:14b"
     context_length: int = 8192
     temperature: float = 0.3
     max_tool_rounds: int = 6

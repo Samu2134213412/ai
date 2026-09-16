@@ -194,6 +194,58 @@ async def test_ollama_ausfall_wird_als_fehler_gemeldet_nicht_verschwiegen(
     assert "nicht erreichbar" in reply.text
 
 
+# ═════════════════════════════════════════════════════════ Code-Modus
+async def test_code_modus_geht_direkt_ans_werkzeug_ohne_modell_zu_fragen(
+        config, store, registry, fake_ollama):
+    """Der Code-Modus ist bewusst vom Nutzer gewählt -- eindeutiger als jedes
+    erkannte Muster im Text. Er geht daher immer direkt an codepilot_task,
+    ohne das Chat-Modell überhaupt zu befragen."""
+    from jarvis.tools.base import Tool, ToolResult
+    registry.add(Tool("codepilot_task", "", {"type": "object", "properties": {}},
+                      lambda task, project_id="": ToolResult(
+                          tool="codepilot_task", ok=True,
+                          summary="CodePilot fertig: 1 Datei geändert",
+                          evidence={"dateien": 1})))
+    model = fake_ollama([ChatTurn(text="darf nie gebraucht werden")])
+    agent = make_agent(config, store, registry, model)
+
+    reply = await agent.handle_code("Schreib einen Test für die Pfadprüfung")
+
+    assert model.calls == []
+    assert reply.provenance == guard.TOOL
+    assert reply.blocked is False
+    assert "CodePilot fertig" in reply.text
+
+
+async def test_code_modus_ohne_codepilot_ist_eine_ehrliche_absage(
+        config, store, registry, fake_ollama):
+    """registry hat standardmäßig kein codepilot_task, weil in der Test-
+    Konfiguration kein CodePilot eingerichtet ist."""
+    model = fake_ollama([])
+    agent = make_agent(config, store, registry, model)
+
+    reply = await agent.handle_code("Bau mir eine Funktion, die X macht")
+
+    assert model.calls == []
+    assert reply.provenance == guard.FAIL
+    assert "codepilot_task" in reply.text
+
+
+async def test_code_modus_meldet_einen_echten_fehlschlag_ehrlich(
+        config, store, registry, fake_ollama):
+    from jarvis.tools.base import Tool, ToolResult
+    registry.add(Tool("codepilot_task", "", {"type": "object", "properties": {}},
+                      lambda task, project_id="": ToolResult(
+                          tool="codepilot_task", ok=False,
+                          summary="CodePilot nicht erreichbar")))
+    agent = make_agent(config, store, registry, fake_ollama([]))
+
+    reply = await agent.handle_code("Bau was")
+
+    assert reply.provenance == guard.FAIL
+    assert "nicht erreichbar" in reply.text
+
+
 async def test_verlauf_bleibt_erhalten(config, store, registry, fake_ollama):
     model = fake_ollama([ChatTurn(text="Hallo."), ChatTurn(text="Ja.")])
     agent = make_agent(config, store, registry, model)

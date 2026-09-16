@@ -13,6 +13,8 @@ import contextlib
 import json
 from pathlib import Path
 
+from typing import Literal
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -30,6 +32,9 @@ TELEMETRY_SECONDS = 3.0
 
 class CommandIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=20000)
+    #: "code" geht immer direkt an codepilot_task, ohne das Chat-Modell zu
+    #: befragen -- der Nutzer hat den Modus bewusst gewählt.
+    mode: Literal["chat", "code"] = "chat"
 
 
 class GraphIn(BaseModel):
@@ -172,18 +177,19 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post("/api/command", dependencies=Guarded)
     async def command(body: CommandIn) -> dict:
         """Ein Zug über HTTP, für Skripte und zum Testen ohne WebSocket."""
-        reply = await run_turn(body.text)
+        reply = await run_turn(body.text, body.mode)
         return reply.as_event()
 
     # ------------------------------------------------------------- Ein Zug
-    async def run_turn(text: str) -> guard.Reply:
+    async def run_turn(text: str, mode: str = "chat") -> guard.Reply:
         if busy.locked():
             return guard.Reply(
                 text="Ich bin noch mit der vorigen Aufgabe beschäftigt.",
                 provenance=guard.TALK)
         async with busy:
-            await hub.send("message", {"who": "me", "text": text})
-            reply = await agent.handle(text)
+            await hub.send("message", {"who": "me", "text": text, "mode": mode})
+            reply = (await agent.handle_code(text) if mode == "code"
+                     else await agent.handle(text))
             await hub.send("message", {"who": "jarvis", **reply.as_event()})
             return reply
 
@@ -210,8 +216,9 @@ def create_app(config: Config | None = None) -> FastAPI:
                     continue
                 if payload.get("type") == "command":
                     text = str(payload.get("text") or "").strip()[:20000]
+                    mode = payload.get("mode") if payload.get("mode") in ("chat", "code") else "chat"
                     if text:
-                        asyncio.create_task(run_turn(text))
+                        asyncio.create_task(run_turn(text, mode))
                 elif payload.get("type") == "memory":
                     graph = payload.get("graph") or {}
                     if isinstance(graph, dict) and isinstance(graph.get("nodes"), list):

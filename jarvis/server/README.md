@@ -44,6 +44,18 @@ geht an den Agenten — im Zweifel greift der Router nicht.
 
 **Der Wächter zuletzt.** Er ist der Grund, warum dieses Projekt neu gebaut wurde.
 
+## Code-Modus
+
+Ein dritter Weg, neben Router und Agent: der Schalter „Code-Modus" in der
+Oberfläche. Ist er an, geht **jede** Nachricht direkt an `codepilot_task` —
+ohne Router, ohne Chat-Modell, ohne Interpretation.
+
+Das ist kein Sonderfall des Agenten, sondern bewusst ein eigener, einfacherer
+Pfad: der Nutzer hat den Modus selbst eingeschaltet, das ist die eindeutigste
+Aussage, die es geben kann — eindeutiger als jedes erkannte Muster im Text.
+Ist CodePilot nicht eingerichtet, kommt die ehrliche Absage statt eines
+Rateversuchs (`agent.handle_code`, `tests/test_agent.py`).
+
 ## Die Grundregel als Mechanismus
 
 > Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein
@@ -99,7 +111,7 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
   "host": "127.0.0.1",
   "port": 8770,
   "token": "",
-  "model": "qwen2.5:7b",
+  "model": "qwen3:14b",
   "ollama_url": "http://127.0.0.1:11434",
   "roots": ["C:\\Users\\DeinName\\Desktop"],
   "shell": {"enabled": false, "allowlist": [], "timeout": 60},

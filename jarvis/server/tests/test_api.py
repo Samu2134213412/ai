@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from jarvis.app import create_app
 from jarvis.config import Config
 from jarvis.ollama import ChatTurn, ToolCall
+from jarvis.tools.base import Tool, ToolResult
 
 
 @pytest.fixture
@@ -23,6 +24,13 @@ def client(config, monkeypatch, fake_ollama, workspace):
     ])
     app.state.agent.client = model
     app.state.model = model
+    # Ein gefälschtes codepilot_task, um den Code-Modus zu prüfen, ohne
+    # echtes CodePilot zu brauchen.
+    app.state.registry.add(Tool(
+        "codepilot_task", "", {"type": "object", "properties": {}},
+        lambda task, project_id="": ToolResult(
+            tool="codepilot_task", ok=True,
+            summary="CodePilot fertig: 1 Datei geändert", evidence={"dateien": 1})))
     with TestClient(app) as test_client:
         test_client.app_state = app.state
         yield test_client
@@ -94,6 +102,14 @@ def test_gedaechtnissuche(client):
 
 
 # ══════════════════════════════════════════════════════════════ Ein Zug
+def test_code_modus_ueber_http_geht_am_chat_modell_vorbei(client):
+    body = client.post("/api/command",
+                       json={"text": "bau was", "mode": "code"}).json()
+    assert body["provenance"] == "tool"
+    assert "CodePilot fertig" in body["text"]
+    assert body["evidence"][0]["tool"] == "codepilot_task"
+
+
 def test_kommando_ueber_http_liefert_beleg(client, workspace):
     body = client.post("/api/command", json={"text": "leg was an"}).json()
     assert body["provenance"] == "tool"
@@ -118,6 +134,21 @@ def test_websocket_meldet_zustand_und_antwort(client):
         assert "state" in kinds          # der Kern hat den Zustand gewechselt
         assert "tool.started" in kinds   # und ein Werkzeug lief wirklich
         assert message["provenance"] == "tool"
+
+
+def test_code_modus_ueber_websocket(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "command", "text": "bau was", "mode": "code"})
+        antwort = None
+        for _ in range(30):
+            frame = ws.receive_json()
+            if frame["type"] == "message" and frame.get("who") == "jarvis":
+                antwort = frame
+                break
+        assert antwort is not None
+        assert antwort["provenance"] == "tool"
+        assert "CodePilot fertig" in antwort["text"]
 
 
 def test_beide_geraete_sehen_denselben_zug(client):

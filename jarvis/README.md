@@ -98,7 +98,7 @@ Fertig und getestet (109 Tests):
 * Direct Action Router für eindeutige Befehle
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf
-* `codepilot_task` als Brücke zum Coding-Agenten
+* `codepilot_task` als Brücke zum Coding-Agenten, per Werkzeugaufruf oder über den Code-Modus-Schalter, der ihn direkt anspricht
 * WebSocket an alle Geräte gleichzeitig
 
 Offen:

@@ -77,6 +77,37 @@ class Agent:
         await self.emit("tool.finished", result.as_event())
         return result
 
+    # ---------------------------------------------------------- Code-Modus
+    async def handle_code(self, message: str) -> guard.Reply:
+        """Ein Zug im Code-Modus: geht immer direkt an ``codepilot_task``.
+
+        Kein Router, kein Chat-Modell, keine Interpretation. Der Nutzer hat den
+        Modus bewusst eingeschaltet — das ist die eindeutigste Aussage, die es
+        gibt, eindeutiger als jedes erkannte Muster im Text. Also wird hier
+        nicht geraten, sondern direkt das eine Werkzeug gerufen, das für Code
+        zuständig ist.
+        """
+        task = (message or "").strip()
+        if not task:
+            return guard.Reply(text="", provenance=guard.TALK)
+        if "codepilot_task" not in self.registry:
+            await self._state("idle")
+            reply = guard.Reply(
+                text=f"{guard.REFUSAL} (benötigt: codepilot_task — CodePilot "
+                     f"ist nicht eingerichtet, siehe jarvis.json unter 'codepilot')",
+                provenance=guard.FAIL)
+            self._remember(task, reply)
+            return reply
+
+        await self._state("executing", f"codepilot_task · {task[:70]}")
+        result = await self._run_tool("codepilot_task", {"task": task})
+        await self._state("failed" if not result.ok else "idle")
+        # Kein Modelltext im Spiel, also nichts zu beschönigen — die
+        # Zusammenfassung des Werkzeugs ist die Antwort.
+        reply = guard.verify("", [result])
+        self._remember(task, reply)
+        return reply
+
     # ------------------------------------------------------------------ Zug
     async def handle(self, message: str) -> guard.Reply:
         text = (message or "").strip()

@@ -385,6 +385,7 @@ button.dg:hover{background:var(--red);color:var(--void)}
   </main>
 
   <div class="dock">
+    <button class="gh" id="modeToggle" type="button" aria-pressed="false">Code-Modus</button>
     <form id="bar" autocomplete="off">
       <input id="cmd" name="cmd" type="text" placeholder="Befehl oder Frage an Jarvis …"
              aria-label="Befehl an Jarvis">
@@ -669,9 +670,10 @@ setMode("idle","Warte auf Verbindung zum Jarvis-Server");
    3  DIALOG — jede Aussage traegt ihren Beleg
    ═══════════════════════════════════════════════════════════════ */
 const PROV={tool:["tool","Tool-Beleg"],talk:["talk","kein Tool"],fail:["fail","fehlgeschlagen"]};
-function say({who,text,prov="talk",demo=false,evidence=null,fail=false}){
+function say({who,text,prov="talk",demo=false,evidence=null,fail=false,mode=null}){
   const n=el("article","msg"+(who==="me"?" me":"")), tags=[];
   if(demo) tags.push('<span class="pv demo">Demo</span>');
+  if(mode==="code") tags.push('<span class="pv tool">Code-Modus</span>');
   if(who!=="me"){ const p=PROV[prov]||PROV.talk; tags.push(`<span class="pv ${p[0]}">${p[1]}</span>`); }
   n.innerHTML=`<div class="who">${who==="me"?"Du":"Jarvis"}${tags.join("")}</div><p>${text}</p>`
     +(evidence?`<div class="ev${fail?" bad":""}">${evidence}</div>`:"");
@@ -1047,19 +1049,27 @@ buildTabs(); layout();
 /* ═══════════════════════════════════════════════════════════════
    7  EINGABE — ohne Server wird nichts ausgefuehrt
    ═══════════════════════════════════════════════════════════════ */
-let live=false;
+let live=false, codeMode=false;
+$("modeToggle").addEventListener("click",()=>{
+  codeMode=!codeMode;
+  $("modeToggle").setAttribute("aria-pressed",String(codeMode));
+  $("cmd").placeholder=codeMode
+    ? "Programmieraufgabe für CodePilot …"
+    : "Befehl oder Frage an Jarvis …";
+});
 $("bar").addEventListener("submit",(e)=>{
   e.preventDefault();
   const v=$("cmd").value.trim(); if(!v) return;
   $("cmd").value="";
   if(view!=="cmd") showView("cmd");
+  const mode=codeMode?"code":"chat";
   if(live && sock && sock.readyState === 1){
     // Der Server schickt die eigene Nachricht zurück, damit alle Geräte
     // denselben Verlauf sehen. Deshalb hier nichts lokal anhängen.
-    sock.send(JSON.stringify({type:"command", text:v}));
+    sock.send(JSON.stringify({type:"command", text:v, mode}));
     return;
   }
-  say({who:"me",text:esc(v)});
+  say({who:"me",text:esc(v),mode});
   if(!live){
     setMode("failed");
     say({who:"jarvis",prov:"fail",
@@ -1187,7 +1197,7 @@ function onFrame(m){
     case "message":
       say({who: m.who === "me" ? "me" : "jarvis", text: asHtml(m.text),
            prov: m.provenance || "talk", evidence: evidenceHtml(m.evidence),
-           fail: m.provenance === "fail"});
+           fail: m.provenance === "fail", mode: m.mode || null});
       break;
     case "tool.finished":
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
