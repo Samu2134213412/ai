@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Jarvis Core</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+</head>
+<body>
+<style>
+/* Jarvis Core — bewusst einfarbige dunkle HUD-Welt (kein Light-Theme).
+   Alle Farben explizit gesetzt, damit die Seite auf jedem Host-Grund haelt. */
+:root{
+  --void:#05080f;
+  --deep:#0a1220;
+  --steel:#0e1a2b;
+  --edge:#1b2b42;
+  --amber:#ffb224;
+  --amber-hot:#ffe6a6;
+  --ember:#ff7a1c;
+  --ice:#57c2e0;
+  --mute:#8496ad;
+  --text:#dbe6f3;
+  --ok:#3ecf8e;
+  --bad:#ff5f63;
+  --ui:"Chakra Petch",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  margin:0;background:var(--void);color:var(--text);
+  font-family:var(--body);font-size:14px;line-height:1.55;
+  overflow:hidden;-webkit-font-smoothing:antialiased;
+}
+*{box-sizing:border-box}
+
+/* --- Raum hinter der Kugel: dunkle Halle mit Lichtstreifen --- */
+#room{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(120% 80% at 50% 46%, rgba(255,140,30,.10), transparent 62%),
+    radial-gradient(90% 60% at 8% 12%, rgba(60,140,190,.16), transparent 70%),
+    radial-gradient(90% 60% at 94% 88%, rgba(40,110,160,.14), transparent 70%),
+    linear-gradient(180deg,#070c16 0%,#05080f 55%,#04070d 100%);
+}
+#room::after{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg,rgba(120,180,220,.05) 0 1px,transparent 1px 148px);
+  mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 78%);
+  -webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 78%);
+}
+#orb{position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:block}
+
+/* --- HUD-Gitter --- */
+#hud{position:relative;z-index:2;height:100%;display:grid;
+  grid-template-columns:clamp(240px,20vw,290px) 1fr clamp(250px,22vw,320px);
+  grid-template-rows:auto 1fr auto;
+  gap:14px;padding:12px clamp(16px,2vw,22px);
+  padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(12px + env(safe-area-inset-bottom,0px));
+}
+
+/* --- Kopfzeile --- */
+.top{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.mark{display:flex;align-items:baseline;gap:9px;font-family:var(--ui)}
+.mark b{font-size:19px;font-weight:700;letter-spacing:.20em;color:var(--amber-hot);
+  text-shadow:0 0 18px rgba(255,150,30,.55)}
+.mark span{font-size:10px;letter-spacing:.26em;color:var(--mute);text-transform:uppercase}
+.top .spacer{flex:1 1 auto}
+.chip{display:inline-flex;align-items:center;gap:7px;
+  font-family:var(--ui);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  padding:5px 11px;border:1px solid var(--edge);border-radius:2px;
+  background:rgba(10,18,32,.72);color:var(--mute);white-space:nowrap}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--mute);flex:none}
+.chip.warn{border-color:#5a4418;color:#f0c169;background:rgba(48,32,8,.6)}
+.chip.warn .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.chip.live{border-color:#1c5a42;color:var(--ok);background:rgba(8,38,28,.6)}
+.chip.live .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+
+/* --- Panels --- */
+.panel{border:1px solid var(--edge);border-radius:3px;
+  background:linear-gradient(180deg,rgba(14,26,43,.80),rgba(8,15,26,.72));
+  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+  display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.panel > h2{margin:0;padding:9px 12px;flex:none;
+  font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--mute);border-bottom:1px solid var(--edge);
+  display:flex;align-items:center;gap:8px}
+.panel > h2::before{content:"";width:3px;height:11px;background:var(--amber);flex:none;
+  box-shadow:0 0 9px rgba(255,178,36,.8)}
+.panel .body{padding:11px 12px;overflow-y:auto;overscroll-behavior:contain;flex:1 1 auto;min-height:0}
+.col{display:flex;flex-direction:column;gap:12px;min-height:0}
+.col.left{grid-column:1;grid-row:2}
+.col.right{grid-column:3;grid-row:2}
+
+/* --- Telemetrie --- */
+.tele{display:flex;flex-direction:column;gap:11px}
+.tele .row{display:grid;grid-template-columns:1fr auto;gap:3px 10px;align-items:baseline}
+.tele .k{font-family:var(--ui);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--mute)}
+.tele .v{font-family:var(--mono);font-size:12.5px;color:var(--text);font-variant-numeric:tabular-nums}
+.bar{grid-column:1/-1;height:3px;background:#122034;border-radius:2px;overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ember),var(--amber));
+  box-shadow:0 0 10px rgba(255,150,40,.7)}
+.bar.cool i{background:linear-gradient(90deg,#2b7ea0,var(--ice));box-shadow:0 0 10px rgba(87,194,224,.6)}
+.hw{font-family:var(--mono);font-size:10.5px;color:var(--mute);line-height:1.7;
+  padding-top:9px;margin-top:2px;border-top:1px solid var(--edge)}
+
+/* --- Werkzeugliste --- */
+.tool{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;
+  padding:7px 0;border-bottom:1px solid rgba(27,43,66,.6)}
+.tool:last-child{border-bottom:0}
+.tool .glyph{width:16px;text-align:center;font-family:var(--mono);font-size:12px;line-height:1}
+.tool .nm{font-family:var(--mono);font-size:12px;color:var(--text);overflow-wrap:anywhere}
+.tool .st{font-family:var(--ui);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mute);white-space:nowrap}
+.tool[data-s="ok"] .glyph{color:var(--ok)}
+.tool[data-s="ok"] .st{color:var(--ok)}
+.tool[data-s="none"] .glyph{color:#4a5a70}
+.tool[data-s="unknown"] .glyph{color:var(--amber)}
+.tool[data-s="unknown"] .st{color:#e0aa52}
+.note{font-size:11.5px;color:var(--mute);line-height:1.6;
+  padding:9px 10px;border-left:2px solid var(--amber);background:rgba(255,178,36,.06);margin-top:11px}
+
+/* --- Gedaechtnis --- */
+.mem{display:flex;flex-direction:column;gap:9px}
+.mem article{border-left:2px solid var(--edge);padding:1px 0 1px 10px}
+.mem h3{margin:0 0 1px;font-family:var(--ui);font-size:11px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ice)}
+.mem p{margin:0;font-size:12.5px;color:var(--text)}
+.mem time{font-family:var(--mono);font-size:10px;color:var(--mute)}
+
+/* --- Mittelspalte: Zustand + Verlauf --- */
+.center{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:space-between;
+  gap:12px;min-height:0;pointer-events:none}
+.center > *{pointer-events:auto}
+.state{align-self:center;text-align:center;font-family:var(--ui);flex:none;
+  padding:8px 26px 10px;
+  background:radial-gradient(58% 130% at 50% 50%,rgba(4,7,13,.88),rgba(4,7,13,.55) 58%,rgba(4,7,13,0) 82%)}
+.state .mode{font-size:clamp(20px,3.4vw,30px);font-weight:700;letter-spacing:.3em;
+  text-transform:uppercase;color:var(--amber-hot);text-shadow:0 0 26px rgba(255,150,30,.7);margin:0}
+.state .sub{margin:4px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--mute);min-height:1.5em}
+.state .sub b{color:var(--ice);font-weight:500}
+
+.log{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:9px;padding:2px 2px 2px 0;
+  max-width:62ch;width:100%;margin:0 auto}
+.msg{border:1px solid var(--edge);border-radius:3px;padding:9px 11px;
+  background:rgba(8,15,26,.80);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+.msg.me{border-color:#24405e;background:rgba(14,28,46,.80)}
+.msg .who{font-family:var(--ui);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--mute);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.msg p{margin:0;font-size:13.5px;overflow-wrap:anywhere}
+.msg code{font-family:var(--mono);font-size:12px;color:var(--amber-hot);
+  background:rgba(255,178,36,.10);padding:1px 4px;border-radius:2px}
+.prov{font-family:var(--ui);font-size:9px;letter-spacing:.13em;text-transform:uppercase;
+  padding:2px 7px;border-radius:2px;border:1px solid;white-space:nowrap}
+.prov.tool{color:var(--ok);border-color:#1c5a42;background:rgba(8,38,28,.55)}
+.prov.talk{color:var(--mute);border-color:var(--edge);background:transparent}
+.prov.fail{color:var(--bad);border-color:#5e2226;background:rgba(48,12,14,.55)}
+.prov.demo{color:#e0aa52;border-color:#5a4418;background:rgba(48,32,8,.5)}
+.evidence{margin-top:7px;padding-top:6px;border-top:1px dashed var(--edge);
+  font-family:var(--mono);font-size:11px;color:var(--mute);overflow-wrap:anywhere}
+.evidence b{color:var(--ok);font-weight:500}
+.evidence.fail b{color:var(--bad)}
+
+/* --- Befehlszeile --- */
+.dock{grid-column:1/-1;grid-row:3;display:flex;gap:9px;align-items:stretch;flex-wrap:wrap}
+.dock form{flex:1 1 320px;display:flex;gap:9px;min-width:0}
+#cmd{flex:1 1 auto;min-width:0;font-family:var(--body);font-size:14px;color:var(--text);
+  background:rgba(8,15,26,.86);border:1px solid var(--edge);border-radius:3px;
+  padding:11px 13px;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+#cmd::placeholder{color:#5d6d84}
+#cmd:focus{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber)}
+button{font-family:var(--ui);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--void);background:linear-gradient(180deg,var(--amber-hot),var(--amber));
+  border:0;border-radius:3px;padding:11px 17px;cursor:pointer;white-space:nowrap}
+button:hover{filter:brightness(1.1)}
+button:focus-visible{outline:2px solid var(--amber-hot);outline-offset:2px}
+button.ghost{background:transparent;color:var(--mute);border:1px solid var(--edge)}
+button.ghost:hover{color:var(--amber);border-color:var(--amber);filter:none}
+
+/* --- Tabs: nur Telefon --- */
+.tabs{display:none;grid-column:1/-1;gap:6px}
+.tabs button{flex:1 1 0;padding:9px 4px;font-size:10px;letter-spacing:.1em;
+  background:rgba(8,15,26,.90);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+.tabs button[aria-selected="true"]{color:var(--amber);border-color:var(--amber)}
+
+@media (max-width:900px){
+  #hud{grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr) auto;gap:10px;padding-inline:14px}
+  .tabs{display:flex;grid-row:2}
+  .center{grid-column:1;grid-row:3;justify-content:flex-end}
+  .col.left,.col.right{grid-column:1;grid-row:3}
+  .state .mode{font-size:22px}
+  .log{max-width:none}
+  .dock{grid-row:4}
+  .pane[hidden]{display:none!important}
+}
+@media (min-width:901px){ .tabs{display:none} }
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+</style>
+
+<div id="room"></div>
+<canvas id="orb" aria-hidden="true"></canvas>
+
+<main id="hud">
+  <header class="top">
+    <div class="mark"><b>JARVIS</b><span>Core</span></div>
+    <div class="spacer"></div>
+    <span class="chip warn" id="link"><i class="dot"></i><span id="linkText">Kein Server — Demo-Ansicht</span></span>
+    <span class="chip" id="modelChip"><i class="dot"></i>Modell: nicht verbunden</span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Bereiche">
+    <button class="ghost" data-pane="center" aria-selected="true">Dialog</button>
+    <button class="ghost" data-pane="left">System</button>
+    <button class="ghost" data-pane="right">Gedächtnis</button>
+  </nav>
+
+  <div class="col left pane" data-pane="left">
+    <section class="panel">
+      <h2>Systemzustand</h2>
+      <div class="body">
+        <div class="tele">
+          <div class="row"><span class="k">CPU-Last</span><span class="v" id="vCpu">—</span>
+            <span class="bar"><i id="bCpu" style="width:0%"></i></span></div>
+          <div class="row"><span class="k">Arbeitsspeicher</span><span class="v" id="vRam">—</span>
+            <span class="bar"><i id="bRam" style="width:0%"></i></span></div>
+          <div class="row"><span class="k">GPU-Speicher</span><span class="v" id="vGpu">—</span>
+            <span class="bar cool"><i id="bGpu" style="width:0%"></i></span></div>
+        </div>
+        <div class="hw">
+          Ryzen 7 7800X3D<br>Radeon RX 7900 XTX · 24 GB<br>Windows 11
+        </div>
+        <p class="note">Ohne Serververbindung stehen hier keine Messwerte. Die Balken
+        bleiben leer, statt Zahlen zu erfinden.</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="center pane" data-pane="center">
+    <div class="state">
+      <p class="mode" id="mode">Bereit</p>
+      <p class="sub" id="sub">Warte auf Verbindung zum Jarvis-Server</p>
+    </div>
+    <div class="log" id="log" role="log" aria-live="polite"></div>
+  </div>
+
+  <div class="col right pane" data-pane="right" hidden>
+    <section class="panel">
+      <h2>Werkzeuge</h2>
+      <div class="body">
+        <div id="tools"></div>
+        <p class="note">Der Zustand jedes Werkzeugs wird vom Server gemeldet.
+        „Unbestätigt“ heißt: noch nicht am Code geprüft.</p>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Gedächtnis</h2>
+      <div class="body">
+        <div class="mem" id="mem"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="dock">
+    <form id="bar" autocomplete="off">
+      <input id="cmd" name="cmd" type="text" placeholder="Befehl oder Frage an Jarvis …"
+             aria-label="Befehl an Jarvis">
+      <button type="submit">Senden</button>
+    </form>
+    <button class="ghost" id="play" type="button">Ablauf abspielen</button>
+  </div>
+</main>
+
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ══════════════════════════════════════════════════════════════
+   1. Die Kugel — Canvas 2D, additiv, ohne Bibliothek.
+      Leiterbahnen laufen als Geodaeten ueber die Kugel und biegen
+      gelegentlich um 90°; daher der Platinen-Charakter.
+   ══════════════════════════════════════════════════════════════ */
+const cv = $("orb"), ctx = cv.getContext("2d", {alpha:true});
+const gl = document.createElement("canvas"), gx = gl.getContext("2d");
+let W=0, H=0, DPR=1, CX=0, CY=0, R=1;
+
+const rnd = (a,b) => a + Math.random()*(b-a);
+const norm = (v) => { const m=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/m,v[1]/m,v[2]/m]; };
+const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+function randUnit(){ const u=Math.random()*2-1, t=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u);
+  return [s*Math.cos(t), u, s*Math.sin(t)]; }
+function tangentAt(p, ang){
+  const a = Math.abs(p[1])<0.9 ? [0,1,0] : [1,0,0];
+  const t1 = norm(cross(a,p)), t2 = cross(p,t1);
+  return norm([t1[0]*Math.cos(ang)+t2[0]*Math.sin(ang),
+               t1[1]*Math.cos(ang)+t2[1]*Math.sin(ang),
+               t1[2]*Math.cos(ang)+t2[2]*Math.sin(ang)]);
+}
+function step(p, d, a){                       // ein Schritt entlang der Geodaete
+  const c=Math.cos(a), s=Math.sin(a);
+  return { p: norm([p[0]*c+d[0]*s, p[1]*c+d[1]*s, p[2]*c+d[2]*s]),
+           d: norm([-p[0]*s+d[0]*c, -p[1]*s+d[1]*c, -p[2]*s+d[2]*c]) };
+}
+function turn(p, d, ang){                     // Drehung in der Tangentialebene
+  const c=Math.cos(ang), s=Math.sin(ang), k=cross(p,d);
+  return norm([d[0]*c+k[0]*s, d[1]*c+k[1]*s, d[2]*c+k[2]*s]);
+}
+
+// CLS 0 = Bernstein, 1 = Glut, 2 = heisser Faden
+let SEG=[], CLS=[], DOT=[], DCL=[];
+function build(dense){
+  SEG=[]; CLS=[]; DOT=[]; DCL=[];
+  const traces = dense ? 168 : 96;
+  for(let t=0;t<traces;t++){
+    const r = rnd(0.86,1.14);
+    let p = randUnit(), d = tangentAt(p, Math.random()*Math.PI*2);
+    const n = 6 + (Math.random()*24|0), len = rnd(0.028,0.072);
+    const cls = Math.random()<0.16 ? 2 : (Math.random()<0.55 ? 0 : 1);
+    for(let i=0;i<n;i++){
+      const q = step(p,d,len);
+      SEG.push(p[0]*r,p[1]*r,p[2]*r, q.p[0]*r,q.p[1]*r,q.p[2]*r); CLS.push(cls);
+      p=q.p; d=q.d;
+      const u = Math.random();
+      if(u<0.20) d = turn(p,d,(Math.random()<0.5?1:-1)*Math.PI/2);
+      else if(u<0.30) d = turn(p,d,rnd(-0.8,0.8));
+      if(Math.random()<0.13){ DOT.push(p[0]*r,p[1]*r,p[2]*r); DCL.push(cls); }
+    }
+    if(Math.random()<0.5){                     // radialer Dorn nach aussen
+      const r2 = r + rnd(0.07,0.26);
+      SEG.push(p[0]*r,p[1]*r,p[2]*r, p[0]*r2,p[1]*r2,p[2]*r2); CLS.push(2);
+      DOT.push(p[0]*r2,p[1]*r2,p[2]*r2); DCL.push(2);
+    }
+  }
+  for(let k=0;k<6;k++){                        // grosse Ringe wie in der Vorlage
+    const ax = randUnit(), r = rnd(0.90,1.10);
+    const b1 = tangentAt(ax,0), b2 = cross(ax,b1);
+    const N = 150, cls = k<2 ? 2 : 0;
+    for(let i=0;i<N;i++){
+      const a1=i/N*Math.PI*2, a2=(i+1)/N*Math.PI*2;
+      if(Math.random()<0.24) continue;         // Luecken -> kein sauberer Kreis
+      SEG.push((b1[0]*Math.cos(a1)+b2[0]*Math.sin(a1))*r,(b1[1]*Math.cos(a1)+b2[1]*Math.sin(a1))*r,(b1[2]*Math.cos(a1)+b2[2]*Math.sin(a1))*r,
+               (b1[0]*Math.cos(a2)+b2[0]*Math.sin(a2))*r,(b1[1]*Math.cos(a2)+b2[1]*Math.sin(a2))*r,(b1[2]*Math.cos(a2)+b2[2]*Math.sin(a2))*r);
+      CLS.push(cls);
+    }
+  }
+  SEG=Float32Array.from(SEG); DOT=Float32Array.from(DOT);
+}
+
+function resize(){
+  DPR = Math.min(devicePixelRatio||1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W*DPR|0; cv.height = H*DPR|0;
+  gl.width = (W*DPR/3)|0; gl.height = (H*DPR/3)|0;
+  const phone = W < 901;
+  CX = W/2; CY = phone ? H*0.33 : H*0.5;
+  R  = phone ? Math.min(W,H)*0.33 : Math.min(W,H)*0.40;
+}
+
+const RGB = [[255,178,36],[255,122,28],[255,232,176]];
+const bucket = [];                              // 3 Klassen × 3 Tiefen
+for(let i=0;i<9;i++) bucket.push([]);
+const dotB = [[],[],[]];
+
+let rx=0.34, ry=0, spin=0.0016, warm=0.85, warmT=0.85, tint=0, pulses=[];
+
+function frame(now){
+  if(!reduce) ry += spin;
+  warm += (warmT-warm)*0.07;
+  for(let i=pulses.length-1;i>=0;i--){ pulses[i]+=0.016; if(pulses[i]>1.9) pulses.splice(i,1); }
+
+  const cx1=Math.cos(rx), sx1=Math.sin(rx), cy1=Math.cos(ry), sy1=Math.sin(ry);
+  for(const b of bucket) b.length=0;
+  for(const b of dotB) b.length=0;
+
+  const F=3.1;
+  const put=(arr,i,out)=>{
+    const x=arr[i], y=arr[i+1], z=arr[i+2];
+    const x1 = x*cy1 + z*sy1, z1 = -x*sy1 + z*cy1;
+    const y2 = y*cx1 - z1*sx1, z2 = y*sx1 + z1*cx1;
+    const k = F/(F-z2);
+    out[0]=CX+x1*R*k; out[1]=CY+y2*R*k; out[2]=z2;
+  };
+  const A=[0,0,0], B=[0,0,0];
+  for(let s=0,c=0; s<SEG.length; s+=6, c++){
+    put(SEG,s,A); put(SEG,s+3,B);
+    const z=(A[2]+B[2])*0.5;
+    const d = z>0.35 ? 2 : (z>-0.25 ? 1 : 0);
+    const b = bucket[CLS[c]*3+d];
+    b.push(A[0],A[1],B[0],B[1]);
+  }
+  for(let s=0,c=0; s<DOT.length; s+=3, c++){
+    put(DOT,s,A);
+    if(A[2] > -0.15) dotB[DCL[c]].push(A[0],A[1],A[2]);
+  }
+
+  // Halo: gleiche Geometrie in Drittelaufloesung, spaeter weichgezeichnet
+  gx.setTransform(DPR/3,0,0,DPR/3,0,0);
+  gx.clearRect(0,0,W,H);
+  gx.globalCompositeOperation="lighter";
+  gx.lineCap="round";
+  strokeAll(gx, 3.4, 0.62);
+  core(gx, 1.0);
+
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.globalCompositeOperation="lighter";
+  ctx.filter = "blur(7px)";
+  ctx.globalAlpha = 0.92*warm;
+  ctx.drawImage(gl, 0,0,W,H);
+  ctx.filter="none"; ctx.globalAlpha=1;
+
+  ctx.lineCap="round";
+  strokeAll(ctx, 1.0, 1.0);
+  dots(ctx);
+  core(ctx, 0.55);
+  rings(ctx);
+
+  requestAnimationFrame(frame);
+}
+
+function strokeAll(c, lw, mul){
+  const depthA=[0.26,0.58,1.0];
+  for(let k=0;k<9;k++){
+    const arr=bucket[k]; if(!arr.length) continue;
+    const col=RGB[(k/3)|0], a=depthA[k%3]*mul*warm;
+    c.strokeStyle=`rgba(${col[0]},${Math.round(col[1]*(1-tint*0.55))},${Math.round(col[2]*(1-tint*0.7))},${a.toFixed(3)})`;
+    c.lineWidth=lw*(k%3===2?1.15:0.85);
+    c.beginPath();
+    for(let i=0;i<arr.length;i+=4){ c.moveTo(arr[i],arr[i+1]); c.lineTo(arr[i+2],arr[i+3]); }
+    c.stroke();
+  }
+}
+function dots(c){
+  for(let k=0;k<3;k++){
+    const arr=dotB[k]; if(!arr.length) continue;
+    const col=RGB[k];
+    c.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${(0.75*warm).toFixed(3)})`;
+    c.beginPath();
+    for(let i=0;i<arr.length;i+=3){
+      const r=(arr[i+2]>0.45?1.5:0.9);
+      c.moveTo(arr[i]+r,arr[i+1]); c.arc(arr[i],arr[i+1],r,0,6.283);
+    }
+    c.fill();
+  }
+}
+function core(c, k){
+  const r=R*0.30*k;
+  const g=c.createRadialGradient(CX,CY,0,CX,CY,r);
+  g.addColorStop(0,`rgba(255,244,214,${0.50*warm})`);
+  g.addColorStop(0.35,`rgba(255,176,60,${0.26*warm})`);
+  g.addColorStop(1,"rgba(255,120,20,0)");
+  c.fillStyle=g; c.beginPath(); c.arc(CX,CY,r,0,6.283); c.fill();
+}
+function rings(c){
+  for(const t of pulses){
+    const a=Math.max(0,1-t/1.9);
+    c.strokeStyle=`rgba(255,232,176,${(a*0.5).toFixed(3)})`;
+    c.lineWidth=2.0*a+0.4;
+    c.beginPath(); c.arc(CX,CY,R*(0.55+t*0.85),0,6.283); c.stroke();
+  }
+}
+
+addEventListener("resize", resize);
+resize(); build(innerWidth>=901); requestAnimationFrame(frame);
+
+/* ══════════════════════════════════════════════════════════════
+   2. Zustand. Die Kugel unterscheidet sichtbar zwischen
+      DENKEN (das Modell plant) und AUSFUEHREN (ein Werkzeug laeuft).
+      Genau diese Trennung macht eine erfundene Erfolgsmeldung sichtbar.
+   ══════════════════════════════════════════════════════════════ */
+const MODES = {
+  idle:     {label:"Bereit",      spin:0.0016, warm:0.85, tint:0},
+  listening:{label:"Höre zu",     spin:0.0024, warm:1.00, tint:0},
+  thinking: {label:"Denke",       spin:0.0052, warm:1.15, tint:0},
+  executing:{label:"Führe aus",   spin:0.0030, warm:1.40, tint:0},
+  failed:   {label:"Fehlgeschlagen", spin:0.0012, warm:0.95, tint:1}
+};
+let pulseTimer = 0;
+function setMode(m, detail){
+  const c = MODES[m] || MODES.idle;
+  spin = reduce ? 0 : c.spin; warmT = c.warm; tint = c.tint;
+  $("mode").textContent = c.label;
+  $("sub").innerHTML = detail || "";
+  clearInterval(pulseTimer);
+  if(m === "executing" && !reduce){
+    pulses.push(0);
+    pulseTimer = setInterval(() => pulses.push(0), 620);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   3. Verlauf. Jede Aussage traegt ihren Beleg.
+   ══════════════════════════════════════════════════════════════ */
+const PROV = {
+  tool: ["tool","Tool-Beleg"],
+  talk: ["talk","kein Tool"],
+  fail: ["fail","fehlgeschlagen"],
+  demo: ["demo","Demo"]
+};
+function say({who, text, prov="talk", demo=false, evidence=null, fail=false}){
+  const el = document.createElement("article");
+  el.className = "msg" + (who === "me" ? " me" : "");
+  const tags = [];
+  if(demo) tags.push(`<span class="prov demo">Demo</span>`);
+  if(who !== "me"){ const p = PROV[prov]; tags.push(`<span class="prov ${p[0]}">${p[1]}</span>`); }
+  el.innerHTML =
+    `<div class="who">${who === "me" ? "Du" : "Jarvis"}${tags.join("")}</div><p>${text}</p>` +
+    (evidence ? `<div class="evidence${fail?" fail":""}">${evidence}</div>` : "");
+  const log = $("log");
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4. Werkzeuge. Status kommt vom Server — hier bewusst „unbestätigt“,
+      weil der Jarvis-Code noch nicht gegengelesen wurde.
+   ══════════════════════════════════════════════════════════════ */
+const TOOLS = [
+  ["write_file","unknown"], ["read_file","unknown"], ["run_command","unknown"],
+  ["get_system_info","unknown"], ["get_cpu_info","unknown"], ["get_ram_info","unknown"],
+  ["search_files","unknown"], ["screen_capture","none"], ["web_search","none"],
+  ["memory_search","none"], ["mouse_keyboard","none"]
+];
+const ST = {ok:["✓","bereit"], unknown:["?","unbestätigt"], none:["·","fehlt"]};
+$("tools").innerHTML = TOOLS.map(([n,s]) =>
+  `<div class="tool" data-s="${s}"><span class="glyph">${ST[s][0]}</span>
+   <span class="nm">${n}</span><span class="st">${ST[s][1]}</span></div>`).join("");
+
+$("mem").innerHTML = [
+  ["Hardware","Ryzen 7 7800X3D, RX 7900 XTX, Windows 11. Zweitgerät: Raspberry Pi 4, 2 GB.","dauerhaft"],
+  ["Grundregel","Erfolg nur melden, wenn ein Werkzeug gelaufen ist und Erfolg zurückgab.","dauerhaft"],
+  ["Projekt","Jarvis zieht nach jarvis/ und nutzt die CodePilot-Schichten mit.","16.09."],
+  ["Offen","Modellwechsel weg von llama3.2:3b — zu klein für verlässliches Tool-Calling.","16.09."]
+].map(([h,p,t]) => `<article><h3>${h}</h3><p>${p}</p><time>${t}</time></article>`).join("");
+
+/* ══════════════════════════════════════════════════════════════
+   5. Eingabe. Ohne Server wird nichts ausgefuehrt — und das
+      sagt die Oberflaeche auch genau so.
+   ══════════════════════════════════════════════════════════════ */
+let live = false;
+$("bar").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("cmd").value.trim(); if(!v) return;
+  $("cmd").value = "";
+  say({who:"me", text: escapeHtml(v)});
+  if(!live){
+    setMode("failed");
+    say({who:"jarvis", prov:"fail",
+      text:"Kein Jarvis-Server verbunden. Der Befehl wurde <b>nicht</b> ausgeführt.",
+      evidence:"kein Tool-Aufruf · kein Ergebnis · keine Änderung auf der Festplatte", fail:true});
+    setTimeout(() => setMode("idle","Warte auf Verbindung zum Jarvis-Server"), 2200);
+  }
+});
+function escapeHtml(s){ return s.replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* --- Vorfuehrung: beide Faelle, die frueher schiefgingen --- */
+const SCRIPTS = [
+  {
+    ask: "Erstelle auf dem Desktop eine Datei notizen.txt mit meiner Einkaufsliste.",
+    plan: "wähle Werkzeug <b>write_file</b>",
+    tool: "write_file",
+    run: "schreibe C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt",
+    ok: true,
+    text: "Die Datei <code>notizen.txt</code> liegt auf dem Desktop.",
+    ev: "write_file → <b>success=true</b> · C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt · 84 Bytes · 41 ms"
+  },
+  {
+    ask: "Mach einen Screenshot und sag mir, was offen ist.",
+    plan: "suche Werkzeug für Bildschirmaufnahme",
+    tool: null,
+    run: null,
+    ok: false,
+    text: "Das kann ich aktuell noch nicht ausführen, weil mir dafür kein Tool zur Verfügung steht.",
+    ev: "screen_capture → <b>nicht registriert</b> · kein Aufruf abgesetzt"
+  }
+];
+let si = 0, playing = false;
+$("play").addEventListener("click", () => {
+  if(playing) return; playing = true;
+  const s = SCRIPTS[si % SCRIPTS.length]; si++;
+  $("play").disabled = true;
+  say({who:"me", text: s.ask});
+  setMode("thinking", s.plan);
+  setTimeout(() => {
+    if(s.tool){
+      setMode("executing", `<b>${s.tool}</b> · ${s.run}`);
+      setTimeout(() => {
+        setMode("idle","Warte auf Verbindung zum Jarvis-Server");
+        say({who:"jarvis", prov:"tool", demo:true, text:s.text, evidence:s.ev});
+        playing = false; $("play").disabled = false;
+      }, 1500);
+    } else {
+      setMode("idle","Warte auf Verbindung zum Jarvis-Server");
+      say({who:"jarvis", prov:"fail", demo:true, text:s.text, evidence:s.ev, fail:true});
+      playing = false; $("play").disabled = false;
+    }
+  }, 1400);
+});
+
+/* --- Reiter auf dem Telefon --- */
+const panes = [...document.querySelectorAll(".pane")];
+document.querySelectorAll(".tabs button").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach((o) => o.setAttribute("aria-selected", String(o === b)));
+    panes.forEach((p) => { p.hidden = p.dataset.pane !== b.dataset.pane; });
+  });
+});
+function layout(){
+  const phone = innerWidth < 901;
+  panes.forEach((p) => { p.hidden = phone ? p.dataset.pane !== currentTab() : false; });
+}
+function currentTab(){
+  const b = document.querySelector('.tabs button[aria-selected="true"]');
+  return b ? b.dataset.pane : "center";
+}
+addEventListener("resize", layout);
+layout();
+
+/* ══════════════════════════════════════════════════════════════
+   6. Schnittstelle fuer den echten Server.
+      Der Backend-Adapter ruft nur diese vier Funktionen auf.
+   ══════════════════════════════════════════════════════════════ */
+window.JARVIS = {
+  connect(info){
+    live = true;
+    $("link").className = "chip live";
+    $("linkText").textContent = "Verbunden · " + (info?.host || "localhost");
+    $("modelChip").textContent = "Modell: " + (info?.model || "unbekannt");
+    setMode("idle", "Bereit");
+  },
+  disconnect(){
+    live = false;
+    $("link").className = "chip warn";
+    $("linkText").textContent = "Kein Server — Demo-Ansicht";
+    $("modelChip").textContent = "Modell: nicht verbunden";
+    setMode("idle", "Warte auf Verbindung zum Jarvis-Server");
+  },
+  state: setMode,
+  message: say,
+  telemetry(t){
+    const set = (v,b,txt,pct) => { $(v).textContent = txt; $(b).style.width = Math.max(0,Math.min(100,pct)) + "%"; };
+    if(t.cpu != null) set("vCpu","bCpu", t.cpu.toFixed(0)+" %", t.cpu);
+    if(t.ram) set("vRam","bRam", `${t.ram.used} / ${t.ram.total} GB`, t.ram.used/t.ram.total*100);
+    if(t.gpu) set("vGpu","bGpu", `${t.gpu.used} / ${t.gpu.total} GB`, t.gpu.used/t.gpu.total*100);
+  },
+  tools(list){
+    $("tools").innerHTML = list.map(({name,status}) =>
+      `<div class="tool" data-s="${status}"><span class="glyph">${(ST[status]||ST.none)[0]}</span>
+       <span class="nm">${name}</span><span class="st">${(ST[status]||ST.none)[1]}</span></div>`).join("");
+  }
+};
+
+say({who:"jarvis", prov:"talk",
+  text:"Oberfläche geladen. Es besteht <b>keine</b> Verbindung zu einem Jarvis-Server — "
+     + "ich kann daher nichts auf deinem Rechner tun. Mit „Ablauf abspielen“ siehst du, "
+     + "wie ein echter Vorgang aussieht: erst <b>Denke</b>, dann <b>Führe aus</b>, dann ein Ergebnis mit Beleg."});
+})();
+</script>
+</body>
+</html>
