@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+npm-debug.*
+
+# CodePilot runtime state — config, secrets and the session database live in
+# ~/.codepilot (or $CODEPILOT_HOME) and must never be committed.
+.codepilot/
+config.json
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

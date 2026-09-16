@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CodePilot Remote</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">CP</span>
+      <div><strong>CodePilot</strong><small>Remote</small></div>
+    </div>
+    <nav id="nav">
+      <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+      <a href="#/projects" data-route="projects">Projects</a>
+      <a href="#/sessions" data-route="sessions">Sessions</a>
+      <a href="#/models" data-route="models">Models</a>
+      <a href="#/settings" data-route="settings">Settings</a>
+      <a href="#/pair" data-route="pair">Pair Device</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="statusStrip" class="status-strip"></div>
+    </div>
+  </aside>
+  <main id="main"><div class="loading">Loading…</div></main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

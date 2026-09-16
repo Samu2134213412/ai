@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "CodePilot Remote",
+    "slug": "codepilot-remote",
+    "version": "0.1.0",
+    "scheme": "codepilot",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0d1117",
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "package": "com.codepilot.remote",
+      "permissions": ["CAMERA", "INTERNET", "ACCESS_NETWORK_STATE"],
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": { "backgroundColor": "#0d1117" }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.codepilot.remote",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scanning the pairing QR code shown by CodePilot on your PC.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {}
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-camera", {
+        "cameraPermission": "CodePilot uses the camera only to scan the pairing QR code on your PC."
+      }]
+    ],
+    "experiments": { "typedRoutes": false }
+  }
+}
