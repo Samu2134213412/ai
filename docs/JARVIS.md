@@ -134,8 +134,13 @@ bauen, sondern dessen bewährte Schichten mitbenutzen.** Jarvis zieht nach
 
 ## 6. Offene Punkte
 
-1. **Jarvis-Code fehlt.** Er wird vom Windows-PC nach `Samu2134213412/jarvis`
-   gepusht und dann hier angebunden und analysiert.
+1. ~~**Jarvis-Code fehlt.**~~ **Geklärt, negativ:** Auf dem Windows-PC wurde
+   `C:\Users\SohndesDrachen\jarvis` geprüft (`dir jarvis`) — der Ordner enthält
+   **0 Dateien**, nur einen alten `.venv`. Kein `jarvis.py`, kein `memory.py`.
+   Der alte Quellcode existiert auf dieser Maschine nicht mehr; ob er woanders
+   liegt oder gelöscht wurde, ist unbekannt. Es gibt also nichts mehr
+   anzubinden oder gegen die neue Fassung abzugleichen — der Server in
+   `../jarvis/server/` ist ab jetzt die einzige Implementierung.
 2. **Die Übergabe bricht in Abschnitt 6 ab** (mitten in `search_file_`). Die
    vollständige Tool-Liste und alle folgenden Abschnitte fehlen noch.
 3. **Welches Chat-Modell** konkret — zu entscheiden, sobald klar ist, welche
