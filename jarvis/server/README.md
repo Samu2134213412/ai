@@ -56,6 +56,28 @@ Aussage, die es geben kann — eindeutiger als jedes erkannte Muster im Text.
 Ist CodePilot nicht eingerichtet, kommt die ehrliche Absage statt eines
 Rateversuchs (`agent.handle_code`, `tests/test_agent.py`).
 
+### CodePilot startet sich selbst
+
+Läuft CodePilot bei einer Codeaufgabe nicht, startet Jarvis es — **erst dann,
+nicht beim Hochfahren**. Der Grund ist das VRAM: `qwen3-coder:30b` belegt rund
+18 GB, die sonst dem Chat-Modell fehlen. Ein Dienst, der dauerhaft mitläuft,
+nur damit er vielleicht gebraucht wird, kostet genau die Ressource, um die es
+hier knapp ist.
+
+Der Beleg sagt hinterher, was passiert ist: `codepilot: lief bereits` oder
+`codepilot: von Jarvis gestartet (12 s)`. Klappt der Start nicht, endet die
+Aufgabe mit der Begründung und den letzten Zeilen aus
+`~/.jarvis/codepilot-start.log` — kein stiller Fehlschlag.
+
+| Feld in `jarvis.json` | |
+|---|---|
+| `codepilot.autostart` | `true` (Vorgabe). `false` heißt: nur von Hand starten |
+| `codepilot.start_dir` | leer = CodePilot im Repo neben `jarvis/` suchen |
+| `codepilot.start_timeout` | Sekunden, die auf „antwortet" gewartet wird (90) |
+
+Der gestartete Prozess ist losgelöst und überlebt einen Neustart von Jarvis.
+Zwei gleichzeitige Codeaufgaben starten ihn nur einmal (`tests/test_codepilot_start.py`).
+
 ## Die Grundregel als Mechanismus
 
 > Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein

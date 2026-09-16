@@ -37,6 +37,13 @@ class CodePilotConfig:
     token: str = ""
     project_id: str = ""
     timeout: int = 900
+    #: Läuft CodePilot bei einer Codeaufgabe nicht, startet Jarvis es selbst.
+    #: Bewusst erst dann und nicht beim Hochfahren: das Code-Modell belegt
+    #: 18 GB VRAM, die sonst dem Chat-Modell fehlen.
+    autostart: bool = True
+    #: Leer heißt: CodePilot im Repo neben jarvis/ suchen.
+    start_dir: str = ""
+    start_timeout: int = 90
 
 
 @dataclass

@@ -6,6 +6,8 @@ Tool" — statt sich etwas auszudenken.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..config import Config
 from ..memory import MemoryStore
 from . import codepilot, files, knowledge, shell, system
@@ -28,7 +30,10 @@ def build_registry(config: Config, store: MemoryStore) -> Registry:
         timeout=config.shell.timeout)
     link = codepilot.CodePilotLink(
         url=config.codepilot.url, token=config.codepilot.token,
-        project_id=config.codepilot.project_id, timeout=config.codepilot.timeout)
+        project_id=config.codepilot.project_id, timeout=config.codepilot.timeout,
+        autostart=config.codepilot.autostart, start_dir=config.codepilot.start_dir,
+        start_timeout=config.codepilot.start_timeout,
+        log_path=str(Path(config.home) / "codepilot-start.log"))
 
     for tool in files.build(workspace):
         registry.add(tool)
