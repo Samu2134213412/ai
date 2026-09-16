@@ -27,18 +27,31 @@ curl -X POST http://127.0.0.1:11434/v1/messages ^
 *Fails?* Either Ollama is older than 0.14.0 (update it) or the model is not
 pulled (`ollama pull qwen3-coder:30b`). Nothing else will work until this passes.
 
-## 2. CodePilot sees everything
+## 2. CodePilot agrees, and so does Claude Code
 
 ```powershell
-start.bat --check
+start.bat --doctor
 ```
 
-- [ ] Claude Code: Available
-- [ ] Git: Available
-- [ ] Ollama: Online
-- [ ] Model: qwen3-coder:30b — Available
+This walks the chain and stops at the first broken link, so you never have to
+guess which layer is at fault:
 
-*Fails?* The output prints the exact remedy for whatever is missing.
+- [ ] `[1/8] Claude Code is installed`
+- [ ] `[2/8] Git is installed`
+- [ ] `[3/8] Ollama is running` (and is 0.14.0+)
+- [ ] `[4/8] The configured model is pulled`
+- [ ] `[5/8] The model answers over the Anthropic API`
+- [ ] `[6/8] Ollama's context window` — a warning here is the usual reason
+      sessions behave oddly; it tells you the `setx` command and to restart Ollama
+- [ ] `[7/8] Claude Code reaches the local model`
+- [ ] `[8/8] Your phone can reach this PC`
+
+**Stage 7 subsumes step 3 below** — it runs the real `claude` binary against your
+real Ollama with exactly the environment CodePilot uses for sessions. If stage 7
+passes, the integration is correct and you can skip straight to step 4.
+
+*Fails?* Each stage prints the specific remedy, and everything after it is
+skipped because it depends on the failed stage.
 
 ## 3. Claude Code actually thinks with the local model
 

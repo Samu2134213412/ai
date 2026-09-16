@@ -29,19 +29,22 @@ screen and the approval button.
 ### 1. On the PC
 
 ```powershell
-# One-time: pull the model (~18 GB — CodePilot never downloads it for you)
-ollama pull qwen3-coder:30b
-
-# Give Ollama a context window big enough for agentic work, then restart it
-setx OLLAMA_CONTEXT_LENGTH 32768
-
-# Start CodePilot
-start.bat
+setup.bat
 ```
 
-`start.bat` creates a virtual environment on first run, installs the
-dependencies, prints a real environment report, and serves the API and the web
-dashboard on one port.
+That is the whole first run. It checks Python, Node, Claude Code and Ollama;
+offers to set `OLLAMA_CONTEXT_LENGTH=32768` (Ollama reads its context window from
+its own server process, which is the single most common cause of odd behaviour);
+offers to pull `qwen3-coder:30b` — **only if you say yes**, it is ~18 GB and
+CodePilot never downloads it behind your back; installs the Python dependencies;
+sets network access so your phone can connect; and finishes by diagnosing the
+whole chain.
+
+Then start it:
+
+```powershell
+start.bat
+```
 
 Open <http://127.0.0.1:8765/> and you should see something like:
 
@@ -53,7 +56,34 @@ Model: qwen3-coder:30b
 Model status: Available
 ```
 
-If anything is missing, the dashboard says exactly what to run.
+### When something is wrong
+
+```powershell
+start.bat --doctor
+```
+
+`--check` tells you *what* is missing. `--doctor` tells you *which link is
+broken*, by walking the chain in order and stopping at the first failure:
+
+```
+[1/8] ✓ Claude Code is installed     version 2.1.273
+[2/8] ✓ Git is installed             version 2.43.0
+[3/8] ✓ Ollama is running            version 0.14.2, 2 model(s) installed
+[4/8] ✓ The configured model is pulled
+[5/8] ✓ The model answers over the Anthropic API   replied: 'PONG'
+[6/8] ! Ollama's context window
+        Ollama loaded the model with 4096 tokens, but CodePilot wants 32768.
+        -> Windows:  setx OLLAMA_CONTEXT_LENGTH 32768
+        -> then fully restart Ollama (quit the tray icon and reopen it).
+[7/8] ✓ Claude Code reaches the local model
+[8/8] ✓ Your phone can reach this PC
+```
+
+Stage 7 is the decisive one: it runs the real `claude` binary against your real
+Ollama and checks the answer. If that passes, the integration is correct and
+anything left is a model-capability question, not a wiring one.
+
+On macOS or Linux, use `./setup.sh` and `./start.sh`.
 
 ### 2. Let the phone in
 

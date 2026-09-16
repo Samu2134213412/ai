@@ -129,6 +129,16 @@ reach the Ollama server. See `OLLAMA.md` for why that matters.
 
 Nothing sensitive is written inside the repository.
 
+## Diagnosis
+
+`python -m codepilot --doctor` walks the chain in dependency order — Claude Code,
+Git, Ollama reachable, Ollama speaks `/v1/messages`, the model is pulled, the
+model answers, Claude Code reaches it, the phone can reach the PC — and stops at
+the first failure, skipping everything downstream. Each stage carries what it
+proved and, on failure, the exact command to run next. Stage 7 spawns the real
+`claude` binary with the real provider environment, so a pass there is end-to-end
+evidence rather than a component check.
+
 ## Known limits
 
 * One server process; if it restarts, its Claude Code children die. Those

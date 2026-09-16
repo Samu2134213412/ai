@@ -10,7 +10,7 @@ import argparse
 import asyncio
 import sys
 
-from . import __version__, detect
+from . import __version__, detect, doctor
 from .app import create_app
 from .config import BIND_CHOICES, BIND_PRIVATE, SettingsStore
 from .providers import get_provider
@@ -76,7 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                         help="persist a setting, e.g. --set ollama_model=qwen3-coder:30b")
     parser.add_argument("--check", action="store_true",
-                        help="run the environment check and exit")
+                        help="run the quick environment check and exit")
+    parser.add_argument("--doctor", action="store_true",
+                        help="diagnose the whole chain step by step and exit — use this "
+                             "when something is broken and you need to know which link")
     parser.add_argument("--version", action="version", version=f"CodePilot Remote {__version__}")
     args = parser.parse_args(argv)
 
@@ -109,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     settings = store.current
     print(BANNER)
     print(f"CodePilot Remote {__version__} — config: {store.path}\n")
+
+    if args.doctor:
+        print("Walking the chain from Claude Code all the way to your phone.")
+        print("Nothing here downloads a model or changes a setting.\n")
+        results = asyncio.run(doctor.run(settings))
+        return 0 if doctor.summarise(results) else 1
 
     ok = asyncio.run(preflight(settings))
     if args.check:
