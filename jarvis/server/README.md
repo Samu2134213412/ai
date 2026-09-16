@@ -78,6 +78,26 @@ Aufgabe mit der Begründung und den letzten Zeilen aus
 Der gestartete Prozess ist losgelöst und überlebt einen Neustart von Jarvis.
 Zwei gleichzeitige Codeaufgaben starten ihn nur einmal (`tests/test_codepilot_start.py`).
 
+### Wenn ein Coding-Auftrag scheitert
+
+Bevor die Aufgabe abgeschickt wird, liest Jarvis CodePilots eigenen
+Umgebungsbericht (`/api/status`). Fehlt dort Claude Code, Ollama oder das
+Code-Modell, bricht er **sofort** mit dieser Auskunft ab, statt eine Minute auf
+einen Auftrag zu warten, der scheitern muss.
+
+Scheitert er trotzdem, steht der Grund in der Antwort: `codepilot_task` liest
+ihn aus dem `session.failed`-Ereignis und aus dem `error`-Feld der Sitzung.
+Vorher meldete die Brücke nur „Status: failed" und verschwieg, was CodePilot
+selbst längst wusste — ein Fehlschlag ohne Begründung ist fast so schlecht wie
+ein erfundener Erfolg.
+
+Den ganzen Strang prüft CodePilot selbst:
+
+```powershell
+cd %USERPROFILE%\jarvis-projekt
+start.bat --doctor
+```
+
 ## Die Grundregel als Mechanismus
 
 > Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein

@@ -172,3 +172,67 @@ def test_zweiter_aufruf_startet_nicht_noch_einmal(monkeypatch):
     assert "gestartet" in link.ensure_running()
     assert link.ensure_running() == "lief bereits"
     assert zustand["starts"] == 1
+
+
+# ═══════════════════════════════════════════ warum ein Auftrag scheiterte
+class FakeAntwort:
+    def __init__(self, status=200, daten=None):
+        self.status_code = status
+        self._daten = daten if daten is not None else {}
+
+    def json(self):
+        return self._daten
+
+
+def test_vorabpruefung_nennt_was_fehlt(monkeypatch):
+    """Ein fehlendes Modell soll sofort gesagt werden, nicht nach 96 s."""
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, _pfad):
+            return FakeAntwort(200, {
+                "claude": {"available": True},
+                "ollama": {"available": False,
+                           "detail": "no server reachable at http://127.0.0.1:11434"},
+                "model": {"available": False, "detail": "qwen3-coder:30b is not pulled"},
+            })
+
+    monkeypatch.setattr(link, "_client", Client)
+    with pytest.raises(ToolError) as fehler:
+        link.check_chain()
+
+    text = str(fehler.value)
+    assert "Ollama" in text and "no server reachable" in text
+    assert "qwen3-coder:30b is not pulled" in text
+    assert "--doctor" in text
+
+
+def test_vorabpruefung_schweigt_wenn_alles_bereit_ist(monkeypatch):
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, _pfad):
+            return FakeAntwort(200, {"claude": {"available": True},
+                                     "ollama": {"available": True},
+                                     "model": {"available": True}})
+
+    monkeypatch.setattr(link, "_client", Client)
+    link.check_chain()  # darf nicht werfen
+
+
+def test_vorabpruefung_blockiert_nicht_bei_fehlendem_statusbericht(monkeypatch):
+    """Ohne Statusbericht wird nicht geraten -- der Auftrag läuft einfach."""
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, _pfad):
+            return FakeAntwort(404, {})
+
+    monkeypatch.setattr(link, "_client", Client)
+    link.check_chain()  # darf nicht werfen

@@ -109,6 +109,38 @@ class CodePilotLink:
             kwargs["start_new_session"] = True
         return subprocess.Popen([sys.executable, "-m", "codepilot"], **kwargs), log
 
+    def check_chain(self) -> None:
+        """Ist die Kette hinter CodePilot bereit? Sonst gleich sagen, warum nicht.
+
+        CodePilot kennt seinen eigenen Zustand — Claude Code, Ollama, das
+        Modell. Den vorher zu lesen kostet eine Anfrage und erspart es, eine
+        Minute auf einen Auftrag zu warten, der scheitern muss.
+        """
+        try:
+            with self._client() as client:
+                res = client.get("/api/status")
+        except httpx.HTTPError:
+            return  # Nicht erreichbar ist die Sache des Auftrags selbst.
+        if res.status_code >= 400:
+            return  # Kein Statusbericht: dann eben ohne Vorabprüfung.
+        try:
+            env = res.json()
+        except ValueError:
+            return
+
+        fehlt = []
+        for schluessel, name in (("claude", "Claude Code"), ("ollama", "Ollama"),
+                                 ("model", "das Code-Modell")):
+            teil = env.get(schluessel) or {}
+            if teil and teil.get("available") is False:
+                hinweis = teil.get("detail") or teil.get("remedy") or ""
+                fehlt.append(f"{name}: {hinweis}" if hinweis else name)
+        if fehlt:
+            raise ToolError(
+                "CodePilot läuft, aber die Kette dahinter ist nicht bereit — "
+                + "; ".join(fehlt)
+                + ". Prüfen mit: start.bat --doctor im CodePilot-Ordner.")
+
     def ensure_running(self) -> str:
         """Gibt zurück, was für den Beleg gilt. Wirft, wenn es nicht klappt.
 
@@ -178,6 +210,10 @@ def build(link: CodePilotLink) -> list[Tool]:
         # Wenn nötig, CodePilot erst hochfahren. Wirft mit klarer Begründung,
         # wenn das nicht gelingt -- kein stiller Fehlschlag.
         start_hinweis = link.ensure_running()
+        # Und bevor die Aufgabe abgeschickt wird: ist die Kette dahinter
+        # überhaupt bereit? Eine Minute auf einen Auftrag zu warten, der an
+        # einem fehlenden Modell scheitern muss, hilft niemandem.
+        link.check_chain()
         try:
             with link._client() as client:
                 created = client.post("/api/sessions", json={
@@ -194,6 +230,7 @@ def build(link: CodePilotLink) -> list[Tool]:
                     raise ToolError("CodePilot gab keine Sitzungs-ID zurück.")
 
                 status, last_seq, tools_used, messages = "running", 0, 0, []
+                gruende: list[str] = []
                 while status not in _DONE:
                     if time.monotonic() - started > link.timeout:
                         client.post(f"/api/sessions/{sid}/stop")
@@ -214,12 +251,24 @@ def build(link: CodePilotLink) -> list[Tool]:
                                 text = (ev.get("payload") or {}).get("text")
                                 if text:
                                     messages.append(text)
+                            elif kind in ("session.failed", "session.error"):
+                                # Hier steht, warum es schiefging. Genau das
+                                # fehlte bisher in der Meldung an den Nutzer.
+                                nutzlast = ev.get("payload") or {}
+                                grund = (nutzlast.get("result")
+                                         or nutzlast.get("message")
+                                         or nutzlast.get("error"))
+                                if grund:
+                                    gruende.append(str(grund))
                     state = client.get(f"/api/sessions/{sid}")
                     if state.status_code >= 400:
                         raise ToolError(
                             f"CodePilot-Sitzung {sid} nicht mehr abrufbar "
                             f"({state.status_code}).")
-                    status = (state.json().get("session") or {}).get("status", "running")
+                    sitzung = state.json().get("session") or {}
+                    status = sitzung.get("status", "running")
+                    if sitzung.get("error"):
+                        gruende.append(str(sitzung["error"]))
 
                 changes = client.get(f"/api/sessions/{sid}/changes")
                 files, added, removed = [], 0, 0
@@ -237,11 +286,17 @@ def build(link: CodePilotLink) -> list[Tool]:
                     "zeilen_minus": removed, "dauer_s": seconds,
                     "codepilot": start_hinweis}
         if status != "completed":
+            # Doppelte Meldungen zusammenfassen, Reihenfolge behalten.
+            eindeutig = list(dict.fromkeys(g.strip() for g in gruende if g.strip()))
+            grund = eindeutig[-1] if eindeutig else ""
+            summary = f"CodePilot hat den Auftrag nicht abgeschlossen (Status: {status})."
+            if grund:
+                summary += f" Grund: {grund[:300]}"
             return ToolResult(
                 tool="codepilot_task", ok=False,
-                summary=f"CodePilot hat den Auftrag nicht abgeschlossen (Status: {status}).",
-                evidence=evidence,
-                payload="\n".join(messages[-3:]) or "(keine Rückmeldung)")
+                summary=summary, evidence=evidence,
+                payload=("\n\n".join(eindeutig) if eindeutig else "")
+                        or "\n".join(messages[-3:]) or "(keine Rückmeldung)")
 
         names = ", ".join(f.get("path", "?") for f in files[:6]) or "keine"
         return ToolResult(
