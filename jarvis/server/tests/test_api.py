@@ -171,6 +171,28 @@ def test_beide_geraete_sehen_denselben_zug(client):
         assert am_pc["text"] == am_handy["text"]
 
 
+def test_unerwarteter_fehler_bleibt_nicht_stumm(client):
+    """Der Zug läuft als Hintergrund-Task (fire-and-forget) -- eine
+    unerwartete Ausnahme darin darf nicht lautlos verschwinden, sonst starrt
+    der Nutzer für immer auf 'Denke'."""
+    async def kaputt(text):
+        raise RuntimeError("überraschung")
+    client.app_state.agent.handle = kaputt
+
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "command", "text": "Hallo"})
+        antwort = None
+        for _ in range(30):
+            frame = ws.receive_json()
+            if frame["type"] == "message" and frame.get("who") == "jarvis":
+                antwort = frame
+                break
+        assert antwort is not None
+        assert antwort["provenance"] == "fail"
+        assert "überraschung" in antwort["text"]
+
+
 def test_websocket_ohne_token_wird_geschlossen(config):
     config.token = "geheim"
     with TestClient(create_app(config)) as unauth:

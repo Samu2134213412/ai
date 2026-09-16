@@ -144,6 +144,21 @@ async def test_erfundener_werkzeugname_wird_dem_modell_zurueckgemeldet(
     assert "write_file" in tool_antwort["content"]
 
 
+async def test_leere_modellantwort_ohne_werkzeug_ist_keine_stumme_antwort(
+        config, store, registry, fake_ollama):
+    """Ein 'denkendes' Modell kann ohne Werkzeugaufruf leeren Text liefern --
+    z. B. wenn der Kontext für die eigentliche Antwort nicht mehr reichte.
+    Das darf nicht als leere Sprechblase im Verlauf landen."""
+    model = fake_ollama([ChatTurn(text="")])
+    agent = make_agent(config, store, registry, model)
+
+    reply = await agent.handle("Wie spät ist es ungefähr in Berlin?")
+
+    assert reply.text.strip() != ""
+    assert reply.provenance == guard.TALK
+    assert reply.blocked is False
+
+
 async def test_reine_frage_braucht_kein_werkzeug(config, store, registry, fake_ollama):
     model = fake_ollama([ChatTurn(text="Python ist eine Programmiersprache.")])
     agent = make_agent(config, store, registry, model)

@@ -188,8 +188,19 @@ def create_app(config: Config | None = None) -> FastAPI:
                 provenance=guard.TALK)
         async with busy:
             await hub.send("message", {"who": "me", "text": text, "mode": mode})
-            reply = (await agent.handle_code(text) if mode == "code"
-                     else await agent.handle(text))
+            try:
+                reply = (await agent.handle_code(text) if mode == "code"
+                         else await agent.handle(text))
+            except Exception as exc:  # noqa: BLE001 - der Zug wird per
+                # asyncio.create_task abgefeuert; ohne dieses Netz stirbt ein
+                # unerwarteter Fehler lautlos im Hintergrund und der Nutzer
+                # starrt auf "Denke", ohne je eine Antwort zu bekommen. Ein
+                # interner Fehler ist auch ein ehrliches Ergebnis -- gemeldet
+                # wird er, nicht verschwiegen.
+                await hub.send("state", {"mode": "failed", "detail": ""})
+                reply = guard.Reply(
+                    text=f"Intern ist ein Fehler aufgetreten: {exc}",
+                    provenance=guard.FAIL)
             await hub.send("message", {"who": "jarvis", **reply.as_event()})
             return reply
 

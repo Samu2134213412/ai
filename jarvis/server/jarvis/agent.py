@@ -188,6 +188,17 @@ class Agent:
             return guard.Reply(text=f"{guard.REFUSAL} (fehlt: {exc})",
                                provenance=guard.FAIL, results=results)
 
+        # Ein Zug ohne Werkzeugaufruf und ohne Text ist kein Fehler des
+        # Wächters, aber auch keine Antwort -- das Modell hat schlicht nichts
+        # gesagt (z. B. bei "denkenden" Modellen, wenn der Kontext für die
+        # eigentliche Antwort nicht mehr reichte). Das bekommt der Nutzer
+        # ehrlich mitgeteilt, statt eine leere Sprechblase zu sehen.
+        if not final.strip() and not results:
+            final = ("Ich habe dazu keine Antwort vom Modell erhalten. Das kann "
+                     "an einem zu knappen Kontext liegen (context_length in "
+                     "jarvis.json) oder daran, dass das Modell nichts "
+                     "Verwertbares zurückgegeben hat.")
+
         # 4. Der Wächter entscheidet, was rausgeht.
         reply = guard.verify(final, results)
         await self._state("failed" if reply.provenance == guard.FAIL else "idle")
