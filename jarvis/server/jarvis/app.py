@@ -22,9 +22,13 @@ from pydantic import BaseModel, Field
 
 from . import guard
 from .agent import Agent
+from .audit import AuditLog
 from .config import Config
 from .memory import DEFAULT_SEED, MemoryStore
 from .ollama import OllamaClient
+from .permissions import PermissionGate, PermissionLevel, PermissionPolicy
+from .tasks import TaskManager
+from .undo import UndoError
 from .tools import build_registry, system as system_tools, tool_status
 from .whisper import WhisperClient, WhisperError
 
@@ -33,11 +37,17 @@ TELEMETRY_SECONDS = 3.0
 CODEPILOT_STATUS_SECONDS = 4.0
 
 
+#: "code" geht immer direkt an codepilot_task, ohne das Chat-Modell zu
+#: befragen -- der Nutzer hat den Modus bewusst gewählt. "agent" zerlegt den
+#: Auftrag zuerst in Schritte (Planner) und führt sie einzeln aus (Executor,
+#: siehe ``Agent.handle_agent_task``).
+CommandMode = Literal["chat", "code", "agent"]
+_MODES: tuple[str, ...] = ("chat", "code", "agent")
+
+
 class CommandIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=20000)
-    #: "code" geht immer direkt an codepilot_task, ohne das Chat-Modell zu
-    #: befragen -- der Nutzer hat den Modus bewusst gewählt.
-    mode: Literal["chat", "code"] = "chat"
+    mode: CommandMode = "chat"
 
 
 class GraphIn(BaseModel):
@@ -47,6 +57,15 @@ class GraphIn(BaseModel):
 
 class WhisperKeyIn(BaseModel):
     api_key: str = Field(default="", max_length=200)
+
+
+class PermissionResolveIn(BaseModel):
+    request_id: str = Field(..., min_length=1)
+    approved: bool = False
+
+
+class UndoIn(BaseModel):
+    record_id: str = Field(default="")
 
 
 class Hub:
@@ -89,7 +108,18 @@ def create_app(config: Config | None = None) -> FastAPI:
                           temperature=config.temperature,
                           timeout=config.request_timeout)
     hub = Hub()
-    agent = Agent(config, store, registry, client, emit=hub.send)
+    audit = AuditLog(config.audit_db_path)
+    permission_gate = PermissionGate(
+        policy=PermissionPolicy(
+            confirm_read=config.permissions.confirm_read,
+            confirm_write=config.permissions.confirm_write,
+            confirm_system=config.permissions.confirm_system,
+            confirmation_timeout=config.permissions.confirmation_timeout),
+        emit=hub.send)
+    tasks = TaskManager(config.task_db_path)
+    agent = Agent(config, store, registry, client, emit=hub.send,
+                  permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
+                  tasks=tasks)
     busy = asyncio.Lock()
     whisper = WhisperClient(api_key=config.whisper.api_key, model=config.whisper.model,
                             timeout=config.whisper.timeout)
@@ -137,6 +167,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.agent = agent
     app.state.hub = hub
     app.state.whisper = whisper
+    app.state.audit = audit
+    app.state.permission_gate = permission_gate
+    app.state.undo = registry.undo_store
+    app.state.tasks = tasks
 
     # ------------------------------------------------------------ Zugang
     def check_token(supplied: str | None) -> None:
@@ -182,6 +216,13 @@ def create_app(config: Config | None = None) -> FastAPI:
             "geraete": hub.count,
             "codepilot_status": registry.codepilot_link.status_snapshot(),
             "whisper_configured": whisper.configured,
+            "berechtigungen": {
+                "read": permission_gate.policy.requires_confirmation(PermissionLevel.READ),
+                "write": permission_gate.policy.requires_confirmation(PermissionLevel.WRITE),
+                "system": permission_gate.policy.requires_confirmation(PermissionLevel.SYSTEM),
+                "critical": True,  # nie abschaltbar, siehe permissions.py
+                "offen": len(permission_gate.pending),
+            },
         }
 
     @app.get("/api/health")
@@ -202,6 +243,53 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def search_memory(q: str, limit: int = 6) -> dict:
         return {"treffer": [m.as_dict() | {"score": m.score}
                             for m in store.search(q, min(max(limit, 1), 50))]}
+
+    # ------------------------------------------------------ Audit / Undo
+    @app.get("/api/audit", dependencies=Guarded)
+    async def get_audit(tool: str | None = None, level: str | None = None,
+                        ok: bool | None = None, limit: int = 100) -> dict:
+        """Das Audit Log -- filterbar, wie in der Aufgabenstellung verlangt."""
+        parsed_level = PermissionLevel.from_label(level) if level else None
+        entries = await asyncio.to_thread(
+            audit.query, tool=tool, level=parsed_level, ok=ok, limit=limit)
+        return {"eintraege": [e.as_dict() for e in entries]}
+
+    @app.get("/api/undo", dependencies=Guarded)
+    async def list_undo(limit: int = 20) -> dict:
+        records = await asyncio.to_thread(registry.undo_store.list, limit)
+        return {"eintraege": [
+            {"id": r.id, "zeit": r.ts, "werkzeug": r.tool,
+             "beschreibung": r.description, "rueckgaengig_gemacht": r.undone}
+            for r in records]}
+
+    @app.post("/api/undo", dependencies=Guarded)
+    async def do_undo(body: UndoIn) -> dict:
+        try:
+            summary = await asyncio.to_thread(registry.undo_store.undo, body.record_id or None)
+        except UndoError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"ergebnis": summary}
+
+    @app.post("/api/permission/resolve", dependencies=Guarded)
+    async def resolve_permission(body: PermissionResolveIn) -> dict:
+        """Antwort auf ein ``permission.requested``-Ereignis -- von jedem
+        Gerät, nicht nur dem, das die Aufgabe gestellt hat."""
+        found = permission_gate.resolve(body.request_id, body.approved)
+        return {"gefunden": found}
+
+    @app.get("/api/tasks", dependencies=Guarded)
+    async def list_tasks(limit: int = 20) -> dict:
+        """Task History (Agent Mode) -- Grundlage der späteren Task-Queue-
+        Oberfläche (Phase 7); heute schon abrufbar für Nachvollziehbarkeit."""
+        found = await asyncio.to_thread(tasks.list, limit)
+        return {"aufgaben": [t.as_dict() for t in found]}
+
+    @app.get("/api/tasks/{task_id}", dependencies=Guarded)
+    async def get_task(task_id: str) -> dict:
+        task = await asyncio.to_thread(tasks.get, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Unbekannte Aufgabe: {task_id}")
+        return task.as_dict()
 
     @app.put("/api/whisper/key", dependencies=Guarded)
     async def set_whisper_key(body: WhisperKeyIn) -> dict:
@@ -239,8 +327,12 @@ def create_app(config: Config | None = None) -> FastAPI:
         async with busy:
             await hub.send("message", {"who": "me", "text": text, "mode": mode})
             try:
-                reply = (await agent.handle_code(text) if mode == "code"
-                         else await agent.handle(text))
+                if mode == "code":
+                    reply = await agent.handle_code(text)
+                elif mode == "agent":
+                    reply = await agent.handle_agent_task(text)
+                else:
+                    reply = await agent.handle(text)
             except Exception as exc:  # noqa: BLE001 - der Zug wird per
                 # asyncio.create_task abgefeuert; ohne dieses Netz stirbt ein
                 # unerwarteter Fehler lautlos im Hintergrund und der Nutzer
@@ -277,7 +369,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     continue
                 if payload.get("type") == "command":
                     text = str(payload.get("text") or "").strip()[:20000]
-                    mode = payload.get("mode") if payload.get("mode") in ("chat", "code") else "chat"
+                    mode = payload.get("mode") if payload.get("mode") in _MODES else "chat"
                     if text:
                         asyncio.create_task(run_turn(text, mode))
                 elif payload.get("type") == "memory":
@@ -285,6 +377,10 @@ def create_app(config: Config | None = None) -> FastAPI:
                     if isinstance(graph, dict) and isinstance(graph.get("nodes"), list):
                         await asyncio.to_thread(store.replace_graph, graph)
                         await hub.send("memory", store.graph())
+                elif payload.get("type") == "permission":
+                    request_id = str(payload.get("request_id") or "")
+                    if request_id:
+                        permission_gate.resolve(request_id, bool(payload.get("approved")))
         except WebSocketDisconnect:
             pass
         finally:

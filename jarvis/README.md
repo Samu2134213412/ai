@@ -92,7 +92,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (109 Tests):
+Fertig und getestet (237 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * Direct Action Router für eindeutige Befehle
@@ -100,10 +100,15 @@ Fertig und getestet (109 Tests):
 * Agent mit Ollama-Werkzeugaufruf
 * `codepilot_task` als Brücke zum Coding-Agenten, per Werkzeugaufruf oder über den Code-Modus-Schalter, der ihn direkt anspricht
 * WebSocket an alle Geräte gleichzeitig
+* Speech-to-Text über Whisper (eigener API-Schlüssel), CodePilot-Statusmelder
+* **Phase 1 (Agent Mode):** Planner/Executor mit Error Recovery, Task History,
+  ein fünfstufiges Permission-System (SAFE…CRITICAL) mit echtem
+  Bestätigungs-Round-Trip, ein Undo-System, ein filterbares Audit Log —
+  siehe `server/README.md`
 
-Offen:
+Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
 
-1. Alten Jarvis-Code einlesen und gegen diese Fassung abgleichen
-2. Chat-Modell auf der echten Maschine wählen und messen
-3. `screen_capture`, `web_search`, `mouse_keyboard`, `open_program`
-4. Skills: Abläufe als wiederverwendbare Einheiten
+1. Chat-Modell auf der echten Maschine wählen und messen
+2. Memory-Tiers (Short-/Session-/Long-Term/Project) mit Metadatenfeldern (Phase 2)
+3. Multi-Model-Router, Ollama-Umschalter (Phase 2)
+4. Skills, `screen_capture`, `web_search`, `mouse_keyboard`, `open_program` (Phase 3/4)

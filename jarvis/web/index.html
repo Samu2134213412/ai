@@ -226,10 +226,12 @@ body[data-st="failed"] .status .md{color:var(--red);text-shadow:0 0 24px rgba(25
 .pv.talk{color:var(--mute);border-color:var(--edge)}
 .pv.fail{color:var(--red);border-color:#5d1f26;background:rgba(48,10,14,.6)}
 .pv.demo{color:#d8973a;border-color:#5a4418;background:rgba(46,32,8,.55)}
+.pv.warn{color:#d8973a;border-color:#5a4418;background:rgba(46,32,8,.55)}
 .ev{margin-top:6px;padding-top:5px;border-top:1px dashed var(--edge);
   font-family:var(--mono);font-size:10.5px;color:var(--mute);overflow-wrap:anywhere}
 .ev b{color:var(--green);font-weight:500}
 .ev.bad b{color:var(--red)}
+.msg.perm .btnrow{margin-top:8px}
 
 /* ── Aktivitätsband ────────────────────────────────────────── */
 .wave{flex:none;height:42px;display:flex;align-items:stretch;gap:1px;padding:5px 9px}
@@ -705,10 +707,73 @@ function say({who,text,prov="talk",demo=false,evidence=null,fail=false,mode=null
   const n=el("article","msg"+(who==="me"?" me":"")), tags=[];
   if(demo) tags.push('<span class="pv demo">Demo</span>');
   if(mode==="code") tags.push('<span class="pv tool">Code-Modus</span>');
+  if(mode==="agent") tags.push('<span class="pv warn">Agent-Modus</span>');
   if(who!=="me"){ const p=PROV[prov]||PROV.talk; tags.push(`<span class="pv ${p[0]}">${p[1]}</span>`); }
   n.innerHTML=`<div class="who">${who==="me"?"Du":"Jarvis"}${tags.join("")}</div><p>${text}</p>`
     +(evidence?`<div class="ev${fail?" bad":""}">${evidence}</div>`:"");
   $("log").appendChild(n); $("log").scrollTop=$("log").scrollHeight; return n;
+}
+
+/* ── Permission-System: Bestätigung anfragen, Ergebnis nachtragen ─── */
+const pendingPermissions = new Map(); // request_id -> Log-Element
+function sayPermission({request_id, tool, level, arguments:args, detail}){
+  const n=el("article","msg perm");
+  const argStr = args && Object.keys(args).length
+    ? Object.entries(args).map(([k,v])=>`${esc(k)}=${esc(String(v))}`).join(", ") : "";
+  n.innerHTML = `<div class="who">Jarvis<span class="pv warn">Bestätigung nötig · ${esc(level)}</span></div>`
+    + `<p>${esc(detail || tool)}</p>`
+    + (argStr ? `<div class="ev">${argStr}</div>` : "")
+    + `<div class="btnrow">
+         <button type="button" data-perm-yes="${esc(request_id)}">Erlauben</button>
+         <button type="button" class="gh" data-perm-no="${esc(request_id)}">Ablehnen</button>
+       </div>`;
+  $("log").appendChild(n); $("log").scrollTop=$("log").scrollHeight;
+  pendingPermissions.set(request_id, n);
+}
+function resolvePermissionUi(request_id, label, ok){
+  const n = pendingPermissions.get(request_id);
+  if(!n) return;
+  pendingPermissions.delete(request_id);
+  const row = n.querySelector(".btnrow"); if(row) row.remove();
+  const tag = n.querySelector(".pv");
+  if(tag){ tag.className = "pv " + (ok ? "tool" : "fail"); tag.textContent = label; }
+}
+$("log").addEventListener("click",(e)=>{
+  const btn = e.target.closest("[data-perm-yes],[data-perm-no]");
+  if(!btn) return;
+  const request_id = btn.dataset.permYes || btn.dataset.permNo;
+  const approved = "permYes" in btn.dataset;
+  if(live && sock && sock.readyState === 1)
+    sock.send(JSON.stringify({type:"permission", request_id, approved}));
+  const row = btn.closest(".btnrow");
+  if(row) row.querySelectorAll("button").forEach((b)=>{ b.disabled=true; });
+});
+
+/* ── Agent Mode: Plan und Schritt-Fortschritt im Verlauf sichtbar ──── */
+function sayTaskEvent(kind, m){
+  let head="", body="", cls="talk";
+  if(kind==="task.created"){
+    head = `Agent-Modus · Plan mit ${m.schritte.length} Schritt(en)`;
+    body = m.schritte.map((s,i)=>`${i+1}. ${esc(s.beschreibung)}`).join("<br>");
+  } else if(kind==="task.step.started"){
+    head = "Schritt läuft: " + esc(m.beschreibung);
+  } else if(kind==="task.step.retry"){
+    head = `Versuch ${m.versuch} gescheitert, neuer Ansatz`; cls="fail";
+    body = esc(m.fehler || "");
+  } else if(kind==="task.step.finished"){
+    const ok = m.status==="done";
+    head = (ok ? "Schritt fertig: " : "Schritt gescheitert: ") + esc(m.beschreibung);
+    body = esc(m.ergebnis || m.fehler || "");
+    cls = ok ? "tool" : (m.status==="failed" ? "fail" : "talk");
+  } else if(kind==="task.finished"){
+    const ok = m.status==="completed";
+    head = ok ? "Agent-Aufgabe abgeschlossen" : "Agent-Aufgabe gescheitert";
+    cls = ok ? "tool" : "fail";
+  } else return;
+  const n=el("article","msg task"), p=PROV[cls]||PROV.talk;
+  n.innerHTML = `<div class="who">Jarvis<span class="pv ${p[0]}">${p[1]}</span></div><p>${head}</p>`
+    + (body ? `<div class="ev${cls==="fail"?" bad":""}">${body}</div>` : "");
+  $("log").appendChild(n); $("log").scrollTop=$("log").scrollHeight;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1082,20 +1147,30 @@ buildTabs(); layout();
 /* ═══════════════════════════════════════════════════════════════
    7  EINGABE — ohne Server wird nichts ausgefuehrt
    ═══════════════════════════════════════════════════════════════ */
-let live=false, codeMode=false;
+let live=false;
+const MODES=["chat","code","agent"];
+const MODE_LABEL={chat:"Chat-Modus",code:"Code-Modus",agent:"Agent-Modus"};
+const MODE_PLACEHOLDER={chat:"Befehl oder Frage an Jarvis …",
+  code:"Programmieraufgabe für CodePilot …",
+  agent:"Komplexe, mehrstufige Aufgabe für den Agent Mode …"};
+let modeIdx=0;
+function updateModeButton(){
+  const mode=MODES[modeIdx];
+  $("modeToggle").textContent=MODE_LABEL[mode];
+  $("modeToggle").setAttribute("aria-pressed",String(mode!=="chat"));
+  $("cmd").placeholder=MODE_PLACEHOLDER[mode];
+}
 $("modeToggle").addEventListener("click",()=>{
-  codeMode=!codeMode;
-  $("modeToggle").setAttribute("aria-pressed",String(codeMode));
-  $("cmd").placeholder=codeMode
-    ? "Programmieraufgabe für CodePilot …"
-    : "Befehl oder Frage an Jarvis …";
+  modeIdx=(modeIdx+1)%MODES.length;
+  updateModeButton();
 });
+updateModeButton();
 $("bar").addEventListener("submit",(e)=>{
   e.preventDefault();
   const v=$("cmd").value.trim(); if(!v) return;
   $("cmd").value="";
   if(view!=="cmd") showView("cmd");
-  const mode=codeMode?"code":"chat";
+  const mode=MODES[modeIdx];
   if(live && sock && sock.readyState === 1){
     // Der Server schickt die eigene Nachricht zurück, damit alle Geräte
     // denselben Verlauf sehen. Deshalb hier nichts lokal anhängen.
@@ -1331,6 +1406,17 @@ function onFrame(m){
         MEM = {nodes: m.nodes, links: m.links || []};
         seedPositions(false); renderLegend(); paint();
       }
+      break;
+    case "permission.requested": sayPermission(m); break;
+    case "permission.approved": resolvePermissionUi(m.request_id, "erlaubt", true); break;
+    case "permission.denied": resolvePermissionUi(m.request_id, "abgelehnt", false); break;
+    case "permission.timeout": resolvePermissionUi(m.request_id, "Zeit abgelaufen", false); break;
+    case "task.created":
+    case "task.step.started":
+    case "task.step.retry":
+    case "task.step.finished":
+    case "task.finished":
+      sayTaskEvent(m.type, m);
       break;
   }
 }

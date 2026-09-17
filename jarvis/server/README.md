@@ -44,6 +44,85 @@ geht an den Agenten — im Zweifel greift der Router nicht.
 
 **Der Wächter zuletzt.** Er ist der Grund, warum dieses Projekt neu gebaut wurde.
 
+Zwischen „Werkzeug ausgewählt" und „Werkzeug ausgeführt" sitzt seit Phase 1
+ein weiterer, für keinen Aufrufer umgehbarer Schritt — Router-Direkttreffer,
+Chat-Loop, Code-Modus und Agent Mode laufen alle durch dieselbe Stelle
+(`Agent._run_tool`):
+
+```
+Werkzeug ausgewählt
+   │
+   ▼
+Permission-Gate ──── Bestätigung nötig? ──► warten auf Antwort ──┐
+   │ (SAFE/erlaubt)                                              │
+   ▼                                                             ▼
+Undo-Snapshot                                              abgelehnt/Timeout
+   │                                                             │
+   ▼                                                             ▼
+ausführen                                              ehrlicher Fehlschlag
+   │
+   ▼
+Audit-Log-Eintrag
+```
+
+## Agent Mode
+
+Für Aufträge, die mehrere Schritte brauchen ("Bring dieses Projekt zum
+Laufen"), gibt es neben Chat- und Code-Modus einen dritten: **Agent-Modus**.
+
+1. **Planner** (`planner.py`) fragt das Modell nach einer nummerierten
+   Schrittliste. Antwortet es nicht brauchbar, wird der ganze Auftrag ehrlich
+   als *ein* Schritt behandelt — nie ein vorgetäuschter Plan.
+2. **Executor** (`Agent.handle_agent_task`) führt die Schritte nacheinander
+   aus, über denselben Werkzeug-Loop wie der Chat-Modus.
+3. **Error Recovery**: scheitert ein Schritt, wird nicht sofort aufgegeben —
+   ein neuer Versuch mit dem Fehler als Kontext, bis zu `max_step_retries`
+   (Vorgabe 2). Kein endloses Wiederholen.
+4. **Task History / State Manager** (`tasks.py`): jeder Auftrag ist eine
+   `Task` mit benannten `TaskStep`s, persistent in `aufgaben.sqlite3`,
+   abrufbar über `GET /api/tasks` bzw. `GET /api/tasks/{id}`.
+
+Jeder Schritt sendet Ereignisse (`task.created`, `task.step.started`,
+`task.step.retry`, `task.step.finished`, `task.finished`) — in der Oberfläche
+sichtbar als eigene Verlaufszeilen, nicht nur als Zustandsband.
+
+## Permission-System
+
+Jedes Werkzeug trägt eine Sicherheitsstufe (`permissions.py`):
+
+| Stufe | Beispiele hier | Automatisch erlaubt? |
+|---|---|---|
+| `SAFE` | `read_file`, `list_dir`, `memory_search` | immer |
+| `READ` | `get_system_info`, `get_cpu_info`, `get_ram_info` | per Vorgabe ja, konfigurierbar |
+| `WRITE` | `write_file`, `move_file`, `memory_add`, `undo_last_action` | per Vorgabe **nein** |
+| `SYSTEM` | `run_command`, `codepilot_task` | per Vorgabe **nein** |
+| `CRITICAL` | `delete_file`, `memory_forget` | **nie automatisch, nicht konfigurierbar** |
+
+Verlangt eine Aktion eine Bestätigung, sendet der Server ein
+`permission.requested`-Ereignis (Werkzeug, Stufe, Argumente) an alle Geräte
+und **wartet wirklich** — bis zu `permissions.confirmation_timeout` Sekunden
+(Vorgabe 300), dann gilt sie als abgelehnt. Jedes Gerät kann antworten: über
+die Oberfläche (Erlauben/Ablehnen-Karte im Verlauf), per WebSocket
+(`{"type":"permission","request_id":…,"approved":true|false}`) oder über
+`POST /api/permission/resolve`.
+
+## Undo / Rückgängig
+
+Vor jedem `write_file`, `delete_file`, `move_file`, `memory_add` und
+`memory_forget` sichert `undo.py` den vorherigen Zustand — Dateiinhalt,
+Existenz, oder die gelöschte Erinnerung. „Jarvis, mach die letzte Änderung
+rückgängig" (oder `POST /api/undo`) macht die letzte solche Aktion rückgängig,
+eine bestimmte über ihre `id` (`GET /api/undo` listet sie). Ein
+Wiederherstellen, das eine inzwischen neu angelegte Datei überschreiben
+würde, wird verweigert statt sie stillschweigend zu ersetzen.
+
+## Audit Log
+
+Jeder Werkzeugaufruf — erlaubt oder verweigert, erfolgreich oder
+fehlgeschlagen — landet in `protokoll.sqlite3`: Zeit, ursprüngliche Anfrage,
+Werkzeug, Sicherheitsstufe, Argumente, Ergebnis. Filterbar über
+`GET /api/audit?tool=…&level=…&ok=…`.
+
 ## Code-Modus
 
 Ein dritter Weg, neben Router und Agent: der Schalter „Code-Modus" in der
@@ -159,9 +238,12 @@ ist der Hosenträger.
 
 | Werkzeug | |
 |---|---|
-| `write_file` `read_file` `list_dir` `search_files` `delete_file` `move_file` | Dateien, nur innerhalb der freigegebenen Wurzeln |
+| `write_file` `read_file` `list_dir` `search_files` `move_file` | Dateien, nur innerhalb der freigegebenen Wurzeln |
+| `delete_file` | **CRITICAL** — löscht eine Datei, immer mit Bestätigung |
 | `get_system_info` `get_cpu_info` `get_ram_info` `get_disk_info` `list_processes` | Systemwerte, echt gemessen |
-| `memory_search` `memory_add` `memory_link` `memory_forget` | Langzeitgedächtnis |
+| `memory_search` `memory_add` `memory_link` | Langzeitgedächtnis |
+| `memory_forget` | **CRITICAL** — löscht eine Erinnerung endgültig |
+| `undo_last_action` `list_undoable` | letzte(n) Änderung(en) rückgängig machen bzw. ansehen |
 | `run_command` | **aus per Voreinstellung**, Allowlist nötig |
 | `codepilot_task` | nur wenn CodePilot eingerichtet ist |
 
@@ -193,9 +275,15 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
   "roots": ["C:\\Users\\DeinName\\Desktop"],
   "shell": {"enabled": false, "allowlist": [], "timeout": 60},
   "codepilot": {"url": "http://127.0.0.1:8765", "token": "", "project_id": ""},
-  "whisper": {"api_key": "", "model": "whisper-1", "timeout": 30}
+  "whisper": {"api_key": "", "model": "whisper-1", "timeout": 30},
+  "permissions": {"confirm_read": false, "confirm_write": true,
+                  "confirm_system": true, "confirmation_timeout": 300.0}
 }
 ```
+
+`permissions.confirm_read`/`confirm_write`/`confirm_system` sind
+einstellbar. SAFE ist immer automatisch erlaubt, CRITICAL immer
+bestätigungspflichtig — beides absichtlich **kein** Feld hier.
 
 `codepilot.token` ist ein Gerätetoken aus CodePilot Remote (`server/`), die
 `project_id` das dortige Projekt. Erst wenn beides steht, erscheint
@@ -209,10 +297,14 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
 | `GET /api/health` | Modelle, Werkzeuge, Ollama-Zustand, offene Probleme |
 | `GET`/`PUT /api/memory` | das Wissensnetz |
 | `GET /api/memory/search?q=` | gewichtete Begriffssuche |
-| `POST /api/command` | ein Zug ohne WebSocket, für Skripte |
+| `POST /api/command` | ein Zug ohne WebSocket, für Skripte (`mode`: `chat`/`code`/`agent`) |
 | `PUT /api/whisper/key` | eigenen Whisper-API-Schlüssel eintragen/löschen |
 | `POST /api/whisper/transcribe` | Audio → Text über Whisper |
-| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, CodePilot-Status |
+| `GET /api/audit` | Audit Log, filterbar nach `tool`/`level`/`ok` |
+| `GET /api/undo`, `POST /api/undo` | rückgängig machbare Änderungen ansehen / eine rückgängig machen |
+| `POST /api/permission/resolve` | eine offene Bestätigungsanfrage beantworten |
+| `GET /api/tasks`, `GET /api/tasks/{id}` | Task History (Agent Mode) |
+| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, CodePilot-Status, Permission-Anfragen, Task-Ereignisse |
 
 Ein Zug geht an **alle** offenen Verbindungen. Was am PC angefangen wird, läuft
 auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtnis.
@@ -220,7 +312,7 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 157 Tests
+python -m pytest -q      # 237 Tests
 ```
 
 Sie brauchen weder Ollama noch CodePilot noch einen echten Whisper-Schlüssel:

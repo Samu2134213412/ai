@@ -9,6 +9,7 @@ bekommt statt eines Versprechens.
 from __future__ import annotations
 
 from ..memory import KINDS, MemoryStore
+from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
 
 
@@ -75,7 +76,7 @@ def build(store: MemoryStore) -> list[Tool]:
              {"type": "object",
               "properties": {"query": _str, "limit": {"type": "integer"}},
               "required": ["query"]},
-             memory_search),
+             memory_search, level=PermissionLevel.SAFE),
         Tool("memory_add",
              "Legt eine neue Erinnerung an. Art: " + ", ".join(KINDS) + ".",
              {"type": "object",
@@ -83,12 +84,12 @@ def build(store: MemoryStore) -> list[Tool]:
                              "text": {**_str, "description": "Der Inhalt"},
                              "kind": {**_str, "enum": list(KINDS)}},
               "required": ["label"]},
-             memory_add, mutating=True),
+             memory_add, level=PermissionLevel.WRITE),
         Tool("memory_link", "Verbindet zwei Erinnerungen miteinander.",
              {"type": "object", "properties": {"a": _str, "b": _str},
               "required": ["a", "b"]},
-             memory_link, mutating=True),
+             memory_link, level=PermissionLevel.WRITE),
         Tool("memory_forget", "Löscht eine Erinnerung endgültig.",
              {"type": "object", "properties": {"id": _str}, "required": ["id"]},
-             memory_forget, mutating=True),
+             memory_forget, level=PermissionLevel.CRITICAL),
     ]

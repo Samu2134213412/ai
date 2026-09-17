@@ -19,13 +19,18 @@ was der Vorgänger dieses Projekts zuverlässig getan hat.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Awaitable, Callable
 
-from . import guard, router
+from . import guard, planner, router
+from .audit import AuditLog
 from .config import Config
 from .memory import MemoryStore
 from .ollama import ChatTurn, OllamaClient, OllamaError
+from .permissions import PermissionDenied, PermissionGate
+from .tasks import StepStatus, Task, TaskManager, TaskStatus
 from .tools import Registry, ToolMissing, ToolResult
+from .undo import UndoStore
 
 Emit = Callable[[str, dict], Awaitable[None]]
 
@@ -54,7 +59,10 @@ Reine Fragen beantwortest du ohne Werkzeug.
 class Agent:
     def __init__(self, config: Config, store: MemoryStore, registry: Registry,
                  client: OllamaClient, emit: Emit | None = None,
-                 history_turns: int = 12):
+                 history_turns: int = 12,
+                 permission_gate: PermissionGate | None = None,
+                 audit: AuditLog | None = None, undo: UndoStore | None = None,
+                 tasks: TaskManager | None = None, max_step_retries: int = 2):
         self.config = config
         self.store = store
         self.registry = registry
@@ -62,6 +70,23 @@ class Agent:
         self.emit = emit or self._silent
         self.history: list[dict[str, Any]] = []
         self.history_turns = history_turns
+        self.tasks = tasks or TaskManager(":memory:")
+        #: Wie oft ein gescheiterter Schritt mit einem alternativen Ansatz neu
+        #: versucht wird, bevor der ganze Auftrag als gescheitert gilt --
+        #: "Setze ein Retry Limit. Keine Endlosschleifen." (Punkt 28).
+        self.max_step_retries = max_step_retries
+        # Ohne Angabe: sichere Voreinstellung bzw. reine In-Memory-Ablage, für
+        # Aufrufer (Tests, Skripte), die sich um Berechtigung/Protokoll nicht
+        # selbst kümmern -- app.py baut in Betrieb echte, dateibasierte
+        # Instanzen und reicht sie hier hinein. Undo ist ein Sonderfall: eine
+        # frisch angelegte ``UndoStore()`` ohne Workspace/Gedächtnis-Kontext
+        # würde nie einen Snapshot aufnehmen (siehe ``UndoContext``), also
+        # wird zuerst die schon richtig verkabelte Instanz von der Registry
+        # übernommen (``build_registry`` legt sie dort immer ab) und nur ohne
+        # eine solche Registry auf eine funktionslose Ablage zurückgefallen.
+        self.permission_gate = permission_gate or PermissionGate(emit=self.emit)
+        self.audit = audit or AuditLog(":memory:")
+        self.undo = undo or getattr(registry, "undo_store", None) or UndoStore(":memory:")
 
     @staticmethod
     async def _silent(_kind: str, _payload: dict) -> None:
@@ -70,11 +95,38 @@ class Agent:
     async def _state(self, mode: str, detail: str = "") -> None:
         await self.emit("state", {"mode": mode, "detail": detail})
 
-    async def _run_tool(self, name: str, arguments: dict) -> ToolResult:
-        """Führt ein Werkzeug aus und meldet Start und Ende an die Oberfläche."""
+    async def _run_tool(self, name: str, arguments: dict,
+                        request_text: str = "") -> ToolResult:
+        """Der eine Durchlauf für jeden Werkzeugaufruf -- Router-Direkttreffer,
+        Chat-Loop und Code-Modus rufen alle diese eine Methode auf. Genau
+        deshalb sitzen Permission-Check, Undo-Snapshot und Audit-Eintrag hier
+        und nirgends sonst: kein Aufrufer kann sie versehentlich umgehen.
+
+        Reihenfolge: Berechtigung prüfen (kann blockieren, bis eine Antwort
+        kommt oder die Zeit abläuft) -> Snapshot für Undo -> ausführen ->
+        protokollieren. Eine verweigerte Berechtigung wird zu einem ganz
+        normalen fehlgeschlagenen ``ToolResult`` -- der Wächter behandelt sie
+        dann genauso ehrlich wie jeden anderen Fehlschlag, ohne dass hier ein
+        Sonderfall nötig wäre.
+        """
+        tool = self.registry.get(name)
+        detail = f"{name}({', '.join(f'{k}={v}' for k, v in (arguments or {}).items())})"
+        try:
+            await self.permission_gate.check(name, tool.level, arguments, detail=detail)
+        except PermissionDenied as exc:
+            result = ToolResult(tool=name, ok=False, summary=str(exc),
+                                evidence={"stufe": tool.level.label, "verweigert": True})
+            self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
+                              ok=False, summary=result.summary, request=request_text)
+            return result
+
+        pre_snapshot = self.undo.begin(name, arguments or {})
         await self.emit("tool.started", {"tool": name, "arguments": arguments})
         result = await asyncio.to_thread(self.registry.call, name, arguments)
         await self.emit("tool.finished", result.as_event())
+        self.undo.finish(name, result.summary, pre_snapshot, result)
+        self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
+                          ok=result.ok, summary=result.summary, request=request_text)
         return result
 
     # ---------------------------------------------------------- Code-Modus
@@ -100,7 +152,7 @@ class Agent:
             return reply
 
         await self._state("executing", f"codepilot_task · {task[:70]}")
-        result = await self._run_tool("codepilot_task", {"task": task})
+        result = await self._run_tool("codepilot_task", {"task": task}, request_text=task)
         await self._state("failed" if not result.ok else "idle")
         # Kein Modelltext im Spiel, also nichts zu beschönigen — die
         # Zusammenfassung des Werkzeugs ist die Antwort.
@@ -118,7 +170,7 @@ class Agent:
         action = router.route(text)
         if action and action.tool in self.registry:
             await self._state("executing", f"{action.tool} · {action.detail}")
-            result = await self._run_tool(action.tool, action.arguments)
+            result = await self._run_tool(action.tool, action.arguments, request_text=text)
             await self._state("idle")
             reply = guard.verify(self._phrase(result), [result])
             self._remember(text, reply)
@@ -171,7 +223,7 @@ class Agent:
                                         f"{', '.join(self.registry.names())}")})
                         continue
                     await self._state("executing", f"{call.name}")
-                    result = await self._run_tool(call.name, call.arguments)
+                    result = await self._run_tool(call.name, call.arguments, request_text=text)
                     results.append(result)
                     messages.append({"role": "tool", "name": call.name,
                                      "content": result.for_model()})
@@ -208,7 +260,141 @@ class Agent:
         self._remember(text, reply)
         return reply
 
+    # ------------------------------------------------------------ Agent Mode
+    async def handle_agent_task(self, goal: str) -> guard.Reply:
+        """Agent Mode (Punkt 1): ein komplexer Auftrag wird zuerst in
+        benannte Schritte zerlegt (Planner), dann nacheinander ausgeführt
+        (Executor). Scheitert ein Schritt, wird nicht sofort aufgegeben --
+        ein neuer Versuch mit dem Fehler als Kontext, bis zum Retry-Limit
+        (Error Recovery, Punkt 28). Der ganze Verlauf ist als Task
+        persistent und wird nach jedem Schritt als Ereignis gesendet (Task
+        History + State Manager)."""
+        goal = (goal or "").strip()
+        if not goal:
+            return guard.Reply(text="", provenance=guard.TALK)
+
+        await self._state("thinking", "plane die Schritte")
+        step_texts = await planner.plan(self.client, goal)
+        task = self.tasks.create(goal, step_texts)
+        await self.emit("task.created", task.as_dict())
+
+        task.status = TaskStatus.RUNNING
+        self.tasks.save(task)
+        all_results: list[ToolResult] = []
+
+        for step in task.steps:
+            step.status = StepStatus.RUNNING
+            step.started_at = time.time()
+            self.tasks.save(task)
+            await self._state("executing", f"Schritt: {step.description}")
+            await self.emit("task.step.started", {"task_id": task.id, **step.as_dict()})
+
+            instruction = step.description
+            # Nur die Ergebnisse des jeweils LETZTEN Versuchs zählen für das
+            # Gesamturteil -- ein Versuch, der scheiterte und dann durch einen
+            # anderen Ansatz ersetzt wurde, darf ein am Ende erfolgreiches
+            # Ergebnis nicht rückwirkend als Fehlschlag erscheinen lassen.
+            # Sichtbar bleibt er trotzdem: im "task.step.retry"-Ereignis, in
+            # step.retries und im Audit Log (jeder Versuch läuft durch
+            # _run_tool und wird dort unabhängig protokolliert).
+            step_results: list[ToolResult] = []
+            for attempt in range(self.max_step_retries + 1):
+                try:
+                    text, step_results = await self._run_tool_loop(instruction, request_text=goal)
+                except OllamaError as exc:
+                    text, step_results = "", []
+                    step.error = f"Modell nicht erreichbar: {exc}"
+                else:
+                    failed = [r for r in step_results if not r.ok]
+                    if not failed:
+                        step.status = StepStatus.DONE
+                        step.result_summary = text.strip() or (
+                            step_results[-1].summary if step_results else "erledigt")
+                        break
+                    step.error = "; ".join(r.summary for r in failed)
+
+                step.retries = attempt + 1
+                if attempt < self.max_step_retries:
+                    await self.emit("task.step.retry", {
+                        "task_id": task.id, "step_id": step.id,
+                        "versuch": attempt + 1, "fehler": step.error})
+                    instruction = (
+                        f"Der vorige Versuch ist gescheitert: {step.error}. "
+                        f"Versuche einen anderen Ansatz für: {step.description}")
+                else:
+                    step.status = StepStatus.FAILED
+
+            all_results.extend(step_results)
+            step.finished_at = time.time()
+            self.tasks.save(task)
+            await self.emit("task.step.finished", {"task_id": task.id, **step.as_dict()})
+
+            if step.status == StepStatus.FAILED:
+                task.status = TaskStatus.FAILED
+                self.tasks.save(task)
+                await self._state("failed")
+                await self.emit("task.finished", task.as_dict())
+                reply = guard.verify(
+                    f"Schritt gescheitert: {step.description}. {step.error}", all_results)
+                self._remember(goal, reply)
+                return reply
+
+        task.status = TaskStatus.COMPLETED
+        self.tasks.save(task)
+        await self._state("idle")
+        await self.emit("task.finished", task.as_dict())
+        final_text = " ".join(s.result_summary for s in task.steps if s.result_summary)
+        reply = guard.verify(final_text or "Alle Schritte abgeschlossen.", all_results)
+        self._remember(goal, reply)
+        return reply
+
     # ------------------------------------------------------------- Interna
+    async def _run_tool_loop(self, instruction: str,
+                             request_text: str) -> tuple[str, list[ToolResult]]:
+        """Eine eigenständige Werkzeugaufruf-Runde für einen einzelnen
+        Ausführungsschritt (Agent Mode).
+
+        Bewusst keine Wiederverwendung von ``handle()``s eigener Schleife:
+        die ist eng an den laufenden Chat-Verlauf (``self.history``)
+        gekoppelt und durch viele Tests abgesichert. Ein gemeinsamer
+        Codepfad hätte dafür gesorgt haben können, dass eine Änderung für
+        den Agent Mode unbemerkt das normale Chat-Verhalten mit verändert.
+        Etwas Ähnlichkeit in der Struktur ist hier der günstigere Preis als
+        dieses Risiko an bereits funktionierendem, getestetem Code.
+        """
+        context = await asyncio.to_thread(self.store.context_for, instruction)
+        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if context:
+            messages.append({"role": "system",
+                             "content": "Was du über deinen Nutzer weißt:\n" + context})
+        messages.append({"role": "user", "content": instruction})
+
+        results: list[ToolResult] = []
+        final = ""
+        for _round in range(self.config.max_tool_rounds):
+            turn: ChatTurn = await self.client.chat(messages, self.registry.schemas())
+            if not turn.tool_calls:
+                final = turn.text
+                break
+            messages.append({
+                "role": "assistant", "content": turn.text,
+                "tool_calls": [{"function": {"name": c.name, "arguments": c.arguments}}
+                               for c in turn.tool_calls]})
+            for call in turn.tool_calls:
+                if call.name not in self.registry:
+                    messages.append({
+                        "role": "tool", "name": call.name,
+                        "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' existiert "
+                                    f"nicht. Verfügbar: {', '.join(self.registry.names())}")})
+                    continue
+                result = await self._run_tool(call.name, call.arguments, request_text=request_text)
+                results.append(result)
+                messages.append({"role": "tool", "name": call.name,
+                                 "content": result.for_model()})
+        else:
+            final = f"Schritt nach {self.config.max_tool_rounds} Runden abgebrochen."
+        return final, results
+
     @staticmethod
     def _phrase(result: ToolResult) -> str:
         """Der Satz für einen Direktbefehl — aus dem Ergebnis, nicht aus Prosa."""

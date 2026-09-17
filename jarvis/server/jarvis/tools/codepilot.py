@@ -23,6 +23,7 @@ from pathlib import Path
 
 import httpx
 
+from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
 
 #: Zustände, bei denen CodePilot fertig ist.
@@ -375,5 +376,5 @@ def build(link: CodePilotLink) -> list[Tool]:
                   "project_id": {"type": "string",
                                  "description": "Projekt-ID, sonst das Standardprojekt"}},
               "required": ["task"]},
-             codepilot_task, mutating=True),
+             codepilot_task, level=PermissionLevel.SYSTEM),
     ]

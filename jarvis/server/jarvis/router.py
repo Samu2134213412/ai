@@ -59,6 +59,10 @@ _RECALL = re.compile(
     r"\b(?:was weißt du|was weisst du|woran erinnerst du dich|"
     r"erinnerst du dich)\b.{0,20}?\b(?:über|zu|an|von)\b\s*(.+)$", re.I | re.S)
 
+#: "mach die letzte Änderung rückgängig", "rückgängig machen", "undo" --
+#: eindeutig genug für ein einzelnes Wort, wie auch _DELETE/_LIST.
+_UNDO = re.compile(r"\b(?:rückgängig|rueckgaengig|undo)\b", re.I)
+
 
 @dataclass(frozen=True)
 class Action:
@@ -124,6 +128,10 @@ def route(message: str) -> Action | None:
         topic = recall.group(1).strip().rstrip("?.")
         if topic:
             return Action("memory_search", {"query": topic}, f"durchsuche Gedächtnis: {topic}")
+
+    # -- Rückgängig -----------------------------------------------------------
+    if _UNDO.search(text):
+        return Action("undo_last_action", {}, "mache die letzte Änderung rückgängig")
 
     # -- Systemwerte --------------------------------------------------------
     if _SYSINFO.search(text):

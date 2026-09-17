@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from jarvis.tools import knowledge, shell, system
+from jarvis.permissions import PermissionLevel
+from jarvis.tools import codepilot, knowledge, shell, system
 from jarvis.tools.base import Registry, Tool, ToolError, ToolMissing, ToolResult
 from jarvis.tools.files import Workspace, build as build_files
 
@@ -177,3 +178,55 @@ def test_memory_forget_prueft_nach(store):
     result = tools["memory_forget"].run(id=node.id)
     assert result.ok is True
     assert store.get(node.id) is None
+
+
+# ══════════════════════════════════════════════════ Sicherheitsstufen
+def test_lesende_dateiwerkzeuge_sind_safe(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    assert tools["read_file"].level is PermissionLevel.SAFE
+    assert tools["list_dir"].level is PermissionLevel.SAFE
+    assert tools["search_files"].level is PermissionLevel.SAFE
+
+
+def test_schreibende_dateiwerkzeuge_sind_write(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    assert tools["write_file"].level is PermissionLevel.WRITE
+    assert tools["move_file"].level is PermissionLevel.WRITE
+
+
+def test_loeschen_ist_critical(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    assert tools["delete_file"].level is PermissionLevel.CRITICAL
+
+
+def test_systemwerkzeuge_sind_read():
+    for tool in system.build():
+        assert tool.level is PermissionLevel.READ
+
+
+def test_gedaechtnis_lesen_ist_safe_schreiben_ist_write_loeschen_ist_critical(store):
+    tools = {t.name: t for t in knowledge.build(store)}
+    assert tools["memory_search"].level is PermissionLevel.SAFE
+    assert tools["memory_add"].level is PermissionLevel.WRITE
+    assert tools["memory_link"].level is PermissionLevel.WRITE
+    assert tools["memory_forget"].level is PermissionLevel.CRITICAL
+
+
+def test_run_command_ist_system():
+    policy = shell.ShellPolicy(enabled=True, allowlist=["echo"])
+    tools = {t.name: t for t in shell.build(policy)}
+    assert tools["run_command"].level is PermissionLevel.SYSTEM
+
+
+def test_codepilot_task_ist_system():
+    link = codepilot.CodePilotLink(url="http://x", token="t", project_id="p")
+    tools = {t.name: t for t in codepilot.build(link)}
+    assert tools["codepilot_task"].level is PermissionLevel.SYSTEM
+
+
+def test_mutating_property_leitet_sich_aus_level_ab():
+    safe = Tool("x", "", {"type": "object", "properties": {}}, lambda: None)
+    critical = Tool("y", "", {"type": "object", "properties": {}}, lambda: None,
+                    level=PermissionLevel.CRITICAL)
+    assert safe.mutating is False
+    assert critical.mutating is True

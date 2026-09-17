@@ -15,6 +15,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from ..permissions import PermissionLevel
+
 
 class ToolError(Exception):
     """Ein Werkzeug ist fehlgeschlagen. Die Nachricht wird dem Nutzer gezeigt."""
@@ -69,8 +71,14 @@ class Tool:
     description: str
     parameters: dict[str, Any]
     run: Callable[..., ToolResult]
-    #: Werkzeuge, die Zustand verändern, brauchen eine Freigabe.
-    mutating: bool = False
+    #: Sicherheitsstufe für das Permission-System (``permissions.py``).
+    #: Ersetzt das frühere ``mutating: bool``, das nirgends ausgewertet wurde.
+    level: PermissionLevel = PermissionLevel.SAFE
+
+    @property
+    def mutating(self) -> bool:
+        """Rückwärtskompatible Ableitung: alles über SAFE/READ verändert etwas."""
+        return self.level >= PermissionLevel.WRITE
 
     def schema(self) -> dict[str, Any]:
         """Ollamas Werkzeugformat (OpenAI-kompatibel)."""

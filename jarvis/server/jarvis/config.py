@@ -47,6 +47,19 @@ class CodePilotConfig:
 
 
 @dataclass
+class PermissionConfig:
+    """Regeln des Permission-Systems (``permissions.py``) -- innerhalb der
+    nicht verhandelbaren Grenzen: SAFE ist immer automatisch erlaubt,
+    CRITICAL verlangt immer eine Bestätigung, und keines von beiden steht
+    hier als Feld, damit es nicht wegkonfigurierbar ist."""
+
+    confirm_read: bool = False
+    confirm_write: bool = True
+    confirm_system: bool = True
+    confirmation_timeout: float = 300.0
+
+
+@dataclass
 class WhisperConfig:
     #: Leer heißt: Speech-to-Text ist aus. Jarvis bringt keinen eigenen
     #: Schlüssel mit -- der Nutzer trägt seinen eigenen ein (siehe /api/whisper/key).
@@ -80,6 +93,7 @@ class Config:
     shell: ShellConfig = field(default_factory=ShellConfig)
     codepilot: CodePilotConfig = field(default_factory=CodePilotConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
+    permissions: PermissionConfig = field(default_factory=PermissionConfig)
 
     # -- Ablage -------------------------------------------------------------
     home: str = field(default_factory=lambda: str(default_home()))
@@ -87,6 +101,18 @@ class Config:
     @property
     def db_path(self) -> Path:
         return Path(self.home) / "gedaechtnis.sqlite3"
+
+    @property
+    def audit_db_path(self) -> Path:
+        return Path(self.home) / "protokoll.sqlite3"
+
+    @property
+    def undo_db_path(self) -> Path:
+        return Path(self.home) / "undo.sqlite3"
+
+    @property
+    def task_db_path(self) -> Path:
+        return Path(self.home) / "aufgaben.sqlite3"
 
     @property
     def config_path(self) -> Path:
@@ -128,6 +154,10 @@ class Config:
             data["whisper"] = WhisperConfig(**{
                 k: v for k, v in data["whisper"].items()
                 if k in {f.name for f in fields(WhisperConfig)}})
+        if isinstance(data.get("permissions"), dict):
+            data["permissions"] = PermissionConfig(**{
+                k: v for k, v in data["permissions"].items()
+                if k in {f.name for f in fields(PermissionConfig)}})
         return cls(**data)
 
     def save(self) -> Path:

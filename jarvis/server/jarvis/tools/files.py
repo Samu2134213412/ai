@@ -13,6 +13,7 @@ import os
 import shutil
 from pathlib import Path
 
+from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
 
 #: Größere Dateien werden nicht ins Modell geladen.
@@ -188,26 +189,26 @@ def build(workspace: Workspace) -> list[Tool]:
                              "append": {"type": "boolean",
                                         "description": "Anhängen statt überschreiben"}},
               "required": ["path"]},
-             write_file, mutating=True),
+             write_file, level=PermissionLevel.WRITE),
         Tool("read_file", "Liest eine Textdatei und gibt ihren Inhalt zurück.",
              {"type": "object", "properties": {"path": _str}, "required": ["path"]},
-             read_file),
+             read_file, level=PermissionLevel.SAFE),
         Tool("list_dir", "Listet den Inhalt eines Verzeichnisses auf.",
              {"type": "object", "properties": {"path": _str}, "required": []},
-             list_dir),
+             list_dir, level=PermissionLevel.SAFE),
         Tool("search_files",
              "Sucht Dateien nach Namensmuster, z. B. '*.py', rekursiv ab einem Ordner.",
              {"type": "object",
               "properties": {"pattern": _str, "path": _str,
                              "limit": {"type": "integer"}},
               "required": ["pattern"]},
-             search_files),
+             search_files, level=PermissionLevel.SAFE),
         Tool("delete_file", "Löscht eine einzelne Datei. Keine Verzeichnisse.",
              {"type": "object", "properties": {"path": _str}, "required": ["path"]},
-             delete_file, mutating=True),
+             delete_file, level=PermissionLevel.CRITICAL),
         Tool("move_file", "Verschiebt oder benennt eine Datei um.",
              {"type": "object",
               "properties": {"source": _str, "destination": _str},
               "required": ["source", "destination"]},
-             move_file, mutating=True),
+             move_file, level=PermissionLevel.WRITE),
     ]

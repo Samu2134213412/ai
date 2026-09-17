@@ -31,6 +31,13 @@ Jede Antwort im Verlauf trägt zusätzlich ihren Beleg:
 * **kein Tool** (grau) — reine Konversation, es wurde nichts getan
 * **fehlgeschlagen** (rot) — mit dem echten Fehler
 
+Seit dem Permission-System (Phase 1) kann eine Aktion außerdem eine
+Bestätigung verlangen: der Verlauf zeigt dafür eine eigene Karte mit
+„Erlauben“/„Ablehnen“ (`permission.requested`), die sich nach der Antwort
+selbst zu „erlaubt“ oder „abgelehnt“ umfärbt, statt eine neue Zeile
+anzuhängen. Im Agent-Modus erscheinen zusätzlich Verlaufszeilen für Plan,
+laufenden Schritt, Wiederholungsversuch und Abschluss (`task.*`-Ereignisse).
+
 Ohne Serververbindung führt die Oberfläche **nichts** aus und sagt das auch:
 ein abgeschickter Befehl liefert „Der Befehl wurde nicht ausgeführt“ statt einer
 erfundenen Bestätigung. Die Telemetriebalken bleiben leer, statt Zahlen zu

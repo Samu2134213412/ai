@@ -10,7 +10,9 @@ from pathlib import Path
 
 from ..config import Config
 from ..memory import MemoryStore
+from ..undo import UndoContext, UndoStore
 from . import codepilot, files, knowledge, shell, system
+from . import undo as undo_tool
 from .base import Registry, Tool, ToolError, ToolMissing, ToolResult
 
 #: Werkzeuge, die vorgesehen, aber noch nicht gebaut sind. Die Oberfläche zeigt
@@ -34,12 +36,16 @@ def build_registry(config: Config, store: MemoryStore) -> Registry:
         autostart=config.codepilot.autostart, start_dir=config.codepilot.start_dir,
         start_timeout=config.codepilot.start_timeout,
         log_path=str(Path(config.home) / "codepilot-start.log"))
+    undo_store = UndoStore(str(config.undo_db_path),
+                          context=UndoContext(workspace=workspace, store=store))
 
     for tool in files.build(workspace):
         registry.add(tool)
     for tool in system.build():
         registry.add(tool)
     for tool in knowledge.build(store):
+        registry.add(tool)
+    for tool in undo_tool.build(undo_store):
         registry.add(tool)
     # Die beiden riskanten Werkzeuge kommen nur dazu, wenn sie eingerichtet
     # sind. Ein nicht registriertes Werkzeug ist ehrlicher als eines, das bei
@@ -53,6 +59,10 @@ def build_registry(config: Config, store: MemoryStore) -> Registry:
     # Für den Statusmelder in app.py: der Link existiert immer (auch
     # unkonfiguriert), status_snapshot() sagt dann einfach "configured: false".
     registry.codepilot_link = link
+    # Für Agent._run_tool (Permission-Snapshots) und ggf. weitere Werkzeuge,
+    # die denselben Arbeitsbereich/dieselbe Undo-Historie brauchen.
+    registry.workspace = workspace
+    registry.undo_store = undo_store
     return registry
 
 

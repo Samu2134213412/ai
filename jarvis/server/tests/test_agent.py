@@ -17,13 +17,22 @@ import pytest
 from jarvis import guard
 from jarvis.agent import Agent
 from jarvis.ollama import ChatTurn, OllamaError, ToolCall
+from jarvis.permissions import PermissionGate, PermissionPolicy
+
+#: Diese Datei prüft den Zug (Router/Modell/Wächter/Verlauf), nicht das
+#: Permission-System -- das hat seine eigene, ausführliche Prüfung in
+#: test_permissions.py und die Verzahnung in test_agent_security.py. Ohne
+#: diese durchlässige Police würde jeder WRITE/SYSTEM-Aufruf hier bis zum
+#: Timeout auf eine nie kommende Bestätigung warten.
+_DURCHLAESSIG = PermissionPolicy(confirm_read=False, confirm_write=False, confirm_system=False)
 
 
 def make_agent(config, store, registry, model, events=None):
     async def emit(kind, payload):
         if events is not None:
             events.append((kind, payload))
-    return Agent(config, store, registry, model, emit=emit)
+    gate = PermissionGate(policy=_DURCHLAESSIG, emit=emit)
+    return Agent(config, store, registry, model, emit=emit, permission_gate=gate)
 
 
 # ═══════════════════════════════════════════ das historische Fehlverhalten

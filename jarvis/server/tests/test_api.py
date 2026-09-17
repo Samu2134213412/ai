@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from jarvis.app import create_app
 from jarvis.config import Config
 from jarvis.ollama import ChatTurn, ToolCall
+from jarvis.permissions import PermissionPolicy
 from jarvis.tools.base import Tool, ToolResult
 
 
@@ -17,6 +18,11 @@ from jarvis.tools.base import Tool, ToolResult
 def client(config, monkeypatch, fake_ollama, workspace):
     """Server mit einem vorgegebenen Modell statt einem echten Ollama."""
     app = create_app(config)
+    # Diese Datei prüft HTTP/WebSocket/Wächter, nicht das Permission-System
+    # selbst (siehe test_permissions.py und test_agent_security.py) --
+    # WRITE/SYSTEM laufen hier deshalb ohne Bestätigungs-Round-Trip durch.
+    app.state.permission_gate.policy = PermissionPolicy(
+        confirm_read=False, confirm_write=False, confirm_system=False)
     model = fake_ollama([
         ChatTurn(tool_calls=[ToolCall("write_file", {
             "path": str(workspace / "aus_dem_test.txt"), "content": "ok"})]),
@@ -234,6 +240,67 @@ def test_unerwarteter_fehler_bleibt_nicht_stumm(client):
         assert antwort is not None
         assert antwort["provenance"] == "fail"
         assert "überraschung" in antwort["text"]
+
+
+def test_audit_log_ueber_http(client, workspace):
+    client.post("/api/command", json={"text": "leg was an"})
+    eintraege = client.get("/api/audit", params={"tool": "write_file"}).json()["eintraege"]
+    assert len(eintraege) == 1
+    assert eintraege[0]["erfolg"] is True
+    assert eintraege[0]["stufe"] == "WRITE"
+
+
+def test_undo_ueber_http_stellt_wieder_her(client, workspace):
+    client.post("/api/command", json={"text": "leg was an"})
+    ziel = workspace / "aus_dem_test.txt"
+    assert ziel.exists()
+
+    eintraege = client.get("/api/undo").json()["eintraege"]
+    assert eintraege and eintraege[0]["rueckgaengig_gemacht"] is False
+
+    rueckgaengig = client.post("/api/undo", json={}).json()
+    assert "entfernt" in rueckgaengig["ergebnis"]
+    assert not ziel.exists()
+
+
+def test_undo_ohne_aufzeichnung_gibt_400(client):
+    res = client.post("/api/undo", json={})
+    assert res.status_code == 400
+
+
+def test_permission_resolve_unbekannte_anfrage(client):
+    res = client.post("/api/permission/resolve",
+                      json={"request_id": "nie-gestellt", "approved": True})
+    assert res.json() == {"gefunden": False}
+
+
+def test_agent_modus_zerlegt_und_fuehrt_aus(config, fake_ollama, workspace):
+    """Eigene App-Instanz: der Agent-Modus braucht eine andere Abfolge von
+    Modell-Antworten als die anderen HTTP-Tests in dieser Datei."""
+    app = create_app(config)
+    app.state.permission_gate.policy = PermissionPolicy(
+        confirm_read=False, confirm_write=False, confirm_system=False)
+    model = fake_ollama([
+        ChatTurn(text='["Systeminfo lesen"]'),                  # Planner
+        ChatTurn(tool_calls=[ToolCall("get_system_info", {})]),  # Schritt 1
+        ChatTurn(text="System geprüft."),
+    ])
+    app.state.agent.client = model
+
+    with TestClient(app) as test_client:
+        body = test_client.post(
+            "/api/command", json={"text": "Prüfe das System", "mode": "agent"}).json()
+        assert body["provenance"] == "tool"
+
+        aufgaben = test_client.get("/api/tasks").json()["aufgaben"]
+        assert len(aufgaben) == 1
+        assert aufgaben[0]["status"] == "completed"
+        assert aufgaben[0]["schritte"][0]["status"] == "done"
+
+        einzeln = test_client.get(f"/api/tasks/{aufgaben[0]['id']}").json()
+        assert einzeln["id"] == aufgaben[0]["id"]
+
+        assert test_client.get("/api/tasks/nie-gesehen").status_code == 404
 
 
 def test_websocket_ohne_token_wird_geschlossen(config):

@@ -13,6 +13,7 @@ import shutil
 import socket
 from pathlib import Path
 
+from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
 
 try:  # pragma: no cover - hängt von der Installation ab
@@ -140,15 +141,15 @@ def build() -> list[Tool]:
     empty = {"type": "object", "properties": {}, "required": []}
     return [
         Tool("get_system_info", "Betriebssystem, Rechnername, Architektur, Kernzahl.",
-             empty, get_system_info),
+             empty, get_system_info, level=PermissionLevel.READ),
         Tool("get_cpu_info", "Aktuelle CPU-Auslastung, Kernzahl und Takt.",
-             empty, get_cpu_info),
+             empty, get_cpu_info, level=PermissionLevel.READ),
         Tool("get_ram_info", "Belegter und freier Arbeitsspeicher in GB.",
-             empty, get_ram_info),
+             empty, get_ram_info, level=PermissionLevel.READ),
         Tool("get_disk_info", "Freier und belegter Speicherplatz eines Laufwerks.",
              {"type": "object", "properties": {"path": {"type": "string"}}, "required": []},
-             get_disk_info),
+             get_disk_info, level=PermissionLevel.READ),
         Tool("list_processes", "Die speicherhungrigsten laufenden Prozesse.",
              {"type": "object", "properties": {"limit": {"type": "integer"}}, "required": []},
-             list_processes),
+             list_processes, level=PermissionLevel.READ),
     ]

@@ -24,6 +24,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
 
 DEFAULT_TIMEOUT = 60
@@ -121,5 +122,5 @@ def build(policy: ShellPolicy) -> list[Tool]:
                   "cwd": {"type": "string", "description": "Arbeitsverzeichnis"},
                   "timeout": {"type": "integer", "description": "Sekunden"}},
               "required": ["command"]},
-             run_command, mutating=True),
+             run_command, level=PermissionLevel.SYSTEM),
     ]
