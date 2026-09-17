@@ -26,6 +26,15 @@ vorgezogen, um nichts halbfertig zu lassen): Echtzeitüberwachung,
 Prozessmonitor, Verhaltensanalyse, Ransomware-Schutz, Persistenz- und
 Netzwerküberwachung, Reputation, Rollback, GUI, Java Secure Mode.
 
+## Live-Demo (kein Phasenschritt)
+
+`demo/` ist eine zusätzliche, rein clientseitige Vorschau-Oberfläche mit
+simulierten Events (Dashboard, Java Secure Mode, Timeline) — ein separates
+Workflow-Feature ("nach jeder sichtbaren Änderung eine Live-Preview
+zeigen"), keine Vorwegnahme von Phase 2–4. Sie ist nicht mit der
+`guardian`-Binary verbunden und enthält keine echte Erkennungslogik.
+Phase 2 beginnt weiterhin erst nach ausdrücklicher Freigabe.
+
 ## Phase 2 — als Nächstes
 
 1. Echtzeit-Dateiüberwachung (`monitoring::filesystem`, plattformseitig

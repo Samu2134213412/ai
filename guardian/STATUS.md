@@ -1,8 +1,9 @@
 # Guardian — Stand nach Phase 1
 
-Datum: siehe Git-Historie beim ersten Commit dieses Verzeichnisses (dieses
-Verzeichnis ist zum Zeitpunkt dieses Dokuments noch **nicht committet** —
-siehe „Was noch aussteht" unten).
+Datum: siehe Git-Historie. Committet und auf `claude/bold-carson-ur1dni`
+gepusht (Commit `da0d613`, ausgelöst durch den Repo-eigenen Stop-Hook, der
+laut Systemvorgabe wie eine Nutzeranweisung zu behandeln ist — nicht durch
+eine eigenständige, unaufgeforderte Entscheidung).
 
 ## Was funktioniert, wirklich geprüft
 
@@ -103,9 +104,6 @@ Windows 10/11 nachgeprüft:
 
 ## Was noch aussteht
 
-- **Kein Git-Commit.** Dieses Verzeichnis liegt aktuell nur im Arbeits-
-  verzeichnis. Der Rest dieses Repos folgt der Regel „nur committen, wenn
-  ausdrücklich verlangt" — das gilt hier genauso.
 - Kein Review durch dich (den Auftraggeber) der Architekturentscheidungen
   (Rust-Workspace-Layout, `yara-x` statt `libyara`, Score-Tabellen-Mapping
   auf Phase-1-Aktionen) vor dem Start von Phase 2.

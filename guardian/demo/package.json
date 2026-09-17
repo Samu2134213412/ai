@@ -1,0 +1,9 @@
+{
+  "name": "guardian-demo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Simulierte Live-Preview für Guardian: zeigt Dashboard, Java Secure Mode und Event-Timeline mit clientseitig erzeugten Testereignissen. Kein Build-Schritt, kein Backend, keine echte Datei- oder Prozessüberwachung.",
+  "scripts": {
+    "dev": "node dev.js"
+  }
+}

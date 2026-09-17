@@ -50,7 +50,25 @@ Siehe `ARCHITECTURE.md` für die Scan-Pipeline und die Score-Tabelle.
 | `storage/`       | JSONL-Ereignisprotokoll                              |
 | `cli/`           | Binary `guardian` (siehe `cli/src/main.rs`)          |
 | `rules/`         | YARA-Regeln, kategorisiert                           |
+| `demo/`          | Interaktive Live-Preview mit simulierten Events (siehe unten) |
 | `monitoring/`, `platform/windows/`, `gui/` | angelegt, Inhalt folgt in Phase 2–4 |
+
+## Live-Demo / Preview
+
+`demo/` enthält eine eigenständige, rein clientseitige Web-Oberfläche
+(Dashboard, Java Secure Mode, Event-Timeline), die zeigt, wie Guardian sich
+später anfühlen wird — mit Buttons wie „Simulate Suspicious JAR" oder
+„Simulate Ransomware Behaviour", die ausschließlich harmlose, simulierte
+Ereignisse im Browser erzeugen. Keine echte Datei- oder Prozessüberwachung,
+keine Verbindung zur `guardian`-Binary, keine Schadsoftware.
+
+```bash
+cd demo
+npm run dev   # kein npm install nötig, keine Abhängigkeiten
+```
+
+Details, Bedienung und die bewusste Abgrenzung zu Phase 2–4 stehen in
+`demo/README.md`.
 
 ## Sicherheitsregeln, die im Code erzwungen werden
 
