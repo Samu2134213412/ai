@@ -18,6 +18,7 @@ from typing import Literal
 from fastapi import (Depends, FastAPI, File, Header, HTTPException, Query,
                      UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import guard
@@ -402,5 +403,25 @@ def create_app(config: Config | None = None) -> FastAPI:
         async def ui_missing() -> JSONResponse:
             return JSONResponse(
                 {"fehler": f"Oberfläche nicht gefunden: {index}"}, status_code=500)
+
+    # Installierbarkeit als App (Startbildschirm/Standalone): Manifest,
+    # Service Worker und Icons liegen als eigene Dateien neben index.html
+    # und werden nur ausgeliefert, wenn sie tatsächlich existieren.
+    for name, media_type in (
+        ("manifest.webmanifest", "application/manifest+json"),
+        ("service-worker.js", "application/javascript"),
+    ):
+        path = WEB_DIR / name
+        if path.is_file():
+            route = f"/{name}"
+
+            def _serve(path: Path = path, media_type: str = media_type) -> FileResponse:
+                return FileResponse(path, media_type=media_type)
+
+            app.add_api_route(route, _serve, methods=["GET"], include_in_schema=False)
+
+    icons_dir = WEB_DIR / "icons"
+    if icons_dir.is_dir():
+        app.mount("/icons", StaticFiles(directory=icons_dir), name="icons")
 
     return app

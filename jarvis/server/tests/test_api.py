@@ -105,6 +105,27 @@ def test_oberflaeche_wird_ausgeliefert(client):
     assert "JARVIS" in res.text
 
 
+def test_manifest_wird_ausgeliefert(client):
+    res = client.get("/manifest.webmanifest")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["name"] == "Jarvis Core"
+    assert body["display"] == "standalone"
+    assert any(icon["sizes"] == "512x512" for icon in body["icons"])
+
+
+def test_service_worker_wird_ausgeliefert(client):
+    res = client.get("/service-worker.js")
+    assert res.status_code == 200
+    assert "CACHE" in res.text
+
+
+def test_icon_wird_ausgeliefert(client):
+    res = client.get("/icons/icon-192.png")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/png"
+
+
 # ══════════════════════════════════════════════════════════════ Zugang
 def test_token_wird_erzwungen_wenn_gesetzt(config):
     config.token = "geheim"

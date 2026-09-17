@@ -260,3 +260,20 @@ Kurz zusammengefasst, ohne die Analyse oben zu wiederholen:
   Schleife, um das bestehende, gut getestete `handle()` nicht anzufassen.
 
 Punkt 4 (Memory-Tiers) bleibt wie geplant für Phase 2 offen.
+
+### 7.5 Nachtrag: Installierbar als App auf dem Handy (2026-09-17)
+
+Außerhalb der Phasenreihenfolge, auf expliziten Wunsch: `jarvis/web/`
+bekam ein `manifest.webmanifest`, einen Service Worker und generierte
+Icons (im Stil der Oberfläche: Void/Cyan/Gold, „Weißglut plus Iris"),
+sodass sich die bestehende, bereits handy-taugliche `index.html` jetzt
+über „Zum Startbildschirm hinzufügen" wie eine eigene App installieren
+lässt (`display: standalone`). Kein neues UI-Framework, keine native App —
+`jarvis/app.py` liefert die drei neuen Dateien nur zusätzlich zu `index.html`
+aus, genau wie vorher schon `favicon.ico`. Der Service Worker cached
+ausschließlich die statische Hülle, nie `/api/*` oder den WebSocket, damit
+die Grundregel (kein Erfolg ohne echtes Tool-Result) nicht durch einen
+veralteten Cache unterlaufen werden kann. 3 neue Tests (240/240 grün),
+live mit Playwright unter einem iPhone-13-Profil gegen den echten Server
+geprüft: Manifest, Apple-Touch-Icon und Service-Worker-Registrierung laden
+korrekt, keine neuen Konsolenfehler.

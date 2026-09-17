@@ -44,6 +44,33 @@ erfundenen Bestätigung. Die Telemetriebalken bleiben leer, statt Zahlen zu
 erfinden. Werkzeuge stehen auf „unbestätigt“, solange ihr Zustand nicht am Code
 geprüft wurde.
 
+## Als App auf dem Handy installieren
+
+Die Seite ist eine installierbare PWA (Progressive Web App) — dieselbe
+`index.html`, aber mit `manifest.webmanifest`, Icons und einem Service
+Worker daneben, den der Jarvis-Server unter `/manifest.webmanifest`,
+`/icons/*` und `/service-worker.js` mit ausliefert:
+
+* **Android/Chrome:** die Server-Adresse öffnen (z. B.
+  `http://192.168.1.40:8799/?token=…`), Menü → „App installieren" bzw.
+  „Zum Startbildschirm hinzufügen".
+* **iOS/Safari:** die Adresse öffnen, Teilen-Symbol → „Zum Home-Bildschirm".
+  Safari liest kein volles Manifest, aber `apple-touch-icon` und die
+  `apple-mobile-web-app-*`-Meta-Tags sorgen für Icon, Titel und einen
+  Start ohne Safari-Chrome (`display: standalone`).
+
+Danach startet Jarvis wie eine eigene App, ohne Adressleiste. Der Service
+Worker cached ausschließlich die statische Hülle (HTML/Manifest/Icons) für
+einen schnellen Kaltstart — **niemals** `/api/*` oder die WebSocket-Verbindung.
+Ohne Server bleibt die Oberfläche also ehrlich bei „Kein Server" stehen,
+statt veraltete Antworten aus dem Cache zu zeigen.
+
+Es handelt sich nicht um eine native App und nicht um das separate
+Expo-Projekt unter `../../mobile/` (das gehört zu CodePilot Remote) —
+die Oberfläche war schon vorher für Handy-Breiten ausgelegt (eigene
+`@media`-Regeln, Tab-Leiste statt Spalten); neu ist nur die
+Installierbarkeit.
+
 ## Anbindung an den Server
 
 Die Seite stellt genau fünf Funktionen bereit. Mehr braucht der Adapter nicht:

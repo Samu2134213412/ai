@@ -6,6 +6,15 @@
 <style>:root{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Jarvis Core</title>
+<meta name="theme-color" content="#03070c">
+<meta name="description" content="Jarvis — lokaler Agent, Kommandozentrale und Wissensnetz">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@400;500;600;700&display=swap">
 </head>
@@ -1462,6 +1471,16 @@ setTimeout(() => {
        +"und ein Fall, für den das Werkzeug fehlt."});
 }, 1200);
 })();
+</script>
+<script>
+// Optionale Installierbarkeit als App (Startbildschirm/Standalone). Rein additiv:
+// schlägt die Registrierung fehl oder fehlt die API, läuft die Seite unverändert
+// im Browser weiter — kein Feature hängt davon ab.
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

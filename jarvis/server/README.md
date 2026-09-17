@@ -294,6 +294,7 @@ bestätigungspflichtig — beides absichtlich **kein** Feld hier.
 | | |
 |---|---|
 | `GET /` | die Oberfläche aus `jarvis/web` |
+| `GET /manifest.webmanifest`, `GET /service-worker.js`, `GET /icons/*` | Installierbarkeit als App auf dem Handy (siehe `web/README.md`) |
 | `GET /api/health` | Modelle, Werkzeuge, Ollama-Zustand, offene Probleme |
 | `GET`/`PUT /api/memory` | das Wissensnetz |
 | `GET /api/memory/search?q=` | gewichtete Begriffssuche |
@@ -312,7 +313,7 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 237 Tests
+python -m pytest -q      # 240 Tests
 ```
 
 Sie brauchen weder Ollama noch CodePilot noch einen echten Whisper-Schlüssel:

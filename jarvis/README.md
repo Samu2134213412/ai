@@ -92,7 +92,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (237 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (240 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * Direct Action Router für eindeutige Befehle
@@ -105,6 +105,8 @@ Fertig und getestet (237 Tests, siehe `ROADMAP.md` für die Phasen):
   ein fünfstufiges Permission-System (SAFE…CRITICAL) mit echtem
   Bestätigungs-Round-Trip, ein Undo-System, ein filterbares Audit Log —
   siehe `server/README.md`
+* Installierbar auf dem Handy als App (Manifest, Icons, Service Worker) —
+  siehe `web/README.md`
 
 Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
 
