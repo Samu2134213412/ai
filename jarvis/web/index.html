@@ -161,6 +161,25 @@ main[hidden]{display:none!important}
 .brain[data-on="1"]{border-color:var(--edge-lit)}
 .brain[data-on="1"] .vr .track i{background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));
   box-shadow:0 0 10px rgba(40,215,255,.6)}
+.brain .cps{display:flex;align-items:center;gap:6px;margin-top:6px;
+  font-family:var(--hud);font-size:9.5px;letter-spacing:.06em;color:var(--mute)}
+.brain .cps .dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--mute)}
+.brain .cps[data-lvl="ok"]{color:var(--green)}
+.brain .cps[data-lvl="ok"] .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
+.brain .cps[data-lvl="warn"]{color:var(--gold)}
+.brain .cps[data-lvl="warn"] .dot{background:var(--gold);box-shadow:0 0 8px var(--gold)}
+
+/* ── Spracheingabe (Whisper) ───────────────────────────────── */
+.whisperForm{display:flex;gap:6px}
+.whisperForm input{flex:1 1 auto;min-width:0;background:rgba(4,14,22,.88);
+  border:1px solid var(--edge);color:var(--text);font-family:var(--mono);
+  font-size:12px;padding:8px 9px}
+.whisperForm input:focus{outline:none;border-color:var(--edge-lit)}
+#whisperRt.ok{color:var(--green)}
+#whisperRt.off{color:var(--mute)}
+#mic.rec{color:var(--red);border-color:#5d1f26;background:rgba(48,10,14,.6);
+  animation:micpulse 1.1s ease-in-out infinite}
+@keyframes micpulse{0%,100%{opacity:1}50%{opacity:.5}}
 
 /* ── Werkzeuge ─────────────────────────────────────────────── */
 .tl{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
@@ -362,6 +381,17 @@ button.dg:hover{background:var(--red);color:var(--void)}
           Der Server meldet den echten Zustand.</p>
         </div>
       </section>
+      <section class="fr pan" style="flex:none">
+        <h2>Spracheingabe<span class="rt off" id="whisperRt">unbekannt</span></h2>
+        <div class="in">
+          <form id="whisperForm" class="whisperForm" autocomplete="off">
+            <input id="whisperKey" type="password" placeholder="Whisper-API-Schlüssel (OpenAI) …"
+                   aria-label="Whisper-API-Schlüssel">
+            <button class="gh" type="submit">Speichern</button>
+          </form>
+          <p class="hint" id="whisperHint">Schlüssel bleibt auf dem Jarvis-Server, nicht im Browser.</p>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -386,6 +416,7 @@ button.dg:hover{background:var(--red);color:var(--void)}
 
   <div class="dock">
     <button class="gh" id="modeToggle" type="button" aria-pressed="false">Code-Modus</button>
+    <button class="gh" id="mic" type="button" aria-pressed="false" title="Sprechen statt tippen">🎙 Sprechen</button>
     <form id="bar" autocomplete="off">
       <input id="cmd" name="cmd" type="text" placeholder="Befehl oder Frage an Jarvis …"
              aria-label="Befehl an Jarvis">
@@ -725,7 +756,8 @@ tickClock(); setInterval(tickClock,20000);
 
 const BRAINS=[
   {role:"Gespräch · Planen · Gedächtnis",id:"—",via:"Ollama · direkt",vram:0,on:0},
-  {role:"Code · Dateien · Terminal",id:"—",via:"CodePilot → Claude Code → Ollama",vram:0,on:0}
+  {role:"Code · Dateien · Terminal",id:"—",via:"CodePilot → Claude Code → Ollama",vram:0,on:0,
+   cps:{lvl:"off",text:"Status unbekannt · ohne Verbindung"}}
 ];
 function renderBrains(){
   $("brains").innerHTML=BRAINS.map((b)=>`
@@ -735,6 +767,7 @@ function renderBrains(){
       <div class="via">${esc(b.via)}</div>
       <div class="vr"><span>VRAM</span><span class="track"><i style="width:${b.vram}%"></i></span>
         <span>${b.vram?b.vram+"%":"—"}</span></div>
+      ${b.cps?`<div class="cps" data-lvl="${b.cps.lvl}"><i class="dot"></i><span>${esc(b.cps.text)}</span></div>`:""}
     </div>`).join("");
 }
 renderBrains();
@@ -1079,6 +1112,77 @@ $("bar").addEventListener("submit",(e)=>{
   }
 });
 
+/* ── Spracheingabe: Whisper-Schlüssel speichern, dann aufnehmen ────── */
+function authHeaders(extra){
+  const h=Object.assign({},extra||{});
+  if(TOKEN) h["Authorization"]="Bearer "+TOKEN;
+  return h;
+}
+$("whisperForm").addEventListener("submit",async (e)=>{
+  e.preventDefault();
+  const key=$("whisperKey").value.trim();
+  $("whisperKey").value="";
+  try{
+    const res=await fetch("/api/whisper/key",{method:"PUT",
+      headers:authHeaders({"Content-Type":"application/json"}),
+      body:JSON.stringify({api_key:key})});
+    if(!res.ok) throw new Error("Server antwortete mit Status "+res.status);
+    const body=await res.json();
+    JARVIS.whisperStatus(!!body.konfiguriert);
+  }catch(err){
+    say({who:"jarvis",prov:"fail",text:"Whisper-Schlüssel konnte nicht gespeichert werden.",
+      evidence:esc(String((err&&err.message)||err)),fail:true});
+  }
+});
+
+let recStream=null, recorder=null, recChunks=[];
+async function startRecording(){
+  if(!navigator.mediaDevices || !window.MediaRecorder){
+    say({who:"jarvis",prov:"fail",text:"Dieser Browser unterstützt keine Spracheingabe.",fail:true});
+    return;
+  }
+  try{
+    recStream=await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(err){
+    say({who:"jarvis",prov:"fail",text:"Kein Zugriff aufs Mikrofon.",
+      evidence:esc(String((err&&err.message)||err)),fail:true});
+    return;
+  }
+  recChunks=[];
+  recorder=new MediaRecorder(recStream);
+  recorder.addEventListener("dataavailable",(ev)=>{ if(ev.data && ev.data.size) recChunks.push(ev.data); });
+  recorder.addEventListener("stop",async ()=>{
+    recStream.getTracks().forEach((t)=>t.stop()); recStream=null;
+    const blob=new Blob(recChunks,{type:recorder.mimeType||"audio/webm"});
+    recChunks=[];
+    $("mic").disabled=true; $("mic").textContent="🎙 … verarbeite";
+    try{
+      const form=new FormData();
+      form.append("audio",blob,"sprache.webm");
+      const res=await fetch("/api/whisper/transcribe",{method:"POST",headers:authHeaders(),body:form});
+      const body=await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(body.detail||("Server antwortete mit Status "+res.status));
+      $("cmd").value=body.text||""; $("cmd").focus();
+    }catch(err){
+      say({who:"jarvis",prov:"fail",text:"Spracheingabe ist fehlgeschlagen.",
+        evidence:esc(String((err&&err.message)||err)),fail:true});
+    }finally{
+      $("mic").disabled=false; $("mic").textContent="🎙 Sprechen";
+    }
+  });
+  recorder.start();
+  $("mic").classList.add("rec"); $("mic").setAttribute("aria-pressed","true");
+  $("mic").textContent="⏺ Aufnahme … antippen zum Beenden";
+}
+function stopRecording(){
+  if(recorder && recorder.state!=="inactive") recorder.stop();
+  $("mic").classList.remove("rec"); $("mic").setAttribute("aria-pressed","false");
+}
+$("mic").addEventListener("click",()=>{
+  if(recorder && recorder.state==="recording") stopRecording();
+  else startRecording();
+});
+
 const SCR=[
   {ask:"Erstelle auf dem Desktop eine Datei notizen.txt mit meiner Einkaufsliste.",
    plan:"Chat-Modell wählt <b>write_file</b>",tool:"write_file",
@@ -1138,6 +1242,22 @@ window.JARVIS={
   models(list){ list.forEach((m,i)=>{ if(!BRAINS[i]) return;
     BRAINS[i].id=m.id||"—"; BRAINS[i].vram=m.vram||0; BRAINS[i].on=m.loaded?1:0;
     if(m.via) BRAINS[i].via=m.via; }); renderBrains(); },
+  codepilotStatus(s){
+    if(!BRAINS[1]) return;
+    const probleme=Array.isArray(s.problems)?s.problems:[];
+    let lvl="off", text="Nicht eingerichtet";
+    if(s.configured){
+      if(!s.running){ lvl="off"; text="Nicht gestartet"; }
+      else if(probleme.length){ lvl="warn"; text="Läuft · "+probleme.join(" · "); }
+      else { lvl="ok"; text="Läuft · bereit"; }
+    }
+    BRAINS[1].cps={lvl,text}; renderBrains();
+  },
+  whisperStatus(configured){
+    const rt=$("whisperRt");
+    rt.textContent=configured?"eingerichtet":"kein Schlüssel";
+    rt.className="rt "+(configured?"ok":"off");
+  },
   tools(list){ renderTools(list.map((t)=>[t.name,t.status])); },
   memory(next){ if(next&&Array.isArray(next.nodes)){ MEM=next; seedPositions(); renderLegend(); paint(); } },
   get memoryState(){ return clone({nodes:MEM.nodes,links:MEM.links}); }
@@ -1171,6 +1291,8 @@ function applyHello(m){
   if(Array.isArray(m.modelle)) JARVIS.models(m.modelle);
   if(Array.isArray(m.werkzeuge)) JARVIS.tools(m.werkzeuge);
   if(m.telemetrie) JARVIS.telemetry(m.telemetrie);
+  if(m.codepilot_status) JARVIS.codepilotStatus(m.codepilot_status);
+  if(typeof m.whisper_configured==="boolean") JARVIS.whisperStatus(m.whisper_configured);
   if(m.gedaechtnis && Array.isArray(m.gedaechtnis.nodes)){
     // Der Server führt das Gedächtnis. Seine Fassung gewinnt.
     MEM = {nodes: m.gedaechtnis.nodes, links: m.gedaechtnis.links || []};
@@ -1203,6 +1325,7 @@ function onFrame(m){
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
       break;
     case "telemetry": JARVIS.telemetry(m); break;
+    case "codepilot_status": JARVIS.codepilotStatus(m); break;
     case "memory":
       if(Array.isArray(m.nodes) && !$("insIn").contains(document.activeElement)){
         MEM = {nodes: m.nodes, links: m.links || []};
