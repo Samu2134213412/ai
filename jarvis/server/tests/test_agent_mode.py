@@ -18,6 +18,11 @@ def make_agent(config, store, registry, model, events=None, max_step_retries=2):
         if events is not None:
             events.append((kind, payload))
     gate = PermissionGate(policy=_DURCHLAESSIG, emit=emit)
+    # Diese Datei testet die Goal-Ausführung selbst (Planner/Executor/Retry),
+    # nicht die Autonomiestufen (siehe test_autonomy.py) -- Stufe 3 schaltet
+    # eigenständige Zielverfolgung frei, ohne die sonst jeder Aufruf hier mit
+    # der ehrlichen Absage aus autonomy.py enden würde.
+    config.autonomy_level = 3
     return Agent(config, store, registry, model, emit=emit, permission_gate=gate,
                 max_step_retries=max_step_retries)
 

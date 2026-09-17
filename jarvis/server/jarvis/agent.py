@@ -24,10 +24,11 @@ from typing import Any, Awaitable, Callable
 
 from . import guard, planner, router
 from .audit import AuditLog
+from .autonomy import AutonomyLevel
 from .config import Config
 from .memory import MemoryStore
 from .ollama import ChatTurn, OllamaClient, OllamaError
-from .permissions import PermissionDenied, PermissionGate
+from .permissions import PermissionDenied, PermissionGate, PermissionLevel
 from .tasks import StepStatus, Task, TaskManager, TaskStatus
 from .tools import Registry, ToolMissing, ToolResult
 from .undo import UndoStore
@@ -111,8 +112,27 @@ class Agent:
         """
         tool = self.registry.get(name)
         detail = f"{name}({', '.join(f'{k}={v}' for k, v in (arguments or {}).items())})"
+
+        # Autonomiestufe (autonomy.py) ist der Rahmen um das Permission-System
+        # herum, nicht dessen Ersatz: Stufe 0 lässt gar nichts laufen, Stufe 1
+        # erzwingt eine Bestätigung für WRITE+, selbst wenn die Policy sie
+        # erlauben würde. Beides kann die Policy nur verschärfen, nie lockern.
+        autonomy = self.config.autonomy
+        if autonomy <= AutonomyLevel.NONE:
+            result = ToolResult(
+                tool=name, ok=False,
+                summary=(f"Autonomiestufe {int(autonomy)} ({autonomy.label}): "
+                         "Jarvis führt keine Aktionen aus, nur Gespräch."),
+                evidence={"stufe": tool.level.label, "autonomiestufe": int(autonomy)})
+            self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
+                              ok=False, summary=result.summary, request=request_text)
+            return result
+        force_confirm = (autonomy <= AutonomyLevel.READ_ONLY
+                        and tool.level >= PermissionLevel.WRITE)
+
         try:
-            await self.permission_gate.check(name, tool.level, arguments, detail=detail)
+            await self.permission_gate.check(name, tool.level, arguments, detail=detail,
+                                             force_confirm=force_confirm)
         except PermissionDenied as exc:
             result = ToolResult(tool=name, ok=False, summary=str(exc),
                                 evidence={"stufe": tool.level.label, "verweigert": True})
@@ -272,6 +292,15 @@ class Agent:
         goal = (goal or "").strip()
         if not goal:
             return guard.Reply(text="", provenance=guard.TALK)
+
+        autonomy = self.config.autonomy
+        if autonomy < AutonomyLevel.GOAL_PURSUIT:
+            return guard.Reply(
+                text=(f"Autonomiestufe {int(autonomy)} ({autonomy.label}) erlaubt keine "
+                      "eigenständige Zielverfolgung -- das braucht Stufe 3. Sage mir "
+                      "stattdessen einzelne Schritte, oder hebe autonomy_level in "
+                      "jarvis.json an."),
+                provenance=guard.TALK)
 
         await self._state("thinking", "plane die Schritte")
         step_texts = await planner.plan(self.client, goal)

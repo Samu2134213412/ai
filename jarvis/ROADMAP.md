@@ -37,6 +37,37 @@ Automation Engine, Model Council, Self-Check-Mehragentenschema, Dashboard,
 Live-Agent-Visualisierung, Task-Queue-Oberfläche, Cost/Privacy-Dashboards,
 Personality, Proactive Assistant, Smart Home, Vision.
 
+## Autonomy V1 — Zielverfolgung, Entscheidungen, Selbstkorrektur (läuft)
+
+Außerhalb der ursprünglichen Phasennummerierung, auf expliziten Wunsch: eine
+Vertiefung von Phase 1s Agent Mode, keine neue Phase mit eigener Nummer, um
+die bestehende Reihenfolge 2-8 nicht zu verschieben. Vollständige Analyse
+und Architekturentscheidung in `../docs/JARVIS.md` Abschnitt 8.
+
+Baut auf Permission System, Audit Log, Undo und Task Manager (Phase 1) auf,
+ersetzt keins davon. `Goal` ist die neue äußere Hülle (Priorität, Deadline,
+Erfolgs-/Fehlerbedingungen, Autonomiestufe, Budget); `Task` bleibt die
+innere Ausführung der Schritte — keine zweite, konkurrierende
+Ausführungsmaschine.
+
+| Baustein | Neues Modul | Nutzt bereits vorhandenes |
+|---|---|---|
+| Autonomy Levels (0-4) | `autonomy.py` | Config-Feld, Enforcement in `Agent._run_tool` |
+| Risk-Label LOW/MEDIUM/HIGH | — | `.risk`-Property auf `PermissionLevel`, keine zweite Engine |
+| Goal Manager, Dekomposition in Unterziele | `goals.py` | Dekomposition ist `planner.plan()`, Ausführung ist die bestehende `Task`-Maschine |
+| Decision Engine | `decision.py` | Erfolgshistorie kommt aus dem bestehenden `AuditLog` |
+| Verification Engine | `verification.py` | echte Folge-Aufrufe über bestehende, bereits registrierte Tools |
+| Watchdog + Task-Budgets | `watchdog.py` | wird zwischen den Schritten der bestehenden Ausführung befragt |
+| Event Bus + ein echtes proaktives Beispiel | `events.py` | Telemetrie-Loop und `_run_tool`-Fehlschläge als reale Quellen |
+| World State, Working Memory, Experience Learning | `world_state.py`, Erweiterung in `agent.py` | Erfahrung liegt im bestehenden `MemoryStore` (`kind="erfahrung"`), ersetzt nie die echte Prüfung |
+| Hintergrund-Ausführung, Pause/Resume/Cancel, Interrupt | Erweiterung `app.py`/`agent.py`/`router.py` | löst die in §8.3 gefundene Lücke (globales `busy`-Lock blockierte den Server während eines Goals) |
+
+Zurückgestellt, mit Begründung in §8.4: echte spezialisierte Modelle
+(braucht Phase 2s Model Router), echte Parallelität mehrerer Goals,
+domänenspezifische proaktive Beispiele (Minecraft, GPU-Temperatur — beide
+Integrationen existieren nicht), Screen/Context-Awareness-Felder im World
+State (Phase 4).
+
 ## Phase 2 — Memory, Model Router, Ollama-Integration, Multi-Model
 
 1. Memory-Tiers: Short-Term (laufender Chat-Verlauf, existiert bereits in

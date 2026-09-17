@@ -53,6 +53,17 @@ class PermissionLevel(IntEnum):
     def label(self) -> str:
         return self.name
 
+    @property
+    def risk(self) -> str:
+        """Dasselbe Risiko, in der Sprache der Autonomie-Aufgabenstellung
+        (LOW/MEDIUM/HIGH) -- ein Label auf derselben Stufe, keine zweite,
+        parallele Risiko-Engine."""
+        if self <= PermissionLevel.READ:
+            return "LOW"
+        if self <= PermissionLevel.SYSTEM:
+            return "MEDIUM"
+        return "HIGH"
+
     @classmethod
     def from_label(cls, label: str) -> "PermissionLevel":
         try:
@@ -131,14 +142,21 @@ class PermissionGate:
         return list(self._pending)
 
     async def check(self, tool: str, level: PermissionLevel,
-                    arguments: dict[str, Any] | None = None, detail: str = "") -> None:
+                    arguments: dict[str, Any] | None = None, detail: str = "",
+                    force_confirm: bool = False) -> None:
         """Kehrt zurück, wenn die Aktion laufen darf. Wirft ``PermissionDenied`` sonst.
 
         SAFE und nicht-konfigurierte Stufen laufen ohne Umweg durch. Alles
         andere wird als Ereignis an die Oberfläche gemeldet und wartet
         wirklich auf eine Antwort -- kein simuliertes "ja".
+
+        ``force_confirm`` kommt von der Autonomiestufe (``autonomy.py``):
+        Stufe 1 erzwingt auf diesem Weg eine Bestätigung für WRITE/SYSTEM,
+        selbst wenn die Policy sie erlauben würde. Es kann also nur
+        *strenger* werden als die Policy, nie lockerer -- eine niedrige
+        Autonomiestufe darf keine Bestätigungspflicht aufheben.
         """
-        if not self.policy.requires_confirmation(level):
+        if not (force_confirm or self.policy.requires_confirmation(level)):
             return
         request = PermissionRequest(id=uuid.uuid4().hex[:12], tool=tool, level=level,
                                     arguments=dict(arguments or {}), detail=detail)

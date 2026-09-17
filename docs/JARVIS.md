@@ -277,3 +277,94 @@ veralteten Cache unterlaufen werden kann. 3 neue Tests (240/240 grün),
 live mit Playwright unter einem iPhone-13-Profil gegen den echten Server
 geprüft: Manifest, Apple-Touch-Icon und Service-Worker-Registrierung laden
 korrekt, keine neuen Konsolenfehler.
+
+## 8. Autonome Agenten-Schicht — Ist-Zustand vor "Autonomy V1" (2026-09-17)
+
+Neue Aufgabenstellung (24 Punkte): Jarvis soll Ziele selbstständig verfolgen
+statt nur auf einzelne Befehle zu reagieren. Wie in Abschnitt 7: erst
+Bestandsaufnahme, dann Entscheidung, dann Code — nichts doppelt bauen.
+
+### 8.1 Deckung mit Phase 1 (bereits vorhanden, wird ausgebaut, nicht ersetzt)
+
+| Punkt der Aufgabenstellung | Ist-Zustand | Entscheidung |
+|---|---|---|
+| 4. Execution Engine (strukturierte Tool-Ergebnisse) | `tools/base.py::ToolResult(ok, summary, evidence, payload)` — entspricht exakt `{success, result, error}` | übernehmen, nicht umbenennen |
+| 6. Self-Correction, Retry-Limit | `agent.py::handle_agent_task` wiederholt einen gescheiterten Schritt bis `max_step_retries` mit dem Fehler als Kontext | Grundmechanik vorhanden; **fehlt**: bewusste Auswahl einer *anderen* Strategie statt desselben Prompts erneut — kommt über die DecisionEngine |
+| 7. Background Tasks (Task-Objekt, Fortschritt, Task History) | `tasks.py::Task/TaskStep/TaskManager`, persistent, mit Status/Retries/Zeiten | **Lücke gefunden**: `app.py::run_turn` hält ein globales `busy`-Lock über die *gesamte* Laufzeit von `mode="agent"` — der Server ist blockiert, bis das Goal fertig ist. Widerspricht Punkt 7 direkt. Wird umgebaut (8.3) |
+| 11. Risk/Permission Engine | `permissions.py`: SAFE/READ/WRITE/SYSTEM/CRITICAL, CRITICAL immer Bestätigung, echter Round-Trip | inhaltlich deckungsgleich mit LOW/MEDIUM/HIGH der Aufgabenstellung; **keine zweite Engine** — stattdessen ein `.risk`-Label auf `PermissionLevel` |
+| 12. Undo System | `undo.py::UndoStore`, Snapshot vor jeder mutierenden Aktion, "rückgängig" im Router | vollständig vorhanden, unverändert nutzen |
+| 20. Full Audit Log (teilweise) | `audit.py::AuditLog`, filterbar nach tool/level/ok/since; Spalte `task_id` existiert im Schema, wird aber nirgends befüllt | Lücke schließen: `task_id`/`goal_id` beim Aufruf durchreichen, statt neues Log zu bauen |
+| 21. Natural Status Updates | `handle_agent_task` schickt `task.step.*` nur als WS-Ereignis (Task-Panel), nicht als Chat-Text pro Mini-Schritt; Chat-Antwort ist bereits eine Zusammenfassung | Verhalten bereits richtig, nur dokumentieren |
+| 23. Core Rule (Autonomie ersetzt nicht Determinismus) | `guard.py` + `Agent._run_tool` als einziger Durchlaufpunkt | bleibt die tragende Schicht; jede neue Komponente läuft **durch** `_run_tool`, nie daran vorbei |
+
+### 8.2 Echt fehlend (Punkte 1, 2, 3, 5, 8, 9, 10, 13, 14, 15, 18, 19, 22 — Kern)
+
+Diese Bausteine existieren in keiner Form und werden neu gebaut, als flache
+Module neben den bestehenden (gleiche Begründung wie 7.3 — Umbau in einen
+`core/agents/...`-Baum hätte nur Regressionsrisiko, keinen Funktionsgewinn):
+
+`autonomy.py`, `goals.py`, `decision.py`, `verification.py`, `watchdog.py`,
+`events.py`, `world_state.py`. Erweiterung in `agent.py` (die Loop-Phasen
+ANALYZE/SELECT ACTION/VERIFY/REFLECT um die bestehenden PLAN/EXECUTE herum)
+und `app.py` (Hintergrund-Ausführung, neue Endpunkte).
+
+**Goal vs. Task — bewusst keine Dopplung:** Die Aufgabenstellung beschreibt
+unter Punkt 2 ein „Goal" mit Unterzielen, Prioritäten, Deadlines,
+Erfolgs-/Fehlerbedingungen. Das bestehende `Task`/`TaskStep` (Phase 1) deckt
+bereits „Auftrag → benannte Schritte → Status → Retry" ab und ist getestet.
+Ein zweites, konkurrierendes Ausführungsmodell wäre genau die verbotene
+Dopplung. Deshalb: **`Goal` ist die äußere Hülle** (Priorität, Deadline,
+Bedingungen, Autonomiestufe, Budget), **`Task` bleibt die innere
+Ausführung** (Schritte, Retries, Werkzeugaufrufe) — ein Goal referenziert
+genau eine Task für seinen aktuellen Plan. Die Dekomposition eines Goals in
+Schritte ist exakt `planner.plan()`, wiederverwendet statt neu geschrieben.
+
+### 8.3 Der eine notwendige Umbau: Hintergrund-Ausführung
+
+`run_turn()` in `app.py` nimmt für **jeden** Modus (`chat`/`code`/`agent`)
+dasselbe `busy`-Lock und hält es, bis die komplette Antwort steht. Für
+`chat`/`code` ist das richtig (ein Zug nach dem anderen, keine
+Race Conditions auf `self.history`). Für ein autonomes Goal ist es falsch:
+Punkt 7 verlangt ausdrücklich, dass der Nutzer währenddessen etwas anderes
+fragen kann. Der Umbau: `mode="agent"` nimmt das Lock **nicht**, legt das
+Goal an, startet die Ausführung über `asyncio.create_task` und antwortet
+sofort mit einer Zwischenmeldung ("Ich beginne: …, Ziel-ID …"). Das
+Endergebnis kommt asynchron als eigene Chat-Nachricht — genau wie eine
+Bestätigungsanfrage heute schon asynchron über den Hub läuft. Der
+bestehende Test `test_agent_modus_zerlegt_und_fuehrt_aus` prüft heute das
+synchrone Warten auf das Endergebnis; er wird an das neue, bewusst
+geänderte Verhalten angepasst — keine übersehene Regression, sondern die
+Funktion, die Punkt 7 verlangt.
+
+### 8.4 Was ehrlich zurückgestellt wird
+
+* **Punkt 16 (Spezialisierte Agenten):** eine echte Aufteilung auf mehrere
+  Modelle braucht den Multi-Model-Router aus Phase 2, der noch nicht
+  existiert. Statt separater "Agenten", die nur dieselbe LLM mit anderem
+  Prompt wären, bekommen Schritte eine interne Rollen-Markierung
+  (Coding/Research/System/Memory) fürs Protokoll — echte Spezialisierung
+  folgt mit Phase 2.
+* **Punkt 17 (Parallelität):** unabhängige Goals parallel laufen zu lassen,
+  ohne Race Conditions auf gemeinsamen Dateien/Ressourcen einzuführen,
+  braucht ein Sperren-Konzept, das sich in diesem Umfang nicht seriös
+  mitverifizieren lässt. Goals/Tasks sind als eigenständige Datensätze
+  bereits parallelitätsfähig angelegt — die tatsächliche gleichzeitige
+  Ausführung kommt erst, wenn sie einzeln getestet werden kann.
+* **Minecraft-Absturz-Erkennung, GPU-Temperatur (Beispiele in Punkt 9):**
+  Es gibt weder eine Minecraft-Anbindung (Phase 3) noch einen
+  GPU-Sensor (`tools/system.py` liest nur CPU/RAM/Disk über `psutil`, keine
+  Temperatur). Diese konkreten Beispiele werden nicht vorgetäuscht. Gebaut
+  wird der generische Mechanismus (EventBus → Regel → Entscheidung →
+  optionale Aktion) plus **ein echtes, heute schon verfügbares** Beispiel:
+  wiederholter Fehlschlag desselben Werkzeugs löst bei Autonomiestufe 4
+  ein Diagnose-Goal aus einem rein lesenden Werkzeug aus. Domänen-Reaktionen
+  wie Minecraft-Neustart docken an denselben Mechanismus an, sobald die
+  jeweilige Anbindung existiert.
+* **Punkt 13 (World State) — nur wahre Felder:** `active_app`/
+  `current_project` aus dem Beispiel der Aufgabenstellung setzen Screen/
+  Context Awareness voraus (Phase 4, nicht gebaut). `world_state.py`
+  liefert deshalb nur, was heute wirklich messbar ist: Systemwerte,
+  Ollama-Erreichbarkeit, Anzahl aktiver Goals/Tasks.
+
+Ergebnis, Testzahlen und Live-Verifikation folgen als Nachtrag in diesem
+Abschnitt, sobald "Autonomy V1" abgeschlossen ist (siehe `ROADMAP.md`).

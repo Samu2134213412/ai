@@ -7,6 +7,8 @@ import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from .autonomy import AutonomyLevel
+
 
 def default_home() -> Path:
     return Path(os.environ.get("JARVIS_HOME") or (Path.home() / ".jarvis"))
@@ -94,6 +96,10 @@ class Config:
     codepilot: CodePilotConfig = field(default_factory=CodePilotConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     permissions: PermissionConfig = field(default_factory=PermissionConfig)
+    #: Wie viel Eigeninitiative Jarvis nehmen darf (siehe autonomy.py).
+    #: 2 ist "ein sinnvoller mittlerer Level", wie gefordert: normale
+    #: Werkzeugregeln, aber noch keine eigenständige Zielverfolgung.
+    autonomy_level: int = int(AutonomyLevel.LOCAL_ACTIONS)
 
     # -- Ablage -------------------------------------------------------------
     home: str = field(default_factory=lambda: str(default_home()))
@@ -121,6 +127,15 @@ class Config:
     @property
     def is_loopback(self) -> bool:
         return self.host in {"127.0.0.1", "localhost", "::1"}
+
+    @property
+    def autonomy(self) -> AutonomyLevel:
+        """Ein ungültiger Wert wird zur sichersten Stufe, nicht zum Absturz --
+        ``validate()`` macht den Nutzer trotzdem darauf aufmerksam."""
+        try:
+            return AutonomyLevel.from_value(self.autonomy_level)
+        except ValueError:
+            return AutonomyLevel.NONE
 
     # -- laden / speichern --------------------------------------------------
     @classmethod
@@ -180,4 +195,8 @@ class Config:
             problems.append(
                 "shell.enabled ist an, aber die Allowlist ist leer. Es läuft "
                 "dadurch kein Befehl; trage die erlaubten Programme ein.")
+        if not 0 <= self.autonomy_level <= 4:
+            problems.append(
+                f"autonomy_level ist {self.autonomy_level}, gültig ist 0-4 "
+                "(siehe autonomy.py). Jarvis behandelt das wie Stufe 0.")
         return problems

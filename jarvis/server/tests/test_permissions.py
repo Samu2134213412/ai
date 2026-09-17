@@ -31,6 +31,16 @@ def test_reihenfolge_ist_risiko_aufsteigend():
     assert PermissionLevel.WRITE < PermissionLevel.SYSTEM < PermissionLevel.CRITICAL
 
 
+def test_risk_label_deckt_sich_mit_der_autonomie_sprache():
+    """LOW/MEDIUM/HIGH ist ein Label auf derselben Stufe (Punkt 11 der
+    Autonomie-Aufgabenstellung), keine zweite Risiko-Engine."""
+    assert PermissionLevel.SAFE.risk == "LOW"
+    assert PermissionLevel.READ.risk == "LOW"
+    assert PermissionLevel.WRITE.risk == "MEDIUM"
+    assert PermissionLevel.SYSTEM.risk == "MEDIUM"
+    assert PermissionLevel.CRITICAL.risk == "HIGH"
+
+
 # ══════════════════════════════════════════════════════ PermissionPolicy
 def test_safe_verlangt_nie_bestaetigung():
     policy = PermissionPolicy(confirm_read=True, confirm_write=True, confirm_system=True)
@@ -84,6 +94,26 @@ async def test_bestaetigte_aktion_laeuft_weiter():
     assert events[0][1]["tool"] == "write_file"
     assert events[0][1]["level"] == "WRITE"
     assert events[0][1]["detail"] == "schreibe a.txt"
+
+
+async def test_force_confirm_erzwingt_bestaetigung_trotz_laxer_policy():
+    """Autonomiestufe 1 nutzt genau diesen Weg (agent.py), um WRITE/SYSTEM
+    immer bestaetigen zu lassen, selbst wenn die Policy sie erlauben wuerde --
+    kann die Bestaetigungspflicht nur verschaerfen, nie aufheben."""
+    events: list[tuple[str, dict]] = []
+
+    async def emit(kind, payload):
+        events.append((kind, payload))
+
+    lax = PermissionPolicy(confirm_read=False, confirm_write=False, confirm_system=False)
+    gate = PermissionGate(policy=lax, emit=emit)
+    task = asyncio.ensure_future(
+        gate.check("write_file", PermissionLevel.WRITE, {"path": "a.txt"},
+                  force_confirm=True))
+    await asyncio.sleep(0)
+    assert len(gate.pending) == 1
+    gate.resolve(gate.pending[0], True)
+    await task
 
 
 async def test_abgelehnte_aktion_wirft_permissiondenied():

@@ -298,6 +298,7 @@ def test_permission_resolve_unbekannte_anfrage(client):
 def test_agent_modus_zerlegt_und_fuehrt_aus(config, fake_ollama, workspace):
     """Eigene App-Instanz: der Agent-Modus braucht eine andere Abfolge von
     Modell-Antworten als die anderen HTTP-Tests in dieser Datei."""
+    config.autonomy_level = 3  # Zielverfolgung erfordert Autonomiestufe 3
     app = create_app(config)
     app.state.permission_gate.policy = PermissionPolicy(
         confirm_read=False, confirm_write=False, confirm_system=False)
