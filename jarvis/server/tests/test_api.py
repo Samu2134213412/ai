@@ -44,6 +44,49 @@ def test_health_ist_ohne_token_erreichbar(client):
                for w in body["werkzeuge"])
 
 
+def test_health_traegt_codepilot_status(client):
+    status = client.get("/api/health").json()["codepilot_status"]
+    # In der Test-Konfiguration ist CodePilot nicht eingerichtet.
+    assert status == {"configured": False, "running": False, "problems": []}
+
+
+def test_health_traegt_whisper_configured(client):
+    assert client.get("/api/health").json()["whisper_configured"] is False
+
+
+# ══════════════════════════════════════════════════════════ Speech-to-Text
+def test_whisper_schluessel_setzen_und_wieder_loeschen(client):
+    gesetzt = client.put("/api/whisper/key", json={"api_key": "sk-test"}).json()
+    assert gesetzt == {"konfiguriert": True}
+    assert client.get("/api/health").json()["whisper_configured"] is True
+    assert client.app_state.whisper.api_key == "sk-test"
+
+    geloescht = client.put("/api/whisper/key", json={"api_key": "  "}).json()
+    assert geloescht == {"konfiguriert": False}
+    assert client.get("/api/health").json()["whisper_configured"] is False
+
+
+def test_whisper_ohne_schluessel_meldet_ehrlich_den_fehler(client):
+    res = client.post("/api/whisper/transcribe",
+                      files={"audio": ("a.webm", b"\x00\x01", "audio/webm")})
+    assert res.status_code == 502
+    assert "Schlüssel" in res.json()["detail"]
+
+
+def test_whisper_echtes_ergebnis_kommt_beim_client_an(client):
+    client.app_state.whisper.api_key = "sk-test"
+
+    def gefaelscht(audio, filename, content_type):
+        assert audio == b"\x00\x01"
+        return "mach eine Notiz"
+    client.app_state.whisper.transcribe = gefaelscht
+
+    res = client.post("/api/whisper/transcribe",
+                      files={"audio": ("a.webm", b"\x00\x01", "audio/webm")})
+    assert res.status_code == 200
+    assert res.json() == {"text": "mach eine Notiz"}
+
+
 def test_geplante_werkzeuge_stehen_als_fehlend_drin(client):
     werkzeuge = {w["name"]: w["status"] for w in client.get("/api/health").json()["werkzeuge"]}
     assert werkzeuge["screen_capture"] == "none"

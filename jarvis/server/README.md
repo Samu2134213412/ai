@@ -98,6 +98,41 @@ cd %USERPROFILE%\jarvis-projekt
 start.bat --doctor
 ```
 
+## Statusmelder für CodePilot
+
+Die Oberfläche zeigt unter „Modelle" live, ob CodePilot läuft und ob die Kette
+dahinter (Claude Code, Ollama, das Coder-Modell) bereit ist — ohne dass jemand
+in ein Konsolenfenster schauen muss:
+
+* **grau** „Nicht eingerichtet" / „Nicht gestartet"
+* **gelb** „Läuft · <Problem>" — z. B. Ollama oder das Modell fehlt
+* **grün** „Läuft · bereit"
+
+Der Server prüft das alle vier Sekunden (`registry.codepilot_link.status_snapshot()`,
+niemals wirft diese Methode selbst — ein Fehler beim Prüfen zählt als „nicht
+bereit", nicht als Absturz der Statusschleife) und schickt nur eine Meldung,
+wenn sich der Zustand ändert (`codepilot_status` über WebSocket, dasselbe Feld
+auch in `/api/health` und im `hello`-Frame).
+
+## Speech-to-Text (Whisper)
+
+Der Mikrofon-Knopf im Bedienfeld nimmt über den Browser auf und schickt die
+Aufnahme an `/api/whisper/transcribe`, das sie an die Whisper-API von OpenAI
+weiterreicht. Wie bei jedem Werkzeug gilt: **Text kommt nur zurück, wenn
+Whisper tatsächlich geantwortet hat.** Ohne Schlüssel, bei einem Netzfehler,
+einer Ablehnung oder einer leeren Antwort meldet Jarvis das als Fehlschlag —
+und erfindet keinen Text.
+
+Der eigene API-Schlüssel wird einmalig im Feld „Spracheingabe" eingetragen
+(`PUT /api/whisper/key`) und liegt danach nur in `jarvis.json` auf dem
+Jarvis-Server, nie im Browser. Leeres Feld speichern löscht ihn wieder.
+
+| Feld in `jarvis.json` | |
+|---|---|
+| `whisper.api_key` | leer = Speech-to-Text aus |
+| `whisper.model` | `whisper-1` (Vorgabe) |
+| `whisper.timeout` | Sekunden, Vorgabe 30 |
+
 ## Die Grundregel als Mechanismus
 
 > Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein
@@ -157,7 +192,8 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
   "ollama_url": "http://127.0.0.1:11434",
   "roots": ["C:\\Users\\DeinName\\Desktop"],
   "shell": {"enabled": false, "allowlist": [], "timeout": 60},
-  "codepilot": {"url": "http://127.0.0.1:8765", "token": "", "project_id": ""}
+  "codepilot": {"url": "http://127.0.0.1:8765", "token": "", "project_id": ""},
+  "whisper": {"api_key": "", "model": "whisper-1", "timeout": 30}
 }
 ```
 
@@ -174,7 +210,9 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
 | `GET`/`PUT /api/memory` | das Wissensnetz |
 | `GET /api/memory/search?q=` | gewichtete Begriffssuche |
 | `POST /api/command` | ein Zug ohne WebSocket, für Skripte |
-| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis |
+| `PUT /api/whisper/key` | eigenen Whisper-API-Schlüssel eintragen/löschen |
+| `POST /api/whisper/transcribe` | Audio → Text über Whisper |
+| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, CodePilot-Status |
 
 Ein Zug geht an **alle** offenen Verbindungen. Was am PC angefangen wird, läuft
 auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtnis.
@@ -182,8 +220,10 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 109 Tests
+python -m pytest -q      # 157 Tests
 ```
 
-Sie brauchen weder Ollama noch CodePilot: das Modell wird durch ein
-vorgegebenes ersetzt, damit sich auch prüfen lässt, was passiert, wenn es lügt.
+Sie brauchen weder Ollama noch CodePilot noch einen echten Whisper-Schlüssel:
+das Modell wird durch ein vorgegebenes ersetzt (damit sich auch prüfen lässt,
+was passiert, wenn es lügt), und CodePilot sowie Whisper laufen gegen einen
+echten Mini-HTTP-Server statt einen gefälschten Client.

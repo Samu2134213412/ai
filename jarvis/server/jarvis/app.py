@@ -15,7 +15,8 @@ from pathlib import Path
 
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (Depends, FastAPI, File, Header, HTTPException, Query,
+                     UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -25,9 +26,11 @@ from .config import Config
 from .memory import DEFAULT_SEED, MemoryStore
 from .ollama import OllamaClient
 from .tools import build_registry, system as system_tools, tool_status
+from .whisper import WhisperClient, WhisperError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 TELEMETRY_SECONDS = 3.0
+CODEPILOT_STATUS_SECONDS = 4.0
 
 
 class CommandIn(BaseModel):
@@ -40,6 +43,10 @@ class CommandIn(BaseModel):
 class GraphIn(BaseModel):
     nodes: list[dict] = Field(default_factory=list)
     links: list[list] = Field(default_factory=list)
+
+
+class WhisperKeyIn(BaseModel):
+    api_key: str = Field(default="", max_length=200)
 
 
 class Hub:
@@ -84,6 +91,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     hub = Hub()
     agent = Agent(config, store, registry, client, emit=hub.send)
     busy = asyncio.Lock()
+    whisper = WhisperClient(api_key=config.whisper.api_key, model=config.whisper.model,
+                            timeout=config.whisper.timeout)
 
     # -------------------------------------------------------- Telemetrie
     async def telemetry_loop() -> None:
@@ -94,15 +103,32 @@ def create_app(config: Config | None = None) -> FastAPI:
                 if values:
                     await hub.send("telemetry", values)
 
+    # ------------------------------------------------- CodePilot-Statusmelder
+    async def codepilot_status_loop() -> None:
+        """Zeigt, ob CodePilot läuft und ob die Kette dahinter bereit ist --
+        ohne dass jemand in ein Konsolenfenster schauen muss."""
+        letzter: dict | None = None
+        while True:
+            await asyncio.sleep(CODEPILOT_STATUS_SECONDS)
+            if not hub.count or not registry.codepilot_link.configured:
+                continue
+            status = await asyncio.to_thread(registry.codepilot_link.status_snapshot)
+            if status != letzter:
+                letzter = status
+                await hub.send("codepilot_status", status)
+
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
         ticker = asyncio.create_task(telemetry_loop())
+        codepilot_ticker = asyncio.create_task(codepilot_status_loop())
         try:
             yield
         finally:
-            ticker.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await ticker
+            for task in (ticker, codepilot_ticker):
+                task.cancel()
+            for task in (ticker, codepilot_ticker):
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(title="Jarvis", version="0.1.0", lifespan=lifespan)
     app.state.config = config
@@ -110,6 +136,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.registry = registry
     app.state.agent = agent
     app.state.hub = hub
+    app.state.whisper = whisper
 
     # ------------------------------------------------------------ Zugang
     def check_token(supplied: str | None) -> None:
@@ -153,6 +180,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             "shell_aktiv": config.shell.enabled,
             "probleme": config.validate(),
             "geraete": hub.count,
+            "codepilot_status": registry.codepilot_link.status_snapshot(),
+            "whisper_configured": whisper.configured,
         }
 
     @app.get("/api/health")
@@ -173,6 +202,27 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def search_memory(q: str, limit: int = 6) -> dict:
         return {"treffer": [m.as_dict() | {"score": m.score}
                             for m in store.search(q, min(max(limit, 1), 50))]}
+
+    @app.put("/api/whisper/key", dependencies=Guarded)
+    async def set_whisper_key(body: WhisperKeyIn) -> dict:
+        """Der Nutzer trägt seinen eigenen Whisper-Schlüssel ein. Leer löscht ihn."""
+        config.whisper.api_key = body.api_key.strip()
+        whisper.api_key = config.whisper.api_key
+        config.save()
+        return {"konfiguriert": whisper.configured}
+
+    @app.post("/api/whisper/transcribe", dependencies=Guarded)
+    async def transcribe(audio: UploadFile = File(...)) -> dict:
+        """Spracheingabe -> Text. Nur ein echtes Whisper-Ergebnis wird zurückgegeben,
+        nie eine Vermutung, falls der Aufruf scheitert."""
+        daten = await audio.read()
+        try:
+            text = await asyncio.to_thread(
+                whisper.transcribe, daten, audio.filename or "sprache.webm",
+                audio.content_type or "audio/webm")
+        except WhisperError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"text": text}
 
     @app.post("/api/command", dependencies=Guarded)
     async def command(body: CommandIn) -> dict:

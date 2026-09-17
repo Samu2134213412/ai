@@ -30,6 +30,22 @@ _DONE = {"completed", "failed", "cancelled", "error"}
 _POLL_SECONDS = 1.5
 
 
+def windows_creationflags() -> int:
+    """Die Flags, mit denen der Kindprozess unter Windows unsichtbar bleibt.
+
+    CREATE_NO_WINDOW statt DETACHED_PROCESS: DETACHED_PROCESS lässt bei
+    manchen Python-Builds kurz ein Konsolenfenster aufblitzen, bevor es sich
+    abkoppelt -- genau das sichtbare Flackern, das sonst bei jedem Start
+    eines Coding-Auftrags auftritt. CREATE_NEW_PROCESS_GROUP bleibt, damit
+    Strg+C im Jarvis-Fenster den CodePilot-Prozess nicht mit beendet.
+
+    Eine eigene Funktion statt Inline-Code, damit sie sich unter Linux prüfen
+    lässt: os.name selbst umzubiegen bricht pytests eigene Pfadverwaltung.
+    """
+    return (subprocess.CREATE_NEW_PROCESS_GROUP
+           | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 def default_start_dir() -> Path:
     """Wo CodePilot im Repo liegt: ``<repo>/server``, neben ``jarvis/``.
 
@@ -103,30 +119,37 @@ class CodePilotLink:
         kwargs: dict = {"cwd": str(workdir), "stdout": handle, "stderr": handle,
                         "stdin": subprocess.DEVNULL, "env": env}
         if os.name == "nt":
+            # CREATE_NO_WINDOW statt DETACHED_PROCESS: DETACHED_PROCESS lässt
+            # bei manchen Python-Builds kurz ein Konsolenfenster aufblitzen,
+            # bevor es sich abkoppelt -- genau das sichtbare Flackern, das
+            # sonst bei jedem Start eines Coding-Auftrags auftritt.
+            # CREATE_NEW_PROCESS_GROUP bleibt, damit Strg+C im Jarvis-Fenster
+            # den CodePilot-Prozess nicht mit beendet.
             kwargs["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP
-                                       | getattr(subprocess, "DETACHED_PROCESS", 0))
+                                       | getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
             kwargs["start_new_session"] = True
         return subprocess.Popen([sys.executable, "-m", "codepilot"], **kwargs), log
 
-    def check_chain(self) -> None:
-        """Ist die Kette hinter CodePilot bereit? Sonst gleich sagen, warum nicht.
+    def _chain_report(self) -> tuple[dict | None, list[str]]:
+        """CodePilots eigenen Umgebungsbericht lesen -- ohne zu werfen.
 
-        CodePilot kennt seinen eigenen Zustand — Claude Code, Ollama, das
-        Modell. Den vorher zu lesen kostet eine Anfrage und erspart es, eine
-        Minute auf einen Auftrag zu warten, der scheitern muss.
+        Gibt den rohen Bericht (oder ``None``, wenn er nicht zu bekommen war)
+        und eine Liste fehlender Glieder zurück. Wirft nichts, weil das sowohl
+        die Vorabprüfung als auch der periodische Statusmelder brauchen, und
+        der Melder darf niemals einen Fehler auslösen.
         """
         try:
             with self._client() as client:
                 res = client.get("/api/status")
         except httpx.HTTPError:
-            return  # Nicht erreichbar ist die Sache des Auftrags selbst.
+            return None, []
         if res.status_code >= 400:
-            return  # Kein Statusbericht: dann eben ohne Vorabprüfung.
+            return None, []
         try:
             env = res.json()
         except ValueError:
-            return
+            return None, []
 
         fehlt = []
         for schluessel, name in (("claude", "Claude Code"), ("ollama", "Ollama"),
@@ -135,11 +158,44 @@ class CodePilotLink:
             if teil and teil.get("available") is False:
                 hinweis = teil.get("detail") or teil.get("remedy") or ""
                 fehlt.append(f"{name}: {hinweis}" if hinweis else name)
+        return env, fehlt
+
+    def check_chain(self) -> None:
+        """Ist die Kette hinter CodePilot bereit? Sonst gleich sagen, warum nicht.
+
+        CodePilot kennt seinen eigenen Zustand — Claude Code, Ollama, das
+        Modell. Den vorher zu lesen kostet eine Anfrage und erspart es, eine
+        Minute auf einen Auftrag zu warten, der scheitern muss.
+        """
+        _env, fehlt = self._chain_report()
         if fehlt:
             raise ToolError(
                 "CodePilot läuft, aber die Kette dahinter ist nicht bereit — "
                 + "; ".join(fehlt)
                 + ". Prüfen mit: start.bat --doctor im CodePilot-Ordner.")
+
+    def status_snapshot(self) -> dict:
+        """Für den Statusmelder in der Oberfläche. Wirft niemals.
+
+        So lässt sich CodePilots Zustand sehen, ohne in ein Konsolenfenster
+        schauen zu müssen -- der eigentliche Grund für das Flackern war, dass
+        es dafür bisher kein anderes Fenster gab.
+
+        Läuft alle paar Sekunden im Hintergrund. Eine Ausnahme, die hier
+        durchbricht, würde diese Schleife genauso lautlos beenden wie ein Zug
+        ohne das Sicherheitsnetz in app.py -- also wird hier selbst
+        abgesichert, nicht nur auf die Höflichkeit der aufgerufenen Methoden
+        vertraut.
+        """
+        if not self.configured:
+            return {"configured": False, "running": False, "problems": []}
+        try:
+            laeuft = self.is_healthy(1.5)
+            _env, fehlt = self._chain_report() if laeuft else (None, [])
+        except Exception as exc:  # noqa: BLE001 - der Melder darf nie sterben
+            return {"configured": True, "running": False,
+                    "problems": [f"Statusprüfung fehlgeschlagen: {exc}"]}
+        return {"configured": True, "running": laeuft, "problems": fehlt}
 
     def ensure_running(self) -> str:
         """Gibt zurück, was für den Beleg gilt. Wirft, wenn es nicht klappt.

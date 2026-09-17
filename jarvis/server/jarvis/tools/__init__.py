@@ -50,6 +50,9 @@ def build_registry(config: Config, store: MemoryStore) -> Registry:
     if link.configured:
         for tool in codepilot.build(link):
             registry.add(tool)
+    # Für den Statusmelder in app.py: der Link existiert immer (auch
+    # unkonfiguriert), status_snapshot() sagt dann einfach "configured: false".
+    registry.codepilot_link = link
     return registry
 
 

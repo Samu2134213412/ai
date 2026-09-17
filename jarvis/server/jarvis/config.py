@@ -47,6 +47,15 @@ class CodePilotConfig:
 
 
 @dataclass
+class WhisperConfig:
+    #: Leer heißt: Speech-to-Text ist aus. Jarvis bringt keinen eigenen
+    #: Schlüssel mit -- der Nutzer trägt seinen eigenen ein (siehe /api/whisper/key).
+    api_key: str = ""
+    model: str = "whisper-1"
+    timeout: int = 30
+
+
+@dataclass
 class Config:
     # -- Netz ---------------------------------------------------------------
     host: str = "127.0.0.1"
@@ -70,6 +79,7 @@ class Config:
     roots: list[str] = field(default_factory=default_roots)
     shell: ShellConfig = field(default_factory=ShellConfig)
     codepilot: CodePilotConfig = field(default_factory=CodePilotConfig)
+    whisper: WhisperConfig = field(default_factory=WhisperConfig)
 
     # -- Ablage -------------------------------------------------------------
     home: str = field(default_factory=lambda: str(default_home()))
@@ -114,6 +124,10 @@ class Config:
             data["codepilot"] = CodePilotConfig(**{
                 k: v for k, v in data["codepilot"].items()
                 if k in {f.name for f in fields(CodePilotConfig)}})
+        if isinstance(data.get("whisper"), dict):
+            data["whisper"] = WhisperConfig(**{
+                k: v for k, v in data["whisper"].items()
+                if k in {f.name for f in fields(WhisperConfig)}})
         return cls(**data)
 
     def save(self) -> Path:

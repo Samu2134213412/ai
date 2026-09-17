@@ -105,6 +105,48 @@ def test_repo_layout_wird_gefunden():
     assert (default_start_dir() / "codepilot").is_dir()
 
 
+def test_windows_flags_verzichten_auf_detached_process(monkeypatch):
+    """Das Flackern kam von DETACHED_PROCESS -- CREATE_NO_WINDOW ist das,
+    was Windows fuer 'kein Fenster, auch nicht kurz' vorsieht.
+
+    Prueft die reine Flag-Berechnung, ohne os.name global umzubiegen -- das
+    wuerde pytests eigene Pfadverwaltung (WindowsPath auf Linux) brechen.
+    """
+    from jarvis.tools import codepilot as mod
+    monkeypatch.setattr(mod.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+    monkeypatch.setattr(mod.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(mod.subprocess, "DETACHED_PROCESS", 0x00000008, raising=False)
+
+    flags = mod.windows_creationflags()
+
+    assert flags & 0x08000000                       # CREATE_NO_WINDOW gesetzt
+    assert flags & 0x200                             # CREATE_NEW_PROCESS_GROUP gesetzt
+    assert not (flags & 0x00000008)                  # DETACHED_PROCESS nicht mehr
+
+
+def test_spawn_reicht_die_windows_flags_nur_unter_windows_durch(monkeypatch, tmp_path):
+    """Unter Linux -- also in dieser Testumgebung -- greift start_new_session,
+    nicht die Windows-Flags. Die Verzweigung selbst wird hier geprueft."""
+    (tmp_path / "codepilot").mkdir()
+    gesehen = {}
+
+    def fake_popen(argv, **kwargs):
+        gesehen.update(kwargs)
+        class Attrappe:
+            def poll(self): return None
+        return Attrappe()
+
+    monkeypatch.setattr("jarvis.tools.codepilot.subprocess.Popen", fake_popen)
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p",
+                         log_path=str(tmp_path / "log.txt"))
+    link._spawn(tmp_path)
+
+    if __import__("os").name == "nt":
+        assert "creationflags" in gesehen
+    else:
+        assert gesehen.get("start_new_session") is True
+
+
 # ═══════════════════════════════════ mit einem echt gestarteten Prozess
 def test_wartet_bis_der_gestartete_prozess_antwortet(tmp_path, monkeypatch):
     """Die Warteschleife gegen einen wirklich laufenden HTTP-Server.
@@ -236,3 +278,65 @@ def test_vorabpruefung_blockiert_nicht_bei_fehlendem_statusbericht(monkeypatch):
 
     monkeypatch.setattr(link, "_client", Client)
     link.check_chain()  # darf nicht werfen
+
+
+# ═══════════════════════════════════════════════════ Statusmelder
+def test_status_ohne_konfiguration(monkeypatch):
+    link = CodePilotLink(url="http://127.0.0.1:1", token="", project_id="")
+    assert link.status_snapshot() == {"configured": False, "running": False, "problems": []}
+
+
+def test_status_konfiguriert_aber_nicht_erreichbar(monkeypatch):
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+    monkeypatch.setattr(link, "is_healthy", lambda *a, **k: False)
+    assert link.status_snapshot() == {"configured": True, "running": False, "problems": []}
+
+
+def test_status_laeuft_und_kette_ist_bereit(monkeypatch):
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+    monkeypatch.setattr(link, "is_healthy", lambda *a, **k: True)
+
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, _pfad):
+            return FakeAntwort(200, {"claude": {"available": True},
+                                     "ollama": {"available": True},
+                                     "model": {"available": True}})
+    monkeypatch.setattr(link, "_client", Client)
+
+    assert link.status_snapshot() == {"configured": True, "running": True, "problems": []}
+
+
+def test_status_laeuft_aber_kette_hat_luecken(monkeypatch):
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+    monkeypatch.setattr(link, "is_healthy", lambda *a, **k: True)
+
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, _pfad):
+            return FakeAntwort(200, {"claude": {"available": True},
+                                     "ollama": {"available": False, "detail": "offline"},
+                                     "model": {"available": True}})
+    monkeypatch.setattr(link, "_client", Client)
+
+    status = link.status_snapshot()
+    assert status["running"] is True
+    assert any("Ollama" in p and "offline" in p for p in status["problems"])
+
+
+def test_status_wirft_nie(monkeypatch):
+    """Der Melder laeuft periodisch im Hintergrund -- er darf niemals reissen,
+    auch nicht bei einer voellig unerwarteten Ausnahme."""
+    link = CodePilotLink(url="http://127.0.0.1:1", token="t", project_id="p")
+
+    def kaputt(*a, **k):
+        raise RuntimeError("etwas ganz Unerwartetes")
+    monkeypatch.setattr(link, "is_healthy", kaputt)
+
+    status = link.status_snapshot()
+
+    assert status["configured"] is True
+    assert status["running"] is False
+    assert "Unerwartetes" in status["problems"][0]
