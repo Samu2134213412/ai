@@ -121,6 +121,14 @@ class Config:
         return Path(self.home) / "aufgaben.sqlite3"
 
     @property
+    def goal_db_path(self) -> Path:
+        return Path(self.home) / "ziele.sqlite3"
+
+    @property
+    def decision_db_path(self) -> Path:
+        return Path(self.home) / "entscheidungen.sqlite3"
+
+    @property
     def config_path(self) -> Path:
         return Path(self.home) / "jarvis.json"
 
