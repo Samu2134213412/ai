@@ -99,10 +99,11 @@ erwartet.
 |---|---|
 | `web/` | Oberfläche: Kommandozentrale und Wissensnetz, eine Datei, keine Abhängigkeiten |
 | `server/` | Router, Werkzeuge, Gedächtnis, Agent, Wächter, WebSocket — siehe `server/README.md` |
+| `CODEX-AUFTRAG.md` | Fertiger Auftragstext für Codex, um Jarvis auf dem eigenen Rechner samt Handy-Zugriff einzurichten |
 
 ## Stand
 
-Fertig und getestet (355 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (450 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * Direct Action Router für eindeutige Befehle
@@ -123,6 +124,11 @@ Fertig und getestet (355 Tests, siehe `ROADMAP.md` für die Phasen):
   `server/README.md` und `../docs/JARVIS.md` §8
 * Installierbar auf dem Handy als App (Manifest, Icons, Service Worker) —
   siehe `web/README.md`
+* **Handybedienung:** alle Bedienelemente auf Fingergröße (44 px), Eingabe
+  mit 16 px, damit iOS beim Tippen nicht zoomt; geprüft auf iPhone SE/13,
+  Pixel 7 und Galaxy Fold (280 px) — ohne horizontalen Überlauf.
+  `python -m jarvis --open-network` nennt beim Start die Adresse, die sich
+  auf dem Handy eintippen lässt
 
 Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
 
