@@ -19,19 +19,25 @@ was der Vorgänger dieses Projekts zuverlässig getan hat.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from . import guard, planner, router
+from . import guard, planner, router, world_state
 from .audit import AuditLog
 from .autonomy import AutonomyLevel
 from .config import Config
+from .decision import DecisionEngine
+from .goals import Goal, GoalBudget, GoalManager, GoalStatus
 from .memory import MemoryStore
 from .ollama import ChatTurn, OllamaClient, OllamaError
 from .permissions import PermissionDenied, PermissionGate, PermissionLevel
 from .tasks import StepStatus, Task, TaskManager, TaskStatus
 from .tools import Registry, ToolMissing, ToolResult
 from .undo import UndoStore
+from .verification import VerificationEngine
+from .watchdog import Watchdog
 
 Emit = Callable[[str, dict], Awaitable[None]]
 
@@ -56,6 +62,46 @@ Programmieraufgaben gibst du an codepilot_task weiter, wenn es verfügbar ist.
 Reine Fragen beantwortest du ohne Werkzeug.
 """
 
+# ── Eingriffe des Nutzers (Punkt 22) ───────────────────────────────────────
+# Absichtlich hier und nicht in ``router.py``: der Router ordnet Text einem
+# *Werkzeug* zu, hier geht es um die Steuerung eines schon laufenden Ziels.
+# Die Muster greifen nur, wenn tatsächlich ein Ziel läuft (siehe ``interrupt``)
+# -- sonst wäre ein harmloses "weiter" im Gespräch plötzlich ein Steuerbefehl.
+_STOP = re.compile(
+    r"^\s*(stopp?|halt|abbrechen|abbruch|brich\s+ab|h(ö|oe)r\s+auf|"
+    r"mach\s+(et)?was\s+anderes)\b", re.I)
+_PAUSE = re.compile(r"^\s*(pause|pausier(e|en)?|warte(\s+mal)?|moment)\b", re.I)
+_RESUME = re.compile(r"^\s*(weiter|mach\s+weiter|weitermachen|fortsetzen|fortfahren)\b", re.I)
+_ALTERNATIVE = re.compile(
+    r"(versuch\w*\s+(es\s+|mal\s+)?(mit\s+)?(methode|weg|ansatz|variante|option)"
+    r"|ander(en|e|er)\s+(ansatz|methode|weg|variante))", re.I)
+
+
+class _GoalCancelled(Exception):
+    """Der Nutzer hat abgebrochen. Kein Fehler -- eine Anweisung."""
+
+
+@dataclass
+class _GoalControl:
+    """Der Griff, an dem ein laufendes Ziel von außen gehalten wird (Punkt 7
+    und 22): Pause, Fortsetzen, Abbruch -- und ein Hinweis des Nutzers, der
+    beim nächsten Schritt einfließt ("Nein, versuch Methode B").
+
+    Bewusst kooperativ statt ``task.cancel()``: ein Abbruch mitten in einem
+    laufenden Werkzeugaufruf würde die Welt in einem halben Zustand
+    hinterlassen, den niemand protokolliert hat. Stattdessen gibt es feste
+    Haltepunkte (``_checkpoint``) zwischen den Aktionen.
+    """
+
+    goal: Goal
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    run_event: asyncio.Event = field(default_factory=asyncio.Event)
+    reason: str = ""
+    hint: str = ""
+
+    def __post_init__(self) -> None:
+        self.run_event.set()  # läuft, bis jemand pausiert
+
 
 class Agent:
     def __init__(self, config: Config, store: MemoryStore, registry: Registry,
@@ -63,7 +109,10 @@ class Agent:
                  history_turns: int = 12,
                  permission_gate: PermissionGate | None = None,
                  audit: AuditLog | None = None, undo: UndoStore | None = None,
-                 tasks: TaskManager | None = None, max_step_retries: int = 2):
+                 tasks: TaskManager | None = None, max_step_retries: int = 2,
+                 goals: GoalManager | None = None,
+                 decisions: DecisionEngine | None = None,
+                 verification: VerificationEngine | None = None):
         self.config = config
         self.store = store
         self.registry = registry
@@ -88,6 +137,25 @@ class Agent:
         self.permission_gate = permission_gate or PermissionGate(emit=self.emit)
         self.audit = audit or AuditLog(":memory:")
         self.undo = undo or getattr(registry, "undo_store", None) or UndoStore(":memory:")
+        # Autonomy V1. Die drei Maschinen sind bewusst hereinreichbar: app.py
+        # gibt dateibasierte Instanzen, Tests bauen eigene.
+        self.goals = goals or GoalManager(":memory:")
+        self.decisions = decisions or DecisionEngine(client, audit=self.audit)
+        self.verification = verification if verification is not None else VerificationEngine()
+        #: Laufende Ziele, über die von außen gesteuert werden kann.
+        self._controls: dict[str, _GoalControl] = {}
+        #: Die Hintergrund-Tasks -- gehalten, damit der Garbage Collector sie
+        #: nicht einsammelt, solange sie laufen (asyncio hält nur schwache
+        #: Referenzen auf Tasks).
+        self._runners: set[asyncio.Task] = set()
+        #: Punkt 17, "Verhindere Race Conditions bei Dateien und gemeinsamen
+        #: Ressourcen": Seit Ziele im Hintergrund laufen, können zwei von
+        #: ihnen gleichzeitig an derselben Datei arbeiten wollen. Verändernde
+        #: Werkzeuge (WRITE und höher) laufen deshalb streng nacheinander --
+        #: der Preis ist etwas weniger Parallelität, der Gewinn ist, dass ein
+        #: Undo-Snapshot immer zu genau dem Zustand gehört, der gleich
+        #: verändert wird. Lesen bleibt parallel.
+        self._mutation_lock = asyncio.Lock()
 
     @staticmethod
     async def _silent(_kind: str, _payload: dict) -> None:
@@ -140,13 +208,24 @@ class Agent:
                               ok=False, summary=result.summary, request=request_text)
             return result
 
+        # Snapshot, Ausführung und Undo-Eintrag gehören zusammen -- bei
+        # verändernden Werkzeugen darf sich dazwischen nichts anderes
+        # dazwischendrängen (siehe ``_mutation_lock``).
+        if tool.level >= PermissionLevel.WRITE:
+            async with self._mutation_lock:
+                result = await self._execute(name, arguments)
+        else:
+            result = await self._execute(name, arguments)
+        self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
+                          ok=result.ok, summary=result.summary, request=request_text)
+        return result
+
+    async def _execute(self, name: str, arguments: dict) -> ToolResult:
         pre_snapshot = self.undo.begin(name, arguments or {})
         await self.emit("tool.started", {"tool": name, "arguments": arguments})
         result = await asyncio.to_thread(self.registry.call, name, arguments)
         await self.emit("tool.finished", result.as_event())
         self.undo.finish(name, result.summary, pre_snapshot, result)
-        self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
-                          ok=result.ok, summary=result.summary, request=request_text)
         return result
 
     # ---------------------------------------------------------- Code-Modus
@@ -185,6 +264,14 @@ class Agent:
         text = (message or "").strip()
         if not text:
             return guard.Reply(text="", provenance=guard.TALK)
+
+        # 0. Greift der Nutzer in ein laufendes Ziel ein? Das hat Vorrang vor
+        #    allem anderen -- "Stopp" darf nicht erst nach dem nächsten
+        #    Werkzeugaufruf wirken (Punkt 22).
+        interruption = await self.interrupt(text)
+        if interruption is not None:
+            self._remember(text, interruption)
+            return interruption
 
         # 1. Eindeutiger Befehl? Dann direkt, ohne Modell.
         action = router.route(text)
@@ -280,106 +367,412 @@ class Agent:
         self._remember(text, reply)
         return reply
 
-    # ------------------------------------------------------------ Agent Mode
-    async def handle_agent_task(self, goal: str) -> guard.Reply:
-        """Agent Mode (Punkt 1): ein komplexer Auftrag wird zuerst in
-        benannte Schritte zerlegt (Planner), dann nacheinander ausgeführt
-        (Executor). Scheitert ein Schritt, wird nicht sofort aufgegeben --
-        ein neuer Versuch mit dem Fehler als Kontext, bis zum Retry-Limit
-        (Error Recovery, Punkt 28). Der ganze Verlauf ist als Task
-        persistent und wird nach jedem Schritt als Ereignis gesendet (Task
-        History + State Manager)."""
-        goal = (goal or "").strip()
-        if not goal:
-            return guard.Reply(text="", provenance=guard.TALK)
+    # ═════════════════════════════════════════════ Zielverfolgung (Autonomy)
+    #
+    # Die Schleife aus Punkt 1 der Aufgabenstellung, mit den Phasen an genau
+    # den Stellen, an denen sie etwas Reales tun:
+    #
+    #   GOAL          -- ``start_goal``/``handle_agent_task`` legen das Ziel an
+    #   ANALYZE       -- ``_analyze``: echter Weltzustand, keine Vermutung
+    #   PLAN          -- ``planner.plan`` (bestehend, Phase 1)
+    #   SELECT ACTION -- das Modell wählt Werkzeuge; nach einem Fehlschlag
+    #                    wählt stattdessen die ``DecisionEngine`` den nächsten
+    #                    Ansatz deterministisch
+    #   EXECUTE       -- ``_run_tool`` (bestehend: Berechtigung, Undo, Audit)
+    #   VERIFY        -- ``VerificationEngine``: ein zweiter, unabhängiger
+    #                    Werkzeugaufruf
+    #   REFLECT       -- Retry mit dem echten Fehler als Kontext, Lehre ins
+    #                    Gedächtnis, Watchdog-Urteil
+    #   CONTINUE/FINISH
+    #
+    # Was hier *nicht* passiert: Das Modell darf an keiner Stelle den Zustand
+    # eines Schrittes setzen. Ob ein Schritt gelungen ist, entscheidet
+    # ausschließlich die Liste der ``ToolResult``s -- und, wo es einen
+    # Verifizierer gibt, dessen unabhängige Nachprüfung.
 
+    def _refuse_autonomy(self) -> guard.Reply:
         autonomy = self.config.autonomy
-        if autonomy < AutonomyLevel.GOAL_PURSUIT:
-            return guard.Reply(
-                text=(f"Autonomiestufe {int(autonomy)} ({autonomy.label}) erlaubt keine "
-                      "eigenständige Zielverfolgung -- das braucht Stufe 3. Sage mir "
-                      "stattdessen einzelne Schritte, oder hebe autonomy_level in "
-                      "jarvis.json an."),
-                provenance=guard.TALK)
+        return guard.Reply(
+            text=(f"Autonomiestufe {int(autonomy)} ({autonomy.label}) erlaubt keine "
+                  "eigenständige Zielverfolgung -- das braucht Stufe 3. Sage mir "
+                  "stattdessen einzelne Schritte, oder hebe autonomy_level in "
+                  "jarvis.json an."),
+            provenance=guard.TALK)
 
-        await self._state("thinking", "plane die Schritte")
-        step_texts = await planner.plan(self.client, goal)
-        task = self.tasks.create(goal, step_texts)
-        await self.emit("task.created", task.as_dict())
+    async def handle_agent_task(self, goal: str, *, budget: GoalBudget | None = None
+                                ) -> guard.Reply:
+        """Zielverfolgung, auf den Abschluss gewartet.
 
-        task.status = TaskStatus.RUNNING
-        self.tasks.save(task)
-        all_results: list[ToolResult] = []
+        Der synchrone Einstieg: legt das Ziel an und arbeitet es hier und
+        jetzt ab. Für den laufenden Betrieb ist ``start_goal`` der Weg (dort
+        blockiert nichts), aber diese Variante bleibt -- sie ist der
+        testbare, deterministische Kern, und Skripte, die auf das Ergebnis
+        warten wollen, brauchen sie."""
+        description = (goal or "").strip()
+        if not description:
+            return guard.Reply(text="", provenance=guard.TALK)
+        if self.config.autonomy < AutonomyLevel.GOAL_PURSUIT:
+            return self._refuse_autonomy()
 
-        for step in task.steps:
-            step.status = StepStatus.RUNNING
-            step.started_at = time.time()
-            self.tasks.save(task)
-            await self._state("executing", f"Schritt: {step.description}")
-            await self.emit("task.step.started", {"task_id": task.id, **step.as_dict()})
-
-            instruction = step.description
-            # Nur die Ergebnisse des jeweils LETZTEN Versuchs zählen für das
-            # Gesamturteil -- ein Versuch, der scheiterte und dann durch einen
-            # anderen Ansatz ersetzt wurde, darf ein am Ende erfolgreiches
-            # Ergebnis nicht rückwirkend als Fehlschlag erscheinen lassen.
-            # Sichtbar bleibt er trotzdem: im "task.step.retry"-Ereignis, in
-            # step.retries und im Audit Log (jeder Versuch läuft durch
-            # _run_tool und wird dort unabhängig protokolliert).
-            step_results: list[ToolResult] = []
-            for attempt in range(self.max_step_retries + 1):
-                try:
-                    text, step_results = await self._run_tool_loop(instruction, request_text=goal)
-                except OllamaError as exc:
-                    text, step_results = "", []
-                    step.error = f"Modell nicht erreichbar: {exc}"
-                else:
-                    failed = [r for r in step_results if not r.ok]
-                    if not failed:
-                        step.status = StepStatus.DONE
-                        step.result_summary = text.strip() or (
-                            step_results[-1].summary if step_results else "erledigt")
-                        break
-                    step.error = "; ".join(r.summary for r in failed)
-
-                step.retries = attempt + 1
-                if attempt < self.max_step_retries:
-                    await self.emit("task.step.retry", {
-                        "task_id": task.id, "step_id": step.id,
-                        "versuch": attempt + 1, "fehler": step.error})
-                    instruction = (
-                        f"Der vorige Versuch ist gescheitert: {step.error}. "
-                        f"Versuche einen anderen Ansatz für: {step.description}")
-                else:
-                    step.status = StepStatus.FAILED
-
-            all_results.extend(step_results)
-            step.finished_at = time.time()
-            self.tasks.save(task)
-            await self.emit("task.step.finished", {"task_id": task.id, **step.as_dict()})
-
-            if step.status == StepStatus.FAILED:
-                task.status = TaskStatus.FAILED
-                self.tasks.save(task)
-                await self._state("failed")
-                await self.emit("task.finished", task.as_dict())
-                reply = guard.verify(
-                    f"Schritt gescheitert: {step.description}. {step.error}", all_results)
-                self._remember(goal, reply)
-                return reply
-
-        task.status = TaskStatus.COMPLETED
-        self.tasks.save(task)
-        await self._state("idle")
-        await self.emit("task.finished", task.as_dict())
-        final_text = " ".join(s.result_summary for s in task.steps if s.result_summary)
-        reply = guard.verify(final_text or "Alle Schritte abgeschlossen.", all_results)
-        self._remember(goal, reply)
+        target, control = self._open_goal(description, budget=budget)
+        reply = await self._pursue_goal(target, control)
+        self._remember(description, reply)
         return reply
 
+    async def start_goal(self, goal: str, *, budget: GoalBudget | None = None
+                         ) -> tuple[Goal | None, guard.Reply]:
+        """Zielverfolgung im Hintergrund (Punkt 7): Jarvis fängt an und
+        antwortet sofort -- der Nutzer kann weiterreden, während gearbeitet
+        wird.
+
+        Die Zwischenmeldung behauptet nichts über ein Ergebnis, sie meldet
+        nur, dass die Arbeit *begonnen* hat. Das ist keine Ausnahme von der
+        Kernregel: Was am Ende herauskommt, meldet der Abschluss -- belegt
+        durch die Werkzeugergebnisse, wie überall sonst."""
+        description = (goal or "").strip()
+        if not description:
+            return None, guard.Reply(text="", provenance=guard.TALK)
+        if self.config.autonomy < AutonomyLevel.GOAL_PURSUIT:
+            return None, self._refuse_autonomy()
+
+        target, control = self._open_goal(description, budget=budget)
+        runner = asyncio.create_task(self._run_goal_in_background(target, control))
+        self._runners.add(runner)
+        runner.add_done_callback(self._runners.discard)
+        return target, guard.Reply(
+            text=(f"Ich arbeite daran: {description}. Du kannst mir in der "
+                  "Zwischenzeit etwas anderes sagen -- \"Stopp\" oder \"Pause\" "
+                  "gelten jederzeit."),
+            provenance=guard.TALK)
+
+    def _open_goal(self, description: str, *, budget: GoalBudget | None = None
+                   ) -> tuple[Goal, _GoalControl]:
+        target = self.goals.create(description, budget=budget)
+        control = _GoalControl(goal=target)
+        self._controls[target.id] = control
+        return target, control
+
+    async def _run_goal_in_background(self, target: Goal, control: _GoalControl) -> None:
+        try:
+            reply = await self._pursue_goal(target, control)
+        except Exception as exc:  # noqa: BLE001 - ein Hintergrund-Task, der
+            # lautlos stirbt, wäre das Gegenteil von nachvollziehbar.
+            await self._state("failed", str(exc))
+            reply = guard.Reply(text=f"Intern ist ein Fehler aufgetreten: {exc}",
+                                provenance=guard.FAIL)
+        # Der Nutzer wartet nicht auf diese Antwort -- also wird sie ihm
+        # zugestellt statt zurückgegeben.
+        await self.emit("message", {"who": "jarvis", **reply.as_event()})
+
+    # ---------------------------------------------------------- Die Schleife
+    async def _pursue_goal(self, target: Goal, control: _GoalControl) -> guard.Reply:
+        watchdog = Watchdog(budget=target.budget)
+        all_results: list[ToolResult] = []
+        task: Task | None = None
+        try:
+            # ── ANALYZE ────────────────────────────────────────────────────
+            target.status = GoalStatus.PLANNING
+            self.goals.save(target)
+            await self.emit("goal.created", target.as_dict())
+            state = await self._analyze()
+            target.working_memory["weltzustand"] = state
+
+            # ── PLAN ───────────────────────────────────────────────────────
+            await self._state("thinking", "plane die Schritte")
+            step_texts = await planner.plan(self.client, target.description)
+            task = self.tasks.create(target.description, step_texts)
+            task.status = TaskStatus.RUNNING
+            self.tasks.save(task)
+            await self.emit("task.created", task.as_dict())
+
+            target.subtasks.append(task.id)
+            target.status = GoalStatus.RUNNING
+            self.goals.save(target)
+            await self.emit("goal.updated", target.as_dict())
+
+            for index, step in enumerate(task.steps):
+                await self._checkpoint(control)
+
+                # ── Watchdog vor jedem Schritt (Punkt 18/19) ───────────────
+                watchdog.note_step()
+                verdict = watchdog.verdict()
+                if not verdict.ok:
+                    return await self._abort_goal(target, task, control, all_results,
+                                                  verdict.reason, GoalStatus.BLOCKED)
+
+                target.current_step = step.description
+                target.progress = index / max(len(task.steps), 1)
+                self.goals.save(target)
+
+                await self._run_step(target, task, step, control, watchdog, all_results)
+
+                if step.status is StepStatus.FAILED:
+                    return await self._abort_goal(
+                        target, task, control, all_results,
+                        f"Schritt gescheitert: {step.description}. {step.error}",
+                        GoalStatus.FAILED)
+
+            # ── FINISH ─────────────────────────────────────────────────────
+            task.status = TaskStatus.COMPLETED
+            self.tasks.save(task)
+            target.status = GoalStatus.COMPLETED
+            target.progress = 1.0
+            target.current_step = ""
+            self.goals.save(target)
+            await self._state("idle")
+            await self.emit("task.finished", task.as_dict())
+            await self.emit("goal.finished", target.as_dict())
+            final_text = " ".join(s.result_summary for s in task.steps if s.result_summary)
+            return guard.verify(final_text or "Alle Schritte abgeschlossen.", all_results)
+
+        except _GoalCancelled as stop:
+            return await self._abort_goal(target, task, control, all_results,
+                                          str(stop), GoalStatus.CANCELLED)
+        finally:
+            self._controls.pop(target.id, None)
+
+    async def _run_step(self, target: Goal, task: Task, step, control: _GoalControl,
+                        watchdog: Watchdog, all_results: list[ToolResult]) -> None:
+        """Ein Schritt: ausführen, prüfen, bei Fehlschlag einen anderen Weg
+        wählen -- bis zum Retry-Limit (Punkt 6)."""
+        step.status = StepStatus.RUNNING
+        step.started_at = time.time()
+        self.tasks.save(task)
+        await self._state("executing", f"Schritt: {step.description}")
+        await self.emit("task.step.started", {"task_id": task.id, **step.as_dict()})
+
+        instruction = step.description
+        if control.hint:
+            # "Nein, versuch Methode B." -- der Hinweis des Nutzers geht in den
+            # nächsten Schritt ein und wird dann verbraucht.
+            instruction = f"{instruction}\n\nHinweis des Nutzers: {control.hint}"
+            control.hint = ""
+
+        # Nur die Ergebnisse des jeweils LETZTEN Versuchs zählen für das
+        # Gesamturteil -- ein Versuch, der scheiterte und dann durch einen
+        # anderen Ansatz ersetzt wurde, darf ein am Ende erfolgreiches
+        # Ergebnis nicht rückwirkend als Fehlschlag erscheinen lassen.
+        # Sichtbar bleibt er trotzdem: im "task.step.retry"-Ereignis, in
+        # step.retries und im Audit Log (jeder Versuch läuft durch _run_tool
+        # und wird dort unabhängig protokolliert).
+        step_results: list[ToolResult] = []
+        first_error = ""
+        for attempt in range(self.max_step_retries + 1):
+            await self._checkpoint(control)
+            try:
+                text, step_results = await self._run_tool_loop(
+                    instruction, request_text=target.description,
+                    watchdog=watchdog, control=control)
+            except OllamaError as exc:
+                text, step_results = "", []
+                step.error = f"Modell nicht erreichbar: {exc}"
+            else:
+                failed = [r for r in step_results if not r.ok]
+                if not failed:
+                    step.status = StepStatus.DONE
+                    step.result_summary = text.strip() or (
+                        step_results[-1].summary if step_results else "erledigt")
+                    if attempt:
+                        # ── Experience Learning (Punkt 15) ────────────────
+                        self._learn(step.description, first_error, step.result_summary)
+                    break
+                step.error = "; ".join(r.summary for r in failed)
+            first_error = first_error or step.error
+
+            step.retries = attempt + 1
+            if attempt < self.max_step_retries:
+                await self.emit("task.step.retry", {
+                    "task_id": task.id, "step_id": step.id,
+                    "versuch": attempt + 1, "fehler": step.error})
+                instruction = await self._next_approach(target, step, step.error)
+            else:
+                step.status = StepStatus.FAILED
+
+        all_results.extend(step_results)
+        step.finished_at = time.time()
+        self.tasks.save(task)
+        # ── Working Memory (Punkt 14): was gerade wirklich passiert ist ────
+        verlauf = target.working_memory.setdefault("verlauf", [])
+        verlauf.append({"schritt": step.description, "status": step.status.value,
+                        "ergebnis": step.result_summary, "fehler": step.error,
+                        "versuche": step.retries})
+        del verlauf[:-10]  # nur das Nahe bleibt im Arbeitsspeicher
+        self.goals.save(target)
+        await self.emit("task.step.finished", {"task_id": task.id, **step.as_dict()})
+
+    async def _next_approach(self, target: Goal, step, error: str) -> str:
+        """SELECT ACTION nach einem Fehlschlag: nicht denselben Versuch
+        wiederholen, sondern abwägen (Punkt 3) -- und die Wahl protokollieren."""
+        decision = await self.decisions.choose(
+            f"Der Versuch '{step.description}' ist gescheitert: {error}. "
+            "Welche Vorgehensweisen kommen jetzt in Frage?",
+            registry_names=set(self.registry.names()), goal_id=target.id)
+        target.working_memory.setdefault("entscheidungen", []).append(decision.as_dict())
+        del target.working_memory["entscheidungen"][:-10]
+        self.goals.save(target)
+        await self.emit("decision.made", decision.as_dict())
+        chosen = decision.chosen
+        werkzeug = f" (Werkzeug: {chosen.tool})" if chosen.tool else ""
+        return (f"Der vorige Versuch ist gescheitert: {error}. "
+                f"Gewählter neuer Ansatz: {chosen.description}{werkzeug}. "
+                f"Ziel des Schrittes bleibt: {step.description}")
+
+    def _learn(self, step_description: str, error: str, result: str) -> None:
+        """Was nach einem Fehlschlag doch funktioniert hat, wird gemerkt
+        (Punkt 15).
+
+        Ausdrücklich als *Hinweis* für die Planung, nicht als Ersatz für eine
+        Aktion: Eine Erinnerung landet über ``store.context_for`` nur im
+        Kontext, bevor geplant wird. Sie kann keinen Werkzeugaufruf ersetzen
+        und keinen Zustand behaupten -- der aktuelle Zustand wird trotzdem
+        jedes Mal neu geprüft (ANALYZE + VERIFY)."""
+        if not error:
+            return
+        try:
+            self.store.add(
+                label=f"Erfahrung: {step_description[:70]}",
+                text=(f"Erster Versuch scheiterte an: {error}. "
+                      f"Erfolgreich war danach: {result}"),
+                kind="erfahrung")
+        except Exception:  # noqa: BLE001 - eine Lehre, die sich nicht ablegen
+            # lässt, darf den laufenden Auftrag nicht scheitern lassen.
+            pass
+
+    async def _analyze(self) -> dict[str, Any]:
+        """World State (Punkt 13): was messbar ist, wird gemessen -- nicht
+        erfragt. Ein nicht erreichbares Modell macht daraus keinen Fehler,
+        sondern ein ehrliches "nicht erreichbar"."""
+        try:
+            health = await self.client.health()
+        except Exception:  # noqa: BLE001
+            health = None
+        state = await asyncio.to_thread(world_state.snapshot, health, self.goals)
+        await self.emit("world.state", state)
+        return state
+
+    async def _abort_goal(self, target: Goal, task: Task | None, control: _GoalControl,
+                          results: list[ToolResult], reason: str,
+                          status: GoalStatus) -> guard.Reply:
+        """Ein Ziel endet vorzeitig -- abgebrochen, blockiert oder gescheitert.
+        In allen drei Fällen dasselbe: ehrlich benennen, protokollieren, und
+        nichts behaupten, was nicht belegt ist."""
+        if task is not None:
+            task.status = (TaskStatus.CANCELLED if status is GoalStatus.CANCELLED
+                           else TaskStatus.FAILED)
+            self.tasks.save(task)
+            await self.emit("task.finished", task.as_dict())
+        target.status = status
+        target.error = reason
+        target.current_step = ""
+        self.goals.save(target)
+        await self._state("idle" if status is GoalStatus.CANCELLED else "failed")
+        await self.emit("goal.finished", target.as_dict())
+        if status is GoalStatus.CANCELLED:
+            return guard.verify(f"Abgebrochen: {target.description}. {reason}", results)
+        if status is GoalStatus.BLOCKED:
+            return guard.verify(
+                f"Ich habe angehalten, bevor das Ziel erreicht war: {reason}. "
+                "Sag mir, wie es weitergehen soll.", results)
+        return guard.verify(reason, results)
+
+    # -------------------------------------------------- Steuerung von außen
+    async def _checkpoint(self, control: _GoalControl | None) -> None:
+        """Ein Haltepunkt zwischen zwei Aktionen. Nie mittendrin -- siehe
+        ``_GoalControl``."""
+        if control is None:
+            return
+        if control.cancel_event.is_set():
+            raise _GoalCancelled(control.reason or "Vom Nutzer abgebrochen.")
+        if control.run_event.is_set():
+            return
+        target = control.goal
+        target.status = GoalStatus.WAITING
+        self.goals.save(target)
+        await self._state("idle", "pausiert")
+        await self.emit("goal.updated", target.as_dict())
+        await control.run_event.wait()
+        if control.cancel_event.is_set():
+            raise _GoalCancelled(control.reason or "Vom Nutzer abgebrochen.")
+        target.status = GoalStatus.RUNNING
+        self.goals.save(target)
+        await self.emit("goal.updated", target.as_dict())
+
+    @property
+    def active_goals(self) -> list[Goal]:
+        return [c.goal for c in self._controls.values()]
+
+    def pause_goal(self, goal_id: str | None = None) -> list[str]:
+        """Angefordert, nicht behauptet: die Pause greift am nächsten
+        Haltepunkt. Zurück kommt, welche Ziele angesprochen wurden."""
+        touched = []
+        for control in self._select(goal_id):
+            control.run_event.clear()
+            touched.append(control.goal.id)
+        return touched
+
+    def resume_goal(self, goal_id: str | None = None) -> list[str]:
+        touched = []
+        for control in self._select(goal_id):
+            control.run_event.set()
+            touched.append(control.goal.id)
+        return touched
+
+    def cancel_goal(self, goal_id: str | None = None, reason: str = "") -> list[str]:
+        touched = []
+        for control in self._select(goal_id):
+            control.reason = reason or "Vom Nutzer abgebrochen."
+            control.cancel_event.set()
+            control.run_event.set()  # aus einer Pause heraus abbrechen können
+            touched.append(control.goal.id)
+        return touched
+
+    def hint_goal(self, hint: str, goal_id: str | None = None) -> list[str]:
+        touched = []
+        for control in self._select(goal_id):
+            control.hint = hint
+            touched.append(control.goal.id)
+        return touched
+
+    def _select(self, goal_id: str | None) -> list[_GoalControl]:
+        if goal_id:
+            control = self._controls.get(goal_id)
+            return [control] if control else []
+        return list(self._controls.values())
+
+    async def interrupt(self, text: str) -> guard.Reply | None:
+        """Punkt 22: "Stopp." / "Pause." / "Mach weiter." / "Nein, versuch
+        Methode B." -- jederzeit, auch mitten in einem laufenden Ziel.
+
+        Gibt ``None`` zurück, wenn der Text kein Eingriff ist oder gar kein
+        Ziel läuft. Dann geht der Zug ganz normal weiter."""
+        if not self._controls:
+            return None
+        text = (text or "").strip()
+        if _STOP.search(text):
+            ids = self.cancel_goal(reason=f"Nutzer: \"{text}\"")
+            wortlaut = "laufendes Ziel" if len(ids) == 1 else "laufende Ziele"
+            return guard.Reply(text=f"Angehalten. {len(ids)} {wortlaut} abgebrochen.",
+                               provenance=guard.TALK)
+        if _PAUSE.search(text):
+            ids = self.pause_goal()
+            return guard.Reply(
+                text=f"Pausiert ({len(ids)}). Sag \"weiter\", wenn es weitergehen soll.",
+                provenance=guard.TALK)
+        if _RESUME.search(text):
+            ids = self.resume_goal()
+            return guard.Reply(text=f"Weiter ({len(ids)}).", provenance=guard.TALK)
+        if _ALTERNATIVE.search(text):
+            ids = self.hint_goal(text)
+            return guard.Reply(
+                text=f"Verstanden, ich nehme das für den nächsten Schritt auf ({len(ids)}).",
+                provenance=guard.TALK)
+        return None
+
     # ------------------------------------------------------------- Interna
-    async def _run_tool_loop(self, instruction: str,
-                             request_text: str) -> tuple[str, list[ToolResult]]:
+    async def _run_tool_loop(self, instruction: str, request_text: str,
+                             watchdog: Watchdog | None = None,
+                             control: _GoalControl | None = None
+                             ) -> tuple[str, list[ToolResult]]:
         """Eine eigenständige Werkzeugaufruf-Runde für einen einzelnen
         Ausführungsschritt (Agent Mode).
 
@@ -390,6 +783,10 @@ class Agent:
         den Agent Mode unbemerkt das normale Chat-Verhalten mit verändert.
         Etwas Ähnlichkeit in der Struktur ist hier der günstigere Preis als
         dieses Risiko an bereits funktionierendem, getestetem Code.
+
+        Hier -- und nicht in ``_run_tool`` -- sitzen Watchdog und
+        Verifizierung, weil beide die **Argumente** des Aufrufs brauchen:
+        ``ToolResult`` trägt sie nicht.
         """
         context = await asyncio.to_thread(self.store.context_for, instruction)
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -401,6 +798,7 @@ class Agent:
         results: list[ToolResult] = []
         final = ""
         for _round in range(self.config.max_tool_rounds):
+            await self._checkpoint(control)
             turn: ChatTurn = await self.client.chat(messages, self.registry.schemas())
             if not turn.tool_calls:
                 final = turn.text
@@ -416,10 +814,29 @@ class Agent:
                         "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' existiert "
                                     f"nicht. Verfügbar: {', '.join(self.registry.names())}")})
                     continue
+                await self._checkpoint(control)
+                # ── EXECUTE ───────────────────────────────────────────────
                 result = await self._run_tool(call.name, call.arguments, request_text=request_text)
                 results.append(result)
                 messages.append({"role": "tool", "name": call.name,
                                  "content": result.for_model()})
+                if watchdog is not None:
+                    watchdog.note_tool_call(call.name, call.arguments, result.ok, result.summary)
+
+                # ── VERIFY ────────────────────────────────────────────────
+                # Ein zweiter, unabhängiger Werkzeugaufruf. Schlägt er fehl,
+                # zählt der Schritt als gescheitert -- auch wenn das
+                # ursprüngliche Werkzeug "erfolgreich" gemeldet hat. Genau das
+                # ist "Jarvis darf niemals allein aufgrund seiner eigenen
+                # Antwort davon ausgehen, dass etwas funktioniert hat".
+                check = await self.verification.verify(
+                    call.name, call.arguments, result,
+                    lambda name, args: self._run_tool(name, args, request_text=request_text))
+                if check is not None and not check.ok:
+                    results.append(check)
+                    messages.append({
+                        "role": "tool", "name": f"verify:{call.name}",
+                        "content": f"NACHPRÜFUNG FEHLGESCHLAGEN: {check.summary}"})
         else:
             final = f"Schritt nach {self.config.max_tool_rounds} Runden abgebrochen."
         return final, results

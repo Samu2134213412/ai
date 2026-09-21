@@ -66,6 +66,11 @@ async def test_gescheiterter_schritt_bekommt_einen_neuen_versuch(
         ChatTurn(text='["Etwas herausfinden"]'),                          # Planner
         ChatTurn(tool_calls=[ToolCall("read_file", {"path": "gibtsnicht.txt"})]),  # Versuch 1
         ChatTurn(text="Das hat nicht geklappt."),
+        # Vor dem zweiten Versuch wägt die DecisionEngine Alternativen ab
+        # (Punkt 3) -- das ist genau eine zusätzliche Modellanfrage.
+        ChatTurn(text='[{"beschreibung": "Systeminfo statt Datei lesen", '
+                      '"werkzeug": "get_system_info", "erfolgswahrscheinlichkeit": 0.8, '
+                      '"kosten": 0.1, "risiko": "LOW", "zeit": 0.1}]'),
         ChatTurn(tool_calls=[ToolCall("get_system_info", {})]),           # Versuch 2
         ChatTurn(text="Jetzt geklappt."),
     ])
@@ -90,9 +95,11 @@ async def test_retry_limit_verhindert_endlosschleife(config, store, registry, fa
     """Scheitert ein Schritt dauerhaft, gibt es irgendwann ehrlich auf --
     mit genau max_step_retries + 1 Versuchen, nicht unendlich vielen."""
     turns = [ChatTurn(text='["Unmögliches tun"]')]  # Planner
-    for _ in range(2):  # max_step_retries=1 -> zwei Versuche insgesamt
+    for versuch in range(2):  # max_step_retries=1 -> zwei Versuche insgesamt
         turns.append(ChatTurn(tool_calls=[ToolCall("read_file", {"path": "nie-da.txt"})]))
         turns.append(ChatTurn(text="Ging nicht."))
+        if versuch == 0:  # DecisionEngine wägt einmal ab, vor dem Neuversuch
+            turns.append(ChatTurn(text="(keine brauchbaren Alternativen)"))
     model = fake_ollama(turns)
     events: list = []
     agent = make_agent(config, store, registry, model, events, max_step_retries=1)

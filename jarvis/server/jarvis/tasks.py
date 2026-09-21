@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ class TaskStatus(str, Enum):
     WAITING_APPROVAL = "waiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class StepStatus(str, Enum):
@@ -119,11 +121,17 @@ class TaskManager:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
-        self._db.executescript(_SCHEMA)
-        self._db.commit()
+        # Punkt 17: dieselbe Begründung wie in ``goals.py`` -- seit Ziele
+        # parallel im Hintergrund laufen, teilen sich Event-Loop und
+        # Worker-Threads diese Verbindung.
+        self._lock = threading.RLock()
+        with self._lock:
+            self._db.executescript(_SCHEMA)
+            self._db.commit()
 
     def close(self) -> None:
-        self._db.close()
+        with self._lock:
+            self._db.close()
 
     def create(self, goal: str, step_descriptions: list[str]) -> Task:
         steps = [TaskStep(id=uuid.uuid4().hex[:8], description=d.strip())
@@ -136,27 +144,32 @@ class TaskManager:
 
     def save(self, task: Task) -> None:
         task.updated_at = time.time()
-        self._db.execute(
-            "INSERT INTO tasks (id, goal, status, created_at, updated_at, document) "
-            "VALUES (?,?,?,?,?,?) "
-            "ON CONFLICT(id) DO UPDATE SET status=excluded.status, "
-            "updated_at=excluded.updated_at, document=excluded.document",
-            (task.id, task.goal, task.status.value, task.created_at, task.updated_at,
-             json.dumps(task.as_dict(), ensure_ascii=False)))
-        self._db.commit()
+        document = json.dumps(task.as_dict(), ensure_ascii=False)
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO tasks (id, goal, status, created_at, updated_at, document) "
+                "VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET status=excluded.status, "
+                "updated_at=excluded.updated_at, document=excluded.document",
+                (task.id, task.goal, task.status.value, task.created_at, task.updated_at,
+                 document))
+            self._db.commit()
 
     def get(self, task_id: str) -> Task | None:
-        row = self._db.execute("SELECT document FROM tasks WHERE id=?", (task_id,)).fetchone()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT document FROM tasks WHERE id=?", (task_id,)).fetchone()
         return Task.from_dict(json.loads(row["document"])) if row else None
 
     def list(self, limit: int = 20, status: TaskStatus | None = None) -> list[Task]:
         limit = max(1, min(int(limit or 20), 500))
-        if status is not None:
-            rows = self._db.execute(
-                "SELECT document FROM tasks WHERE status=? ORDER BY updated_at DESC LIMIT ?",
-                (status.value, limit)).fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT document FROM tasks ORDER BY updated_at DESC LIMIT ?",
-                (limit,)).fetchall()
+        with self._lock:
+            if status is not None:
+                rows = self._db.execute(
+                    "SELECT document FROM tasks WHERE status=? ORDER BY updated_at DESC LIMIT ?",
+                    (status.value, limit)).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT document FROM tasks ORDER BY updated_at DESC LIMIT ?",
+                    (limit,)).fetchall()
         return [Task.from_dict(json.loads(r["document"])) for r in rows]

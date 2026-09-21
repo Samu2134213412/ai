@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -144,11 +145,20 @@ class GoalManager:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
-        self._db.executescript(_SCHEMA)
-        self._db.commit()
+        # Punkt 17: Seit Ziele parallel im Hintergrund laufen, greifen der
+        # Event-Loop und Worker-Threads (``asyncio.to_thread``) auf dieselbe
+        # Verbindung zu. Ein Lock um jede Operation hält Schreiben und Lesen
+        # sauber getrennt -- billig bei dieser Datenmenge, und es macht die
+        # Absicht sichtbar, statt sich auf das Innenleben von sqlite3 zu
+        # verlassen.
+        self._lock = threading.RLock()
+        with self._lock:
+            self._db.executescript(_SCHEMA)
+            self._db.commit()
 
     def close(self) -> None:
-        self._db.close()
+        with self._lock:
+            self._db.close()
 
     def create(self, description: str, *, priority: int = 0, deadline: float | None = None,
               parent_goal: str | None = None, success_conditions: list[str] | None = None,
@@ -164,34 +174,40 @@ class GoalManager:
 
     def save(self, goal: Goal) -> None:
         goal.updated_at = time.time()
-        self._db.execute(
-            "INSERT INTO goals (id, description, status, priority, created_at, updated_at, "
-            "parent_goal, document) VALUES (?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(id) DO UPDATE SET status=excluded.status, "
-            "updated_at=excluded.updated_at, document=excluded.document",
-            (goal.id, goal.description, goal.status.value, goal.priority, goal.created_at,
-             goal.updated_at, goal.parent_goal, json.dumps(goal.as_dict(), ensure_ascii=False)))
-        self._db.commit()
+        document = json.dumps(goal.as_dict(), ensure_ascii=False)
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO goals (id, description, status, priority, created_at, updated_at, "
+                "parent_goal, document) VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET status=excluded.status, "
+                "updated_at=excluded.updated_at, document=excluded.document",
+                (goal.id, goal.description, goal.status.value, goal.priority, goal.created_at,
+                 goal.updated_at, goal.parent_goal, document))
+            self._db.commit()
 
     def get(self, goal_id: str) -> Goal | None:
-        row = self._db.execute("SELECT document FROM goals WHERE id=?", (goal_id,)).fetchone()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT document FROM goals WHERE id=?", (goal_id,)).fetchone()
         return Goal.from_dict(json.loads(row["document"])) if row else None
 
     def list(self, limit: int = 20, status: GoalStatus | None = None) -> list[Goal]:
         limit = max(1, min(int(limit or 20), 500))
-        if status is not None:
-            rows = self._db.execute(
-                "SELECT document FROM goals WHERE status=? "
-                "ORDER BY priority DESC, updated_at DESC LIMIT ?",
-                (status.value, limit)).fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT document FROM goals ORDER BY priority DESC, updated_at DESC LIMIT ?",
-                (limit,)).fetchall()
+        with self._lock:
+            if status is not None:
+                rows = self._db.execute(
+                    "SELECT document FROM goals WHERE status=? "
+                    "ORDER BY priority DESC, updated_at DESC LIMIT ?",
+                    (status.value, limit)).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT document FROM goals ORDER BY priority DESC, updated_at DESC LIMIT ?",
+                    (limit,)).fetchall()
         return [Goal.from_dict(json.loads(r["document"])) for r in rows]
 
     def children(self, parent_goal_id: str) -> list[Goal]:
-        rows = self._db.execute(
-            "SELECT document FROM goals WHERE parent_goal=? ORDER BY created_at",
-            (parent_goal_id,)).fetchall()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT document FROM goals WHERE parent_goal=? ORDER BY created_at",
+                (parent_goal_id,)).fetchall()
         return [Goal.from_dict(json.loads(r["document"])) for r in rows]

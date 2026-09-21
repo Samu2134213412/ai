@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -295,9 +296,27 @@ def test_permission_resolve_unbekannte_anfrage(client):
     assert res.json() == {"gefunden": False}
 
 
+def _warte_auf_ziel(test_client, goal_id: str, endstati=("completed", "failed",
+                                                          "blocked", "cancelled")) -> dict:
+    """Der Agent-Modus antwortet seit Autonomy V1 sofort und arbeitet im
+    Hintergrund weiter -- also wird auf den echten Endzustand gewartet, statt
+    ihn anzunehmen."""
+    for _ in range(200):
+        ziel = test_client.get(f"/api/goals/{goal_id}").json()
+        if ziel["status"] in endstati:
+            return ziel
+        time.sleep(0.02)
+    raise AssertionError(f"Ziel {goal_id} ist nicht fertig geworden: {ziel['status']}")
+
+
 def test_agent_modus_zerlegt_und_fuehrt_aus(config, fake_ollama, workspace):
     """Eigene App-Instanz: der Agent-Modus braucht eine andere Abfolge von
-    Modell-Antworten als die anderen HTTP-Tests in dieser Datei."""
+    Modell-Antworten als die anderen HTTP-Tests in dieser Datei.
+
+    Seit Autonomy V1 läuft ein Ziel im Hintergrund (Punkt 7). Die Antwort auf
+    ``/api/command`` ist deshalb bewusst nur eine Zwischenmeldung ohne
+    Werkzeugbeleg -- sie behauptet nichts über ein Ergebnis. Das Ergebnis
+    steht danach im Ziel und in der Aufgabe."""
     config.autonomy_level = 3  # Zielverfolgung erfordert Autonomiestufe 3
     app = create_app(config)
     app.state.permission_gate.policy = PermissionPolicy(
@@ -312,12 +331,20 @@ def test_agent_modus_zerlegt_und_fuehrt_aus(config, fake_ollama, workspace):
     with TestClient(app) as test_client:
         body = test_client.post(
             "/api/command", json={"text": "Prüfe das System", "mode": "agent"}).json()
-        assert body["provenance"] == "tool"
+        assert body["provenance"] == "talk"  # Zwischenmeldung, kein Ergebnis
+        assert "Prüfe das System" in body["text"]
+
+        ziele = test_client.get("/api/goals").json()["ziele"]
+        assert len(ziele) == 1
+        ziel = _warte_auf_ziel(test_client, ziele[0]["id"])
+        assert ziel["status"] == "completed"
+        assert ziel["fortschritt"] == 1.0
 
         aufgaben = test_client.get("/api/tasks").json()["aufgaben"]
         assert len(aufgaben) == 1
         assert aufgaben[0]["status"] == "completed"
         assert aufgaben[0]["schritte"][0]["status"] == "done"
+        assert aufgaben[0]["id"] in ziel["unteraufgaben"]
 
         einzeln = test_client.get(f"/api/tasks/{aufgaben[0]['id']}").json()
         assert einzeln["id"] == aufgaben[0]["id"]

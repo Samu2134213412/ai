@@ -25,6 +25,8 @@ from . import guard
 from .agent import Agent
 from .audit import AuditLog
 from .config import Config
+from .decision import DecisionEngine, DecisionLog
+from .goals import GoalManager, GoalStatus
 from .memory import DEFAULT_SEED, MemoryStore
 from .ollama import OllamaClient
 from .permissions import PermissionGate, PermissionLevel, PermissionPolicy
@@ -44,6 +46,9 @@ CODEPILOT_STATUS_SECONDS = 4.0
 #: siehe ``Agent.handle_agent_task``).
 CommandMode = Literal["chat", "code", "agent"]
 _MODES: tuple[str, ...] = ("chat", "code", "agent")
+
+#: Was sich an einem laufenden Ziel von außen steuern lässt (Punkt 7/22).
+GoalAction = Literal["pause", "resume", "cancel"]
 
 
 class CommandIn(BaseModel):
@@ -118,9 +123,11 @@ def create_app(config: Config | None = None) -> FastAPI:
             confirmation_timeout=config.permissions.confirmation_timeout),
         emit=hub.send)
     tasks = TaskManager(config.task_db_path)
+    goals = GoalManager(config.goal_db_path)
+    decisions = DecisionEngine(client, audit=audit, log=DecisionLog(config.decision_db_path))
     agent = Agent(config, store, registry, client, emit=hub.send,
                   permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
-                  tasks=tasks)
+                  tasks=tasks, goals=goals, decisions=decisions)
     busy = asyncio.Lock()
     whisper = WhisperClient(api_key=config.whisper.api_key, model=config.whisper.model,
                             timeout=config.whisper.timeout)
@@ -172,6 +179,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.permission_gate = permission_gate
     app.state.undo = registry.undo_store
     app.state.tasks = tasks
+    app.state.goals = goals
+    app.state.decisions = decisions
 
     # ------------------------------------------------------------ Zugang
     def check_token(supplied: str | None) -> None:
@@ -292,6 +301,57 @@ def create_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Unbekannte Aufgabe: {task_id}")
         return task.as_dict()
 
+    # ------------------------------------------------------------- Ziele
+    @app.get("/api/goals", dependencies=Guarded)
+    async def list_goals(limit: int = 20, status: str | None = None) -> dict:
+        """Die verfolgten Ziele -- die Ebene über den Aufgaben (``/api/tasks``):
+        Priorität, Fortschritt, aktueller Schritt, Budget."""
+        try:
+            parsed = GoalStatus(status) if status else None
+        except ValueError as exc:
+            raise HTTPException(status_code=400,
+                                detail=f"Unbekannter Status: {status}") from exc
+        found = await asyncio.to_thread(goals.list, limit, parsed)
+        laufend = {g.id for g in agent.active_goals}
+        return {"ziele": [g.as_dict() | {"steuerbar": g.id in laufend} for g in found]}
+
+    @app.get("/api/goals/{goal_id}", dependencies=Guarded)
+    async def get_goal(goal_id: str) -> dict:
+        goal = await asyncio.to_thread(goals.get, goal_id)
+        if goal is None:
+            raise HTTPException(status_code=404, detail=f"Unbekanntes Ziel: {goal_id}")
+        laufend = {g.id for g in agent.active_goals}
+        return goal.as_dict() | {
+            "steuerbar": goal.id in laufend,
+            "entscheidungen": await asyncio.to_thread(decisions.log.list, 20, goal_id),
+        }
+
+    @app.post("/api/goals/{goal_id}/{action}", dependencies=Guarded)
+    async def control_goal(goal_id: str, action: GoalAction) -> dict:
+        """Pause, Fortsetzen, Abbruch (Punkt 7/22).
+
+        Die Antwort sagt ausdrücklich "angefordert", nicht "erledigt": ein
+        laufendes Ziel hält an seinem nächsten Haltepunkt an, nicht mitten in
+        einem Werkzeugaufruf. Was tatsächlich passiert ist, steht danach im
+        Status des Ziels -- nicht in dieser Antwort."""
+        if await asyncio.to_thread(goals.get, goal_id) is None:
+            raise HTTPException(status_code=404, detail=f"Unbekanntes Ziel: {goal_id}")
+        handler = {"pause": agent.pause_goal, "resume": agent.resume_goal,
+                   "cancel": agent.cancel_goal}[action]
+        touched = handler(goal_id)
+        if not touched:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"Ziel {goal_id} läuft gerade nicht -- es lässt sich weder "
+                        "pausieren noch abbrechen."))
+        return {"angefordert": action, "ziel": goal_id}
+
+    @app.get("/api/decisions", dependencies=Guarded)
+    async def list_decisions(limit: int = 50, goal_id: str | None = None) -> dict:
+        """Jede Abwägung ist nachlesbar (Punkt 3: "Die Entscheidung muss
+        geloggt werden")."""
+        return {"entscheidungen": await asyncio.to_thread(decisions.log.list, limit, goal_id)}
+
     @app.put("/api/whisper/key", dependencies=Guarded)
     async def set_whisper_key(body: WhisperKeyIn) -> dict:
         """Der Nutzer trägt seinen eigenen Whisper-Schlüssel ein. Leer löscht ihn."""
@@ -321,6 +381,17 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     # ------------------------------------------------------------- Ein Zug
     async def run_turn(text: str, mode: str = "chat") -> guard.Reply:
+        # Der Agent-Modus nimmt das Lock bewusst NICHT: ein Ziel läuft im
+        # Hintergrund weiter, und genau darum geht es (Punkt 7 -- "Der Nutzer
+        # kann Jarvis etwas fragen, während er weiterarbeitet"). Zurück kommt
+        # sofort eine Zwischenmeldung; das Ergebnis stellt der Hintergrund-Lauf
+        # später als eigene Nachricht zu.
+        if mode == "agent":
+            await hub.send("message", {"who": "me", "text": text, "mode": mode})
+            _goal, reply = await agent.start_goal(text)
+            await hub.send("message", {"who": "jarvis", **reply.as_event()})
+            return reply
+
         if busy.locked():
             return guard.Reply(
                 text="Ich bin noch mit der vorigen Aufgabe beschäftigt.",
@@ -330,8 +401,6 @@ def create_app(config: Config | None = None) -> FastAPI:
             try:
                 if mode == "code":
                     reply = await agent.handle_code(text)
-                elif mode == "agent":
-                    reply = await agent.handle_agent_task(text)
                 else:
                     reply = await agent.handle(text)
             except Exception as exc:  # noqa: BLE001 - der Zug wird per

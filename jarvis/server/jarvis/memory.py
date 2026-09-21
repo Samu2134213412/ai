@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-KINDS = ("regel", "projekt", "hardware", "vorliebe", "skill", "fakt")
+# "erfahrung" ist die Art, unter der die Zielverfolgung ihre Lehren ablegt
+# (Punkt 15, Experience Learning). Ohne sie würde ``add()`` solche Einträge
+# stillschweigend zu "fakt" herabstufen und der Abruf fände sie nie wieder.
+KINDS = ("regel", "projekt", "hardware", "vorliebe", "skill", "fakt", "erfahrung")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
