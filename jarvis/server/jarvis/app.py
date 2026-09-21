@@ -26,6 +26,7 @@ from .agent import Agent
 from .audit import AuditLog
 from .config import Config
 from .decision import DecisionEngine, DecisionLog
+from .events import Event, EventBus, ProactiveEngine, Proposal
 from .goals import GoalManager, GoalStatus
 from .memory import DEFAULT_SEED, MemoryStore
 from .ollama import OllamaClient
@@ -72,6 +73,21 @@ class PermissionResolveIn(BaseModel):
 
 class UndoIn(BaseModel):
     record_id: str = Field(default="")
+
+
+class EventIn(BaseModel):
+    """Ein Ereignis von aussen -- ein Melder auf dem Rechner, die Oberflaeche,
+    ein Skript. Was daraus folgt, entscheidet ``ProactiveEngine``, nicht der
+    Absender."""
+
+    kind: str = Field(..., min_length=1, max_length=120)
+    source: str = Field(default="", max_length=120)
+    severity: Literal["info", "warning", "error"] = "info"
+    payload: dict = Field(default_factory=dict)
+
+
+class ProposalIn(BaseModel):
+    approved: bool = False
 
 
 class Hub:
@@ -129,8 +145,33 @@ def create_app(config: Config | None = None) -> FastAPI:
                   permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
                   tasks=tasks, goals=goals, decisions=decisions)
     busy = asyncio.Lock()
+    bus = EventBus()
+    proactive = ProactiveEngine()
+    #: Vorschlaege, auf deren Zustimmung gewartet wird (Punkt 9).
+    pending_proposals: dict[str, Proposal] = {}
     whisper = WhisperClient(api_key=config.whisper.api_key, model=config.whisper.model,
                             timeout=config.whisper.timeout)
+
+    # ------------------------------------------- Ereignisse -> Reaktion
+    async def on_event(event: Event) -> None:
+        """Der eine Zuhoerer, der aus einem Ereignis eine Reaktion macht.
+
+        Handeln darf er nur, wenn ``ProactiveEngine`` das ausdruecklich
+        erlaubt. In jedem anderen Fall geht ein Vorschlag an den Nutzer --
+        und passiert bis zu dessen Zustimmung genau nichts."""
+        await hub.send("event", event.as_dict())
+        proposal = proactive.react(event, config.autonomy)
+        if proposal is None:
+            return
+        if proposal.needs_approval:
+            pending_proposals[proposal.id] = proposal
+            await hub.send("proactive.suggested", proposal.as_dict())
+            return
+        await hub.send("proactive.acting", proposal.as_dict())
+        _goal, reply = await agent.start_goal(proposal.goal)
+        await hub.send("message", {"who": "jarvis", **reply.as_event()})
+
+    bus.subscribe(on_event)
 
     # -------------------------------------------------------- Telemetrie
     async def telemetry_loop() -> None:
@@ -181,6 +222,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.tasks = tasks
     app.state.goals = goals
     app.state.decisions = decisions
+    app.state.bus = bus
+    app.state.proactive = proactive
 
     # ------------------------------------------------------------ Zugang
     def check_token(supplied: str | None) -> None:
@@ -345,6 +388,38 @@ def create_app(config: Config | None = None) -> FastAPI:
                 detail=(f"Ziel {goal_id} läuft gerade nicht -- es lässt sich weder "
                         "pausieren noch abbrechen."))
         return {"angefordert": action, "ziel": goal_id}
+
+    # -------------------------------------------------------- Ereignisse
+    @app.post("/api/events", dependencies=Guarded)
+    async def post_event(body: EventIn) -> dict:
+        """Ein Ereignis melden (Punkt 8). Die Antwort sagt, was daraus folgt:
+        nichts, ein Vorschlag, oder ein gestartetes Ziel."""
+        event = await bus.publish(Event(kind=body.kind, source=body.source,
+                                        severity=body.severity, payload=body.payload))
+        proposal = proactive.react(event, config.autonomy)
+        return {"ereignis": event.as_dict(),
+                "vorschlag": proposal.as_dict() if proposal else None}
+
+    @app.get("/api/events", dependencies=Guarded)
+    async def list_events(limit: int = 50) -> dict:
+        recent = list(bus.recent)[-max(1, min(int(limit or 50), 200)):]
+        return {"ereignisse": [e.as_dict() for e in reversed(recent)],
+                "offene_vorschlaege": [p.as_dict() for p in pending_proposals.values()]}
+
+    @app.post("/api/proactive/{proposal_id}", dependencies=Guarded)
+    async def resolve_proposal(proposal_id: str, body: ProposalIn) -> dict:
+        """Zustimmung oder Ablehnung zu einem Vorschlag. Ohne Zustimmung
+        passiert nichts -- der Vorschlag wird verworfen, nicht aufgeschoben."""
+        proposal = pending_proposals.pop(proposal_id, None)
+        if proposal is None:
+            raise HTTPException(status_code=404,
+                                detail=f"Unbekannter Vorschlag: {proposal_id}")
+        if not body.approved:
+            await hub.send("proactive.declined", proposal.as_dict())
+            return {"gestartet": False, "ziel": None}
+        goal, reply = await agent.start_goal(proposal.goal)
+        await hub.send("message", {"who": "jarvis", **reply.as_event()})
+        return {"gestartet": goal is not None, "ziel": goal.id if goal else None}
 
     @app.get("/api/decisions", dependencies=Guarded)
     async def list_decisions(limit: int = 50, goal_id: str | None = None) -> dict:
