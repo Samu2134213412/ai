@@ -37,7 +37,7 @@ Automation Engine, Model Council, Self-Check-Mehragentenschema, Dashboard,
 Live-Agent-Visualisierung, Task-Queue-Oberfläche, Cost/Privacy-Dashboards,
 Personality, Proactive Assistant, Smart Home, Vision.
 
-## Autonomy V1 — Zielverfolgung, Entscheidungen, Selbstkorrektur (läuft)
+## Autonomy V1 — Zielverfolgung, Entscheidungen, Selbstkorrektur (fertig, 2026-09-21)
 
 Außerhalb der ursprünglichen Phasennummerierung, auf expliziten Wunsch: eine
 Vertiefung von Phase 1s Agent Mode, keine neue Phase mit eigener Nummer, um
@@ -62,11 +62,19 @@ Ausführungsmaschine.
 | World State, Working Memory, Experience Learning | `world_state.py`, Erweiterung in `agent.py` | Erfahrung liegt im bestehenden `MemoryStore` (`kind="erfahrung"`), ersetzt nie die echte Prüfung |
 | Hintergrund-Ausführung, Pause/Resume/Cancel, Interrupt | Erweiterung `app.py`/`agent.py`/`router.py` | löst die in §8.3 gefundene Lücke (globales `busy`-Lock blockierte den Server während eines Goals) |
 
-Zurückgestellt, mit Begründung in §8.4: echte spezialisierte Modelle
-(braucht Phase 2s Model Router), echte Parallelität mehrerer Goals,
-domänenspezifische proaktive Beispiele (Minecraft, GPU-Temperatur — beide
-Integrationen existieren nicht), Screen/Context-Awareness-Felder im World
-State (Phase 4).
+Alle Bausteine der Tabelle sind gebaut. Ergebnis, Live-Verifikation und die
+bewusst geänderten Testverträge stehen in `../docs/JARVIS.md` §8.5.
+321 Tests grün; `server/tests/test_autonomy_v1.py` deckt die dreizehn in
+Punkt 24 der Aufgabenstellung geforderten Verhaltensweisen ab.
+
+Zurückgestellt, mit Begründung in §8.4/§8.5: echte spezialisierte Modelle
+(braucht Phase 2s Model Router), domänenspezifische proaktive Beispiele
+(Minecraft, GPU-Temperatur — beide Integrationen existieren nicht),
+Screen/Context-Awareness-Felder im World State (Phase 4), und die
+Auswertung von Deadlines/Erfolgsbedingungen eines Goals (gespeichert, aber
+noch ohne Wirkung). **Nicht** mehr zurückgestellt: Parallelität (Punkt 17)
+wurde durch die Hintergrund-Ausführung unvermeidlich und ist mit
+`_mutation_lock` und Locks auf den SQLite-Ablagen umgesetzt — siehe §8.5.
 
 ## Phase 2 — Memory, Model Router, Ollama-Integration, Multi-Model
 

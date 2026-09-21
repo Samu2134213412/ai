@@ -188,6 +188,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             reactions.pop(stale, None)
 
     bus.subscribe(dispatch)
+    # Der Agent meldet eine Serie von Fehlschlägen desselben Werkzeugs als
+    # Ereignis -- das eine proaktive Beispiel, das ohne fehlende Sensoren
+    # auskommt (siehe docs/JARVIS.md 8.4).
+    agent.bus = bus
 
     # -------------------------------------------------------- Telemetrie
     async def telemetry_loop() -> None:

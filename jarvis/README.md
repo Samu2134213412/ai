@@ -92,7 +92,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (240 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (321 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * Direct Action Router für eindeutige Befehle
@@ -105,6 +105,12 @@ Fertig und getestet (240 Tests, siehe `ROADMAP.md` für die Phasen):
   ein fünfstufiges Permission-System (SAFE…CRITICAL) mit echtem
   Bestätigungs-Round-Trip, ein Undo-System, ein filterbares Audit Log —
   siehe `server/README.md`
+* **Autonomy V1:** Jarvis verfolgt Ziele selbstständig im Hintergrund —
+  planen, entscheiden, ausführen, **unabhängig nachprüfen**, aus Fehlern
+  einen anderen Weg wählen. Mit Autonomiestufen 0–4, Budgets und Watchdog
+  gegen Endlosschleifen, Pause/Weiter/Stopp jederzeit, und einem Event-
+  Mechanismus, der bei unklarer Ursache fragt statt zu handeln — siehe
+  `server/README.md` und `../docs/JARVIS.md` §8
 * Installierbar auf dem Handy als App (Manifest, Icons, Service Worker) —
   siehe `web/README.md`
 

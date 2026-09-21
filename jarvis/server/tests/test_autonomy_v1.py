@@ -460,6 +460,42 @@ async def test_ereignis_ohne_passende_regel_loest_nichts_aus():
         Event(kind="irgendwas.egal"), AutonomyLevel.PROACTIVE) is None
 
 
+async def test_wiederholt_scheiterndes_werkzeug_meldet_sich_selbst(
+        config, store, registry, workspace, fake_ollama):
+    """Das eine proaktive Beispiel, das ohne fehlende Sensoren auskommt:
+    dreimal derselbe Fehlschlag ist eine beobachtbare Tatsache."""
+    agent = make_agent(config, store, registry, fake_ollama([]))
+    agent.bus = EventBus()
+    gemeldet: list[Event] = []
+
+    async def mitschreiben(event):
+        gemeldet.append(event)
+
+    agent.bus.subscribe(mitschreiben)
+
+    for _ in range(4):
+        await agent._run_tool("read_file", {"path": "gibtsnicht.txt"})
+    assert len(gemeldet) == 1, "Aus einer Serie wurde Dauerfeuer"
+    assert gemeldet[0].kind == "tool.failing"
+    assert gemeldet[0].payload["tool"] == "read_file"
+
+    # Ein Erfolg DESSELBEN Werkzeugs setzt die Serie zurück -- der Erfolg
+    # eines anderen Werkzeugs sagt über dieses hier nichts aus.
+    (workspace / "da.txt").write_text("da", encoding="utf-8")
+    await agent._run_tool("get_system_info", {})
+    assert agent._failure_streak.get("read_file") == 4
+    await agent._run_tool("read_file", {"path": str(workspace / "da.txt")})
+    assert agent._failure_streak.get("read_file") is None
+
+
+async def test_ohne_bus_meldet_der_agent_nichts_und_faellt_nicht_um(
+        config, store, registry, fake_ollama):
+    agent = make_agent(config, store, registry, fake_ollama([]))
+    for _ in range(4):
+        result = await agent._run_tool("read_file", {"path": "gibtsnicht.txt"})
+    assert result.ok is False  # ganz normal gescheitert, kein Absturz
+
+
 async def test_ein_kaputter_zuhoerer_stoppt_die_anderen_nicht():
     bus = EventBus()
     gesehen: list[Event] = []

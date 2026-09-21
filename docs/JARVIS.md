@@ -366,5 +366,101 @@ Funktion, die Punkt 7 verlangt.
   liefert deshalb nur, was heute wirklich messbar ist: Systemwerte,
   Ollama-Erreichbarkeit, Anzahl aktiver Goals/Tasks.
 
-Ergebnis, Testzahlen und Live-Verifikation folgen als Nachtrag in diesem
-Abschnitt, sobald "Autonomy V1" abgeschlossen ist (siehe `ROADMAP.md`).
+### 8.5 Nachtrag: "Autonomy V1" abgeschlossen (2026-09-21)
+
+Gebaut wie in 8.1–8.3 festgelegt. Die Schleife aus Punkt 1 liegt in
+`agent.py` und benutzt an jeder Phase etwas Echtes:
+
+| Phase | Wo | Was wirklich passiert |
+|---|---|---|
+| ANALYZE | `world_state.snapshot()` | `psutil`-Telemetrie + Ollama-Health. Keine erfundenen Felder (siehe 8.4) |
+| PLAN | `planner.plan()` (Phase 1) | unverändert wiederverwendet |
+| SELECT ACTION | Modell, nach einem Fehlschlag `DecisionEngine` | Kandidaten kommen vom Modell, die **Auswahl** ist deterministischer Code mit benannten Gewichten; „bisherige Erfahrung" ist die echte Erfolgsquote des Werkzeugs aus dem Audit Log |
+| EXECUTE | `Agent._run_tool` (Phase 1) | Autonomiestufe → Berechtigung → Undo-Snapshot → Ausführung → Audit |
+| VERIFY | `VerificationEngine` | ein **zweiter, unabhängiger** Werkzeugaufruf (`write_file` wird per `read_file` gegengelesen). Widerspricht er, gilt der Schritt als gescheitert — auch wenn das erste Werkzeug Erfolg meldete |
+| REFLECT | Retry + `Watchdog` + Experience Learning | neuer Ansatz statt gleicher Versuch; Lehre als Erinnerung der Art `erfahrung` |
+
+**Neue Module:** `autonomy.py`, `goals.py`, `decision.py`, `verification.py`,
+`watchdog.py`, `world_state.py`, `events.py`.
+**Neue Endpunkte:** `/api/goals`, `/api/goals/{id}`,
+`/api/goals/{id}/{pause|resume|cancel}`, `/api/decisions`, `/api/events`,
+`/api/proactive/{id}`.
+
+**Hintergrund-Ausführung (8.3) umgesetzt:** `mode="agent"` nimmt das
+`busy`-Lock nicht mehr, `start_goal()` antwortet sofort mit einer
+Zwischenmeldung — die bewusst *nichts* über ein Ergebnis behauptet — und
+stellt das belegte Ergebnis später als eigene Nachricht zu.
+`handle_agent_task()` bleibt als synchroner Einstieg erhalten.
+
+**Abbruch/Pause sind kooperativ, nicht `task.cancel()`.** Es gibt feste
+Haltepunkte *zwischen* den Aktionen. Mitten in einem laufenden
+Werkzeugaufruf abzubrechen würde die Welt in einem halben Zustand
+hinterlassen, den niemand protokolliert hat — genau das, was Punkt 23
+ausschließt. Der Preis: ein „Stopp" wirkt erst, wenn die gerade laufende
+Aktion fertig ist. Das ist die richtige Richtung, in die man irrt.
+
+#### Korrektur zu 8.4: Punkt 17 ist doch umgesetzt
+
+In 8.4 war Parallelität zurückgestellt worden, weil ein Sperren-Konzept
+sich nicht seriös mitverifizieren ließe. Durch die Hintergrund-Ausführung
+wurde sie unvermeidlich — also wurde sie gebaut statt ignoriert:
+
+* Verändernde Werkzeuge (WRITE und höher) laufen unter `_mutation_lock`
+  streng nacheinander. Damit gehört ein Undo-Snapshot immer zu genau dem
+  Zustand, der gleich verändert wird. Lesen bleibt parallel.
+* `GoalManager` und `TaskManager` bekommen ein Lock um ihre
+  SQLite-Verbindung, die sich jetzt Event-Loop und Worker-Threads teilen.
+
+#### Bewusst geänderte Testverträge
+
+* `test_agent_modus_zerlegt_und_fuehrt_aus` wartet jetzt auf den echten
+  Endzustand des Ziels, statt ihn aus der Sofortantwort zu schließen —
+  angekündigt in 8.3.
+* Die beiden Retry-Tests bekommen je eine Modellantwort mehr, weil die
+  DecisionEngine vor jedem Neuversuch genau einmal abwägt.
+* `memory.py::KINDS` kennt jetzt `erfahrung`. Ohne das hätte `add()` jede
+  Lehre stillschweigend zu `fakt` herabgestuft und der Abruf hätte sie nie
+  wiedergefunden.
+
+#### Was geprüft ist
+
+321 Tests grün. `tests/test_autonomy_v1.py` deckt die dreizehn in Punkt 24
+genannten Verhaltensweisen über den echten Weg ab. Gegengeprüft durch
+gezieltes Sabotieren: ohne die Haltepunkte fallen die Abbruch- und
+Pause-Tests; ohne Nachprüfung, Schritt-Budget bzw. Experience Learning
+fallen genau die drei zugehörigen Tests. Die Tests hängen also an den
+Mechanismen, nicht am Zufall.
+
+Live gegen einen echten HTTP-Server (kein Test-Stub) und echtes Chromium
+auf der echten Oberfläche:
+
+* Zielauftrag im Agent-Modus antwortet in 43 ms; das Ziel läuft danach im
+  Hintergrund fertig und legt die Datei wirklich an.
+* Das Audit Log zeigt `write_file`, gefolgt von einem eigenen `read_file` —
+  die unabhängige Nachprüfung hat also wirklich stattgefunden.
+* Undo nimmt die vom Ziel geschriebene Datei zurück.
+* Pause über den Knopf: Karte wird „pausiert", der Server meldet Status
+  `waiting`, die Arbeit steht wirklich still; „Weiter" führt zu Ende.
+* `process.crashed` mit `{"name": "Minecraft-Server"}` erzeugt den Vorschlag
+  „Finde heraus, warum Minecraft-Server abgestürzt ist" **mit** Rückfrage,
+  weil die Ursache nicht als sicher hinterlegt ist.
+
+#### Was weiterhin ehrlich fehlt
+
+* **Punkt 16 (spezialisierte Agenten)** bleibt zurückgestellt — unverändert
+  die Begründung aus 8.4: ohne Multi-Model-Router wären das dieselbe LLM mit
+  anderem Prompt. Auch die dort angekündigte Rollen-Markierung ist **nicht**
+  gebaut; sie hätte ohne echte Spezialisierung nur Etiketten erzeugt.
+* **Domänen-Reaktionen** (Minecraft-Neustart, GPU-Temperatur) brauchen
+  weiterhin die jeweilige Anbindung. Der generische Mechanismus steht und
+  hat ein echtes Beispiel: `Agent._note_reliability` meldet drei
+  Fehlschläge desselben Werkzeugs in Folge als `tool.failing` — eine
+  beobachtbare Tatsache, kein Sensor, den es nicht gibt.
+* **Proaktives Handeln ohne Rückfrage** ist gebaut, aber greift
+  absichtlich nirgends von allein: alle mitgelieferten Regeln stehen auf
+  „Ursache nicht als sicher hinterlegt", also fragt Jarvis. Wer das ändern
+  will, setzt `Rule.known_cause` und Autonomiestufe 4 bewusst selbst.
+* **Deadlines und Erfolgs-/Fehlerbedingungen** eines Goals werden
+  gespeichert und ausgeliefert, aber noch nicht ausgewertet. Sie stehen im
+  Datenmodell, weil Punkt 2 sie verlangt — dass sie heute nichts auslösen,
+  steht hier, statt es offen zu lassen.

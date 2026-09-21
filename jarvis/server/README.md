@@ -86,6 +86,59 @@ Jeder Schritt sendet Ereignisse (`task.created`, `task.step.started`,
 `task.step.retry`, `task.step.finished`, `task.finished`) — in der Oberfläche
 sichtbar als eigene Verlaufszeilen, nicht nur als Zustandsband.
 
+## Autonome Zielverfolgung
+
+Über dem Agent Mode liegt seit „Autonomy V1" eine Zielschicht. Ein `Goal`
+(`goals.py`) trägt Priorität, Frist, Erfolgs-/Fehlerbedingungen, Fortschritt
+und ein Budget; die Ausführung bleibt die schon getestete `Task`-Maschine —
+keine zweite Ausführungsmaschine daneben.
+
+Die Schleife in `agent.py`:
+
+```
+GOAL → ANALYZE → PLAN → SELECT ACTION → EXECUTE → VERIFY → REFLECT → …
+```
+
+* **ANALYZE** (`world_state.py`): echte Telemetrie und Ollama-Erreichbarkeit.
+  Keine Felder, die nur so klingen, als wären sie gemessen.
+* **SELECT ACTION** nach einem Fehlschlag (`decision.py`): Kandidaten schlägt
+  das Modell vor, die **Auswahl** ist deterministischer Code. „Bisherige
+  Erfahrung" ist die echte Erfolgsquote des Werkzeugs aus dem Audit Log.
+  Jede Abwägung steht in `entscheidungen.sqlite3` (`GET /api/decisions`).
+* **VERIFY** (`verification.py`): ein **zweiter, unabhängiger** Aufruf.
+  `write_file` wird per `read_file` gegengelesen, `delete_file` durch einen
+  fehlschlagenden Lesezugriff bestätigt. Widerspricht die Nachprüfung, gilt
+  der Schritt als gescheitert — auch wenn das erste Werkzeug Erfolg meldete.
+* **REFLECT**: Retry mit dem echten Fehler als Kontext, `watchdog.py` für
+  Budgets und Wiederholungsmuster, und die Lehre als Erinnerung der Art
+  `erfahrung`. Eine Erinnerung liefert nur Kontext für die Planung — sie
+  ersetzt nie einen Werkzeugaufruf, der aktuelle Zustand wird jedes Mal neu
+  geprüft.
+
+**Autonomiestufen** (`autonomy.py`, `autonomy_level` in `jarvis.json`):
+
+| Stufe | Bedeutung |
+|---|---|
+| 0 | nur Gespräch, keine Aktionen |
+| 1 | nur lesend; alles Verändernde braucht Bestätigung |
+| 2 | **Vorgabe** — normale Werkzeugregeln, keine eigenständige Zielverfolgung |
+| 3 | Zielverfolgung im Hintergrund |
+| 4 | zusätzlich: eigenständige Reaktion auf Ereignisse |
+
+Die Stufe kann das Permission-System nur **verschärfen**, nie lockern.
+
+**Im Hintergrund, nicht blockierend:** `mode="agent"` antwortet sofort mit
+einer Zwischenmeldung — die nichts über ein Ergebnis behauptet — und arbeitet
+daneben weiter. Steuerbar über `POST /api/goals/{id}/{pause|resume|cancel}`
+oder im Gespräch („Stopp.", „Pause.", „Mach weiter.", „Versuch Methode B.").
+Pause und Abbruch greifen an festen Haltepunkten *zwischen* den Aktionen,
+nie mitten in einem laufenden Werkzeugaufruf.
+
+**Ereignisse und Vorschläge** (`events.py`): `POST /api/events` meldet etwas
+Beobachtetes; was daraus folgt, entscheidet `ProactiveEngine` — nicht der
+Absender und nicht das Modell. Ohne ausdrücklich als sicher hinterlegte
+Ursache wird gefragt, nicht gehandelt.
+
 ## Permission-System
 
 Jedes Werkzeug trägt eine Sicherheitsstufe (`permissions.py`):
@@ -305,7 +358,12 @@ bestätigungspflichtig — beides absichtlich **kein** Feld hier.
 | `GET /api/undo`, `POST /api/undo` | rückgängig machbare Änderungen ansehen / eine rückgängig machen |
 | `POST /api/permission/resolve` | eine offene Bestätigungsanfrage beantworten |
 | `GET /api/tasks`, `GET /api/tasks/{id}` | Task History (Agent Mode) |
-| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, CodePilot-Status, Permission-Anfragen, Task-Ereignisse |
+| `GET /api/goals`, `GET /api/goals/{id}` | verfolgte Ziele mit Fortschritt, Budget und Entscheidungen |
+| `POST /api/goals/{id}/{pause\|resume\|cancel}` | ein laufendes Ziel steuern |
+| `GET /api/decisions` | protokollierte Abwägungen der Decision Engine |
+| `POST`/`GET /api/events` | ein Ereignis melden / letzte Ereignisse und offene Vorschläge |
+| `POST /api/proactive/{id}` | einem proaktiven Vorschlag zustimmen oder ihn ablehnen |
+| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, CodePilot-Status, Permission-Anfragen, Task- und Ziel-Ereignisse |
 
 Ein Zug geht an **alle** offenen Verbindungen. Was am PC angefangen wird, läuft
 auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtnis.
@@ -313,7 +371,7 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 240 Tests
+python -m pytest -q      # 321 Tests
 ```
 
 Sie brauchen weder Ollama noch CodePilot noch einen echten Whisper-Schlüssel:

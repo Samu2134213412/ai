@@ -77,6 +77,11 @@ _ALTERNATIVE = re.compile(
     r"|ander(en|e|er)\s+(ansatz|methode|weg|variante))", re.I)
 
 
+#: Wie oft dasselbe Werkzeug hintereinander scheitern darf, bevor das als
+#: Ereignis gemeldet wird (siehe ``Agent._note_reliability``).
+_FAILURE_STREAK = 3
+
+
 class _GoalCancelled(Exception):
     """Der Nutzer hat abgebrochen. Kein Fehler -- eine Anweisung."""
 
@@ -156,6 +161,12 @@ class Agent:
         #: Undo-Snapshot immer zu genau dem Zustand gehört, der gleich
         #: verändert wird. Lesen bleibt parallel.
         self._mutation_lock = asyncio.Lock()
+        #: Der Event Bus, falls einer verkabelt ist (app.py). Ohne ihn
+        #: verhält sich der Agent genau wie vorher -- er meldet dann nichts,
+        #: statt zu scheitern.
+        self.bus: Any = None
+        #: Fehlschläge in Folge, je Werkzeug (siehe ``_note_reliability``).
+        self._failure_streak: dict[str, int] = {}
 
     @staticmethod
     async def _silent(_kind: str, _payload: dict) -> None:
@@ -221,7 +232,29 @@ class Agent:
         self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
                           ok=result.ok, summary=result.summary, request=request_text,
                           task_id=goal_id)
+        await self._note_reliability(name, result)
         return result
+
+    async def _note_reliability(self, name: str, result: ToolResult) -> None:
+        """Das eine proaktive Beispiel, das heute schon echt ist (Punkt 8/9):
+        Wenn dasselbe Werkzeug dreimal hintereinander scheitert, ist das eine
+        beobachtbare Tatsache -- keine Vermutung, kein Sensor, den es nicht
+        gibt. Daraus wird ein Ereignis; was daraus folgt, entscheidet die
+        ``ProactiveEngine``, nicht diese Stelle hier.
+
+        Genau einmal pro Fehlschlag-Serie, damit aus einer Meldung kein
+        Dauerfeuer wird."""
+        if result.ok:
+            self._failure_streak.pop(name, None)
+            return
+        streak = self._failure_streak.get(name, 0) + 1
+        self._failure_streak[name] = streak
+        if streak != _FAILURE_STREAK or self.bus is None:
+            return
+        from .events import Event  # lokal: sonst importieren sich die Module im Kreis
+        await self.bus.publish(Event(
+            kind="tool.failing", source="agent", severity="warning",
+            payload={"tool": name, "anzahl": streak, "letzter_fehler": result.summary}))
 
     async def _execute(self, name: str, arguments: dict) -> ToolResult:
         pre_snapshot = self.undo.begin(name, arguments or {})
