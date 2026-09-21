@@ -110,3 +110,31 @@ def test_frage_im_selben_absatz_entschuldigt_die_behauptung_nicht():
     text = "Ich habe die Datei erstellt. Soll ich sie noch öffnen?"
     assert guard.claims_completion(text) is True
     assert guard.verify(text, []).blocked is True
+
+
+# ------------------------------------- Satzgrenzen: Punkt im Dateinamen, Gedankenstrich
+@pytest.mark.parametrize("satz", [
+    # Aktivform + Dateiname: der Punkt in ".txt" darf "habe" und "erstellt"
+    # nicht in zwei Satz-Fragmente reißen, sonst sieht das Muster nie beide
+    # Hälften zusammen (das war ein echter Fehler, kein Testfall auf Vorrat).
+    "Ich habe die Datei gaming.txt erstellt.",
+    "Ich habe gaming.txt gelöscht.",
+    "Ich habe die Datei gaming.txt für dich erstellt.",
+])
+def test_dateiname_mit_punkt_zerreisst_die_behauptung_nicht(satz):
+    assert guard.claims_completion(satz) is True
+
+
+def test_dezimalzahl_wird_nicht_als_satzende_missverstanden():
+    """Kein Vollzugswort im Satz -- reiner Test, dass '3.5' nicht spaltet."""
+    assert guard.claims_completion("Die Version ist 3.5 und stabil.") is False
+
+
+def test_gedankenstrich_getrennte_teile_werden_unabhaengig_geprueft():
+    """So baut coder.CodeOutcome.summary() seinen Text zusammen: mehrere
+    Aussagen ohne Punkt dazwischen, nur durch " — " getrennt. Ein ehrlich
+    gemeldeter Fehlschlag in der einen Aussage darf eine unabhängige,
+    falsche Erledigt-Behauptung in der nächsten nicht entschuldigen."""
+    text = ("1 Änderung(en): kaputt.py — Nachprüfung fehlgeschlagen bei "
+           "kaputt.py (invalid syntax) — Alles erledigt!")
+    assert guard.claims_completion(text) is True

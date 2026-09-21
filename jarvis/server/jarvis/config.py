@@ -100,6 +100,12 @@ class Config:
     #: aber deutlich verlässlicher bei Werkzeugaufrufen als ein 3B-Modell.
     #: Siehe jarvis/README.md für die Abwägung.
     model: str = "qwen3:14b"
+    #: Ein zweites, kleineres Modell für einfache Fragen ohne Werkzeugbedarf
+    #: (siehe ``complexity.py``). Leer heißt: aus -- jede Nachricht geht ans
+    #: Hauptmodell, wie bisher. Absichtlich kein Standardwert: ein zweites
+    #: Modell ist ein zusätzlicher Download, den niemand ungefragt bekommt
+    #: (Punkt 55 der Aufgabenstellung).
+    fast_model: str = ""
     context_length: int = 8192
     temperature: float = 0.3
     max_tool_rounds: int = 6

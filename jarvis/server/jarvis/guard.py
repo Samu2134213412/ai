@@ -74,7 +74,29 @@ _HYPOTHETICAL = re.compile(
     re.I,
 )
 
-_SENTENCE = re.compile(r"[^.!?\n]+[.!?]?", re.S)
+#: Satzende ist ein `.`/`!`/`?`, dem Leerraum oder das Textende folgt --
+#: NICHT jeder Punkt. Ein Punkt mitten in "gaming.txt" oder "3.5" hat weder
+#: davor noch danach ein Leerzeichen und zählt deshalb nicht als Satzende.
+#:
+#: Das ist kein Kosmetikdetail: "Ich habe die Datei gaming.txt erstellt."
+#: zerfiel mit der alten, naiven Regel (jeder Punkt trennt) in "Ich habe die
+#: Datei gaming" und "txt erstellt." -- und das Muster, das "habe ... erstellt"
+#: im selben Satz verlangt, sah beide Hälften nie zusammen. Eine Lüge mit
+#: Dateiendung ist die häufigste Form, in der sie vorkommt; sie rutschte an
+#: der eigentlichen Behauptungssperre vorbei durch, während dieselbe Lüge in
+#: Passivform ("... wurde ... erstellt") zufällig erkannt wurde, weil das
+#: Hilfsverb dort hinter dem Dateinamen steht statt davor.
+#:
+#: Ein Gedankenstrich mit Leerzeichen (" — ") zählt ebenfalls als Grenze.
+#: Grund: ``coder.py`` baut die Zusammenfassung eines Code-Auftrags genau so
+#: aus mehreren Teilen zusammen (``CodeOutcome.summary``) -- "Nachprüfung
+#: fehlgeschlagen bei x.py — Alles erledigt!" ist kein einzelner Satz,
+#: sondern zwei unabhängige Aussagen ohne Punkt dazwischen. Ohne diese Grenze
+#: läge "fehlgeschlagen" aus der ersten Aussage und "erledigt" aus der
+#: zweiten im selben Fragment, und die Ausnahme für ehrliche
+#: Fehlschlagsmeldungen (``_HYPOTHETICAL``) würde die spätere, unabhängige
+#: Erledigt-Behauptung mit entschuldigen.
+_SENTENCE = re.compile(r"[^\n]+?(?:[.!?](?=\s|$)|\s—\s|$)", re.S)
 
 REFUSAL = (
     "Das kann ich aktuell noch nicht ausführen, weil mir dafür kein Tool zur "

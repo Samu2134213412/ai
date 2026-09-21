@@ -44,7 +44,7 @@ Fehlermeldung, statt zum nächsten zu springen.
 
 4) TESTS
    Führe in `jarvis/server` `python -m pytest -q` aus.
-   Erwartung: 450 Tests grün. Kommt etwas anderes heraus, zeig mir die
+   Erwartung: 478 Tests grün. Kommt etwas anderes heraus, zeig mir die
    Ausgabe — ich will die Zahl sehen, nicht die Zusammenfassung „läuft".
 
 5) OLLAMA UND MODELLE

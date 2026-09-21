@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from . import coder, guard, planner, router, world_state
+from . import coder, complexity, guard, planner, router, world_state
 from .audit import AuditLog
 from .autonomy import AutonomyLevel
 from .config import Config
@@ -120,7 +120,8 @@ class Agent:
                  goals: GoalManager | None = None,
                  decisions: DecisionEngine | None = None,
                  verification: VerificationEngine | None = None,
-                 code_client: OllamaClient | None = None):
+                 code_client: OllamaClient | None = None,
+                 fast_client: OllamaClient | None = None):
         self.config = config
         self.store = store
         self.registry = registry
@@ -154,6 +155,11 @@ class Agent:
         #: Code-Modell nimmt der Code-Modus schlicht das Chat-Modell -- das
         #: ist schlechter, aber es läuft, statt eine Absage zu sein.
         self.code_client = code_client or client
+        #: Das kleine, schnelle Modell für einfache Fragen (``complexity.py``).
+        #: Anders als beim Code-Modell KEIN Fallback auf ``client`` -- ohne
+        #: eigenes schnelles Modell ist das Feature schlicht aus, nicht "das
+        #: Hauptmodell tut so, als wäre es schnell".
+        self.fast_client = fast_client
         #: Laufende Ziele, über die von außen gesteuert werden kann.
         self._controls: dict[str, _GoalControl] = {}
         #: Die Hintergrund-Tasks -- gehalten, damit der Garbage Collector sie
@@ -392,6 +398,31 @@ class Agent:
                     evidence={"pfad": check.path}))
         return results
 
+    async def _try_fast(self, messages: list[dict[str, Any]], text: str) -> guard.Reply | None:
+        """Schneller Pfad für einfache Fragen ohne Werkzeugbedarf.
+
+        Bewusst ohne Werkzeugschema: ein kleines Modell ruft Werkzeuge
+        unzuverlässig auf (siehe README, Abschnitt "Warum nicht ein Modell für
+        beides"), bekommt hier also gar keine Gelegenheit dazu. Behauptet es
+        trotzdem eine Aktion, fängt ``guard.verify()`` das ab wie jede andere
+        Antwort auch -- kein Sonderfall, dieselbe Regel.
+
+        Gibt ``None`` zurück, wenn das schnelle Modell nicht erreichbar war
+        oder nichts Verwertbares geliefert hat -- der Aufrufer fällt dann auf
+        die normale Runde mit dem Hauptmodell zurück, statt aufzugeben.
+        """
+        await self._state("thinking", "schnelle Antwort")
+        try:
+            turn = await self.fast_client.chat(messages)
+        except OllamaError:
+            return None
+        if not turn.text.strip():
+            return None
+        reply = guard.verify(turn.text, [])
+        await self._state("idle")
+        self._remember(text, reply)
+        return reply
+
     # ------------------------------------------------------------------ Zug
     async def handle(self, message: str) -> guard.Reply:
         text = (message or "").strip()
@@ -435,6 +466,13 @@ class Agent:
                              "content": "Was du über deinen Nutzer weißt:\n" + context})
         messages.extend(self.history[-self.history_turns * 2:])
         messages.append({"role": "user", "content": text})
+
+        # 2b. Einfache Frage, schnelles Modell konfiguriert? Dann dort zuerst
+        # versuchen -- ohne Werkzeugschema, siehe complexity.py und _try_fast.
+        if self.fast_client is not None and complexity.is_simple(text):
+            fast_reply = await self._try_fast(messages, text)
+            if fast_reply is not None:
+                return fast_reply
 
         results: list[ToolResult] = []
         final = ""

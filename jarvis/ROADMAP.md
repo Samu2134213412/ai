@@ -88,6 +88,11 @@ wurde durch die Hintergrund-Ausführung unvermeidlich und ist mit
    `required_tools` → Modellwahl. Ollama bleibt Standard; die
    `OllamaClient`-Abstraktion in `ollama.py` wird die erste von mehreren
    Implementierungen hinter einem gemeinsamen Interface.
+   **Erster Schritt erledigt:** `complexity.py` entscheidet nach `complexity`
+   (kurz, keine Datei-/System-/Code-Aktion, keine Live-Daten) zwischen genau
+   zwei Ollama-Modellen -- `config.fast_model` für einfache Fragen ohne
+   Werkzeugschema, sonst das Hauptmodell. `task_type`/`privacy`/`cost`/
+   `latency`/`required_tools` sowie mehr als zwei Modelle bleiben offen.
 3. Local-First-Umschalter (Local Only/Prefer Local/Hybrid/Cloud Preferred)
    in `config.py`.
 

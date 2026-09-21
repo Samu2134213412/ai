@@ -138,6 +138,14 @@ def create_app(config: Config | None = None) -> FastAPI:
                                context_length=config.context_length,
                                temperature=config.code.temperature,
                                timeout=config.code.timeout)
+    # Ein drittes, optionales Modell für einfache Fragen ohne Werkzeugbedarf
+    # (siehe complexity.py). Ohne Fallback: leer in der Konfiguration heißt
+    # aus, nicht "nimm irgendein Modell" -- niemand bekommt einen zweiten
+    # Download aufgezwungen (Punkt 55).
+    fast_client = OllamaClient(url=config.ollama_url, model=config.fast_model,
+                               context_length=config.context_length,
+                               temperature=config.temperature,
+                               timeout=config.request_timeout) if config.fast_model else None
     hub = Hub()
     audit = AuditLog(config.audit_db_path)
     permission_gate = PermissionGate(
@@ -153,7 +161,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     agent = Agent(config, store, registry, client, emit=hub.send,
                   permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
                   tasks=tasks, goals=goals, decisions=decisions,
-                  code_client=code_client)
+                  code_client=code_client, fast_client=fast_client)
     busy = asyncio.Lock()
     bus = EventBus()
     proactive = ProactiveEngine()
@@ -273,6 +281,12 @@ def create_app(config: Config | None = None) -> FastAPI:
                 {"id": config.code.model or config.model,
                  "loaded": (config.code.model or config.model) in health.models,
                  "via": "Ollama · direkt"},
+                # Das schnelle Modell -- nur in der Liste, wenn eines
+                # konfiguriert ist. Kein Eintrag heißt: Feature ist aus.
+                *([{"id": config.fast_model,
+                    "loaded": config.fast_model in health.models,
+                    "via": "Ollama · direkt · für einfache Fragen"}]
+                  if config.fast_model else []),
             ],
             "ollama": {"online": health.online, "version": health.version,
                        "modell_vorhanden": health.model_present,

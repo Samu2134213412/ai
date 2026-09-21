@@ -62,6 +62,19 @@ hat nur dessen Bericht weitergereicht.
 CodePilot Remote bleibt als eigenständiges Projekt im Repo erhalten — Jarvis
 hängt nur nicht mehr davon ab.
 
+### Drittes Modell: schnell für einfache Fragen
+
+Optional, in `jarvis.json` unter `fast_model` einzutragen (leer = aus, der
+Standard). Trifft `complexity.is_simple()` auf eine Nachricht zu -- kurz,
+keine Datei-/System-/Code-Aktion, keine Live-Daten wie Uhrzeit oder Wetter --,
+beantwortet dieses kleinere Modell sie **ohne Werkzeugschema**. Im Zweifel
+bleibt es beim Hauptmodell; ein zu Unrecht als "einfach" eingestuftes Anliegen
+bekommt so gar keine Chance, ein Werkzeug unzuverlässig aufzurufen, und eine
+trotzdem behauptete Aktion fängt derselbe Wächter (`guard.py`) ab wie jede
+andere Antwort auch. Ein Beispiel: `qwen3:1.7b` neben `qwen3:14b` und
+`qwen3-coder:30b` -- für "Wie viel ist 12 mal 15?" muss dann kein 14B-Modell
+laden.
+
 ### Warum nicht ein Modell für beides
 
 `llama3.2:3b` hat Aktionen als erledigt gemeldet, die nie stattfanden. Ein 3B-Modell
@@ -103,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (450 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (478 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * Direct Action Router für eindeutige Befehle
@@ -134,5 +147,8 @@ Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
 
 1. Chat-Modell auf der echten Maschine wählen und messen
 2. Memory-Tiers (Short-/Session-/Long-Term/Project) mit Metadatenfeldern (Phase 2)
-3. Multi-Model-Router, Ollama-Umschalter (Phase 2)
+3. Multi-Model-Router (Phase 2) — erster Schritt fertig: `fast_model` +
+   `complexity.is_simple()` unterscheiden einfach/komplex für zwei Modelle.
+   Offen bleiben mehr als zwei Modelle sowie die Dimensionen
+   privacy/cost/latency und ein Ollama-Umschalter für Nicht-Ollama-Backends.
 4. Skills, `screen_capture`, `web_search`, `mouse_keyboard`, `open_program` (Phase 3/4)
