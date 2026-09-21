@@ -785,6 +785,81 @@ function sayTaskEvent(kind, m){
   $("log").appendChild(n); $("log").scrollTop=$("log").scrollHeight;
 }
 
+/* ── Zielverfolgung: ein laufendes Ziel ist sichtbar UND steuerbar ──
+   Ein Ziel laeuft im Hintergrund weiter, waehrend man weiterredet. Damit
+   das nicht heisst "irgendwo passiert irgendwas", bekommt jedes Ziel eine
+   Karte im Verlauf, die sich mit jedem Ereignis aktualisiert -- und die
+   Knoepfe, um es anzuhalten. Absichtlich EINE Karte pro Ziel statt einer
+   Zeile pro Mini-Schritt (Punkt 21).                                    */
+const GOALSTAT={
+  pending:["talk","wartet"], planning:["talk","plant"], running:["warn","läuft"],
+  waiting:["warn","pausiert"], blocked:["fail","angehalten"],
+  completed:["tool","fertig"], failed:["fail","gescheitert"],
+  cancelled:["talk","abgebrochen"]
+};
+const goalNodes = new Map();  // Ziel-id -> Karte im Verlauf
+function goalCard(m){
+  let n = goalNodes.get(m.id);
+  if(!n){ n = el("article","msg task"); goalNodes.set(m.id, n);
+          $("log").appendChild(n); }
+  const [cls,label] = GOALSTAT[m.status] || GOALSTAT.pending;
+  const p = PROV[cls] || PROV.talk;
+  const pct = Math.round((m.fortschritt || 0) * 100);
+  const laeuft = ["pending","planning","running","waiting"].includes(m.status);
+  const schritt = m.aktueller_schritt || m.fehler || "";
+  n.innerHTML = `<div class="who">Ziel<span class="pv ${p[0]}">${esc(label)}</span></div>`
+    + `<p>${esc(m.beschreibung)}</p>`
+    + `<div class="ev${cls==="fail"?" bad":""}">${pct}% erledigt`
+    + (schritt ? ` · ${esc(schritt)}` : "") + `</div>`
+    + (laeuft ? `<div class="btnrow">
+         <button type="button" data-goal="${esc(m.id)}" data-act="${m.status==="waiting"?"resume":"pause"}">
+           ${m.status==="waiting" ? "Weiter" : "Pause"}</button>
+         <button type="button" class="gh" data-goal="${esc(m.id)}" data-act="cancel">Stopp</button>
+       </div>` : "");
+  $("log").scrollTop = $("log").scrollHeight;
+}
+function sayDecision(m){
+  const n = el("article","msg task");
+  n.innerHTML = `<div class="who">Jarvis<span class="pv warn">Entscheidung</span></div>`
+    + `<p>${esc(m.gewaehlt.beschreibung)}</p>`
+    + `<div class="ev">${esc(m.problem)}<br>Bewertung ${m.score}`
+    + (m.gewaehlt.werkzeug ? ` · Werkzeug ${esc(m.gewaehlt.werkzeug)}` : "")
+    + ` · ${m.kandidaten.length} Möglichkeit(en) abgewogen</div>`;
+  $("log").appendChild(n); $("log").scrollTop = $("log").scrollHeight;
+}
+/* Ein Vorschlag ist ein Vorschlag: ohne Klick passiert nichts. */
+function sayProposal(m){
+  const n = el("article","msg perm");
+  n.innerHTML = `<div class="who">Jarvis<span class="pv warn">Vorschlag</span></div>`
+    + `<p>${esc(m.ziel)}</p>`
+    + `<div class="ev">${esc(m.ereignis.art)}${m.ereignis.quelle?" · "+esc(m.ereignis.quelle):""}`
+    + `<br>${esc(m.begruendung)}</div>`
+    + `<div class="btnrow">
+         <button type="button" data-prop="${esc(m.id)}" data-ok="1">Mach das</button>
+         <button type="button" class="gh" data-prop="${esc(m.id)}">Lass es</button>
+       </div>`;
+  $("log").appendChild(n); $("log").scrollTop = $("log").scrollHeight;
+}
+$("log").addEventListener("click", async (e)=>{
+  const g = e.target.closest("[data-goal]");
+  if(g){
+    g.disabled = true;
+    try{ await fetch(`/api/goals/${encodeURIComponent(g.dataset.goal)}/${g.dataset.act}`,
+                     {method:"POST", headers:authHeaders()}); }
+    catch(_){ g.disabled = false; }
+    return;
+  }
+  const p = e.target.closest("[data-prop]");
+  if(!p) return;
+  const row = p.closest(".btnrow");
+  if(row) row.querySelectorAll("button").forEach((b)=>{ b.disabled = true; });
+  try{
+    await fetch(`/api/proactive/${encodeURIComponent(p.dataset.prop)}`,
+                {method:"POST", headers:authHeaders({"Content-Type":"application/json"}),
+                 body: JSON.stringify({approved: "ok" in p.dataset})});
+  }catch(_){ /* der Server meldet sich sonst ueber den Socket */ }
+});
+
 /* ═══════════════════════════════════════════════════════════════
    4  INSTRUMENTE, UHR, MODELLE, WERKZEUGE
    ═══════════════════════════════════════════════════════════════ */
@@ -1427,6 +1502,22 @@ function onFrame(m){
     case "task.step.finished":
     case "task.finished":
       sayTaskEvent(m.type, m);
+      break;
+    case "goal.created":
+    case "goal.updated":
+    case "goal.finished":
+      goalCard(m);
+      break;
+    case "decision.made": sayDecision(m); break;
+    case "proactive.suggested": sayProposal(m); break;
+    case "event":
+      // Punkt 21: nicht jedes Ereignis ist eine Meldung wert. Routine bleibt
+      // still, Warnungen und Fehler nicht.
+      if(m.schwere === "warning" || m.schwere === "error")
+        say({who:"jarvis", prov: m.schwere === "error" ? "fail" : "talk",
+             fail: m.schwere === "error",
+             text: "Ereignis: " + esc(m.art),
+             evidence: esc(JSON.stringify(m.daten || {}))});
       break;
   }
 }

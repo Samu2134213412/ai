@@ -296,6 +296,49 @@ def test_permission_resolve_unbekannte_anfrage(client):
     assert res.json() == {"gefunden": False}
 
 
+def test_ereignis_liefert_einen_vorschlag_mit_bestaetigbarer_id(client):
+    """Die id aus der Antwort muss dieselbe sein, die ``/api/proactive`` kennt
+    -- sonst laeuft jede Zustimmung ins Leere."""
+    antwort = client.post("/api/events", json={
+        "kind": "process.crashed", "severity": "warning",
+        "payload": {"name": "Minecraft-Server"}}).json()
+
+    assert antwort["reaktion"] == "vorschlag"
+    vorschlag = antwort["vorschlag"]
+    assert "Minecraft-Server" in vorschlag["ziel"]
+    # Unklare Ursache -> Jarvis fragt (Punkt 9).
+    assert vorschlag["braucht_zustimmung"] is True
+
+    offen = client.get("/api/events").json()["offene_vorschlaege"]
+    assert [v["id"] for v in offen] == [vorschlag["id"]]
+
+    # Ablehnen heisst: nichts passiert, und der Vorschlag ist weg.
+    abgelehnt = client.post(f"/api/proactive/{vorschlag['id']}",
+                            json={"approved": False}).json()
+    assert abgelehnt == {"gestartet": False, "ziel": None}
+    assert client.get("/api/events").json()["offene_vorschlaege"] == []
+
+
+def test_ereignis_ohne_regel_loest_nichts_aus(client):
+    antwort = client.post("/api/events", json={"kind": "nichts.bekanntes"}).json()
+    assert antwort["reaktion"] == "keine"
+    assert antwort["vorschlag"] is None
+    assert antwort["ereignis"]["art"] == "nichts.bekanntes"
+
+
+def test_unbekannter_vorschlag_gibt_404(client):
+    res = client.post("/api/proactive/nie-vorgeschlagen", json={"approved": True})
+    assert res.status_code == 404
+
+
+def test_steuerung_eines_nicht_laufenden_ziels_gibt_409(client):
+    """Ehrlich statt hoeflich: was nicht laeuft, laesst sich nicht pausieren."""
+    ziel = client.app.state.goals.create("nur abgelegt, laeuft nicht")
+    res = client.post(f"/api/goals/{ziel.id}/pause")
+    assert res.status_code == 409
+    assert client.post("/api/goals/gibtsnicht/cancel").status_code == 404
+
+
 def _warte_auf_ziel(test_client, goal_id: str, endstati=("completed", "failed",
                                                           "blocked", "cancelled")) -> dict:
     """Der Agent-Modus antwortet seit Autonomy V1 sofort und arbeitet im

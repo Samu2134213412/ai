@@ -153,25 +153,41 @@ def create_app(config: Config | None = None) -> FastAPI:
                             timeout=config.whisper.timeout)
 
     # ------------------------------------------- Ereignisse -> Reaktion
-    async def on_event(event: Event) -> None:
-        """Der eine Zuhoerer, der aus einem Ereignis eine Reaktion macht.
+    async def on_event(event: Event) -> dict:
+        """Der **eine** Ort, an dem aus einem Ereignis eine Reaktion wird.
 
-        Handeln darf er nur, wenn ``ProactiveEngine`` das ausdruecklich
+        Handeln darf Jarvis nur, wenn ``ProactiveEngine`` das ausdruecklich
         erlaubt. In jedem anderen Fall geht ein Vorschlag an den Nutzer --
-        und passiert bis zu dessen Zustimmung genau nichts."""
+        und bis zu dessen Zustimmung passiert genau nichts.
+
+        Zurueck kommt, was tatsaechlich entschieden wurde. Bewusst nicht
+        "der Endpunkt entscheidet nochmal selbst": zweimal ``react`` aufrufen
+        hiesse zwei Vorschlaege mit zwei verschiedenen ids, von denen nur
+        einer bestaetigt werden kann."""
         await hub.send("event", event.as_dict())
         proposal = proactive.react(event, config.autonomy)
         if proposal is None:
-            return
+            return {"reaktion": "keine", "vorschlag": None}
         if proposal.needs_approval:
             pending_proposals[proposal.id] = proposal
             await hub.send("proactive.suggested", proposal.as_dict())
-            return
+            return {"reaktion": "vorschlag", "vorschlag": proposal.as_dict()}
         await hub.send("proactive.acting", proposal.as_dict())
-        _goal, reply = await agent.start_goal(proposal.goal)
+        goal, reply = await agent.start_goal(proposal.goal)
         await hub.send("message", {"who": "jarvis", **reply.as_event()})
+        return {"reaktion": "gestartet", "vorschlag": proposal.as_dict(),
+                "ziel": goal.id if goal else None}
 
-    bus.subscribe(on_event)
+    #: Die Reaktion zum zuletzt gemeldeten Ereignis, damit ``POST /api/events``
+    #: sie zurueckgeben kann, ohne die Entscheidung zu wiederholen.
+    reactions: dict[str, dict] = {}
+
+    async def dispatch(event: Event) -> None:
+        reactions[event.id] = await on_event(event)
+        for stale in list(reactions)[:-50]:
+            reactions.pop(stale, None)
+
+    bus.subscribe(dispatch)
 
     # -------------------------------------------------------- Telemetrie
     async def telemetry_loop() -> None:
@@ -396,9 +412,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         nichts, ein Vorschlag, oder ein gestartetes Ziel."""
         event = await bus.publish(Event(kind=body.kind, source=body.source,
                                         severity=body.severity, payload=body.payload))
-        proposal = proactive.react(event, config.autonomy)
         return {"ereignis": event.as_dict(),
-                "vorschlag": proposal.as_dict() if proposal else None}
+                **reactions.pop(event.id, {"reaktion": "keine", "vorschlag": None})}
 
     @app.get("/api/events", dependencies=Guarded)
     async def list_events(limit: int = 50) -> dict:

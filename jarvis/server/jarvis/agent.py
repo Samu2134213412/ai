@@ -164,8 +164,8 @@ class Agent:
     async def _state(self, mode: str, detail: str = "") -> None:
         await self.emit("state", {"mode": mode, "detail": detail})
 
-    async def _run_tool(self, name: str, arguments: dict,
-                        request_text: str = "") -> ToolResult:
+    async def _run_tool(self, name: str, arguments: dict, request_text: str = "",
+                        goal_id: str | None = None) -> ToolResult:
         """Der eine Durchlauf für jeden Werkzeugaufruf -- Router-Direkttreffer,
         Chat-Loop und Code-Modus rufen alle diese eine Methode auf. Genau
         deshalb sitzen Permission-Check, Undo-Snapshot und Audit-Eintrag hier
@@ -193,7 +193,8 @@ class Agent:
                          "Jarvis führt keine Aktionen aus, nur Gespräch."),
                 evidence={"stufe": tool.level.label, "autonomiestufe": int(autonomy)})
             self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
-                              ok=False, summary=result.summary, request=request_text)
+                              ok=False, summary=result.summary, request=request_text,
+                              task_id=goal_id)
             return result
         force_confirm = (autonomy <= AutonomyLevel.READ_ONLY
                         and tool.level >= PermissionLevel.WRITE)
@@ -205,7 +206,8 @@ class Agent:
             result = ToolResult(tool=name, ok=False, summary=str(exc),
                                 evidence={"stufe": tool.level.label, "verweigert": True})
             self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
-                              ok=False, summary=result.summary, request=request_text)
+                              ok=False, summary=result.summary, request=request_text,
+                              task_id=goal_id)
             return result
 
         # Snapshot, Ausführung und Undo-Eintrag gehören zusammen -- bei
@@ -217,7 +219,8 @@ class Agent:
         else:
             result = await self._execute(name, arguments)
         self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
-                          ok=result.ok, summary=result.summary, request=request_text)
+                          ok=result.ok, summary=result.summary, request=request_text,
+                          task_id=goal_id)
         return result
 
     async def _execute(self, name: str, arguments: dict) -> ToolResult:
@@ -562,7 +565,7 @@ class Agent:
             try:
                 text, step_results = await self._run_tool_loop(
                     instruction, request_text=target.description,
-                    watchdog=watchdog, control=control)
+                    watchdog=watchdog, control=control, goal_id=target.id)
             except OllamaError as exc:
                 text, step_results = "", []
                 step.error = f"Modell nicht erreichbar: {exc}"
@@ -771,7 +774,8 @@ class Agent:
     # ------------------------------------------------------------- Interna
     async def _run_tool_loop(self, instruction: str, request_text: str,
                              watchdog: Watchdog | None = None,
-                             control: _GoalControl | None = None
+                             control: _GoalControl | None = None,
+                             goal_id: str | None = None
                              ) -> tuple[str, list[ToolResult]]:
         """Eine eigenständige Werkzeugaufruf-Runde für einen einzelnen
         Ausführungsschritt (Agent Mode).
@@ -816,7 +820,8 @@ class Agent:
                     continue
                 await self._checkpoint(control)
                 # ── EXECUTE ───────────────────────────────────────────────
-                result = await self._run_tool(call.name, call.arguments, request_text=request_text)
+                result = await self._run_tool(call.name, call.arguments,
+                                              request_text=request_text, goal_id=goal_id)
                 results.append(result)
                 messages.append({"role": "tool", "name": call.name,
                                  "content": result.for_model()})
@@ -831,7 +836,9 @@ class Agent:
                 # Antwort davon ausgehen, dass etwas funktioniert hat".
                 check = await self.verification.verify(
                     call.name, call.arguments, result,
-                    lambda name, args: self._run_tool(name, args, request_text=request_text))
+                    lambda name, args: self._run_tool(name, args,
+                                                      request_text=request_text,
+                                                      goal_id=goal_id))
                 if check is not None and not check.ok:
                     results.append(check)
                     messages.append({
