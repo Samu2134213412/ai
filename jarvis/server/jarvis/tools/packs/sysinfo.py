@@ -429,16 +429,37 @@ def build(ctx: ToolContext) -> list[Tool]:
                   pid=int(pid), name=name, hart=bool(force))
 
     def process_suspend(pid: int) -> ToolResult:
+        p = _psutil()
         proc = _proc(pid)
+        name = proc.name()
         proc.suspend()
-        return ok("system.process.suspend", f"{proc.name()} (PID {pid}) angehalten",
-                  pid=int(pid), status=proc.status())
+        # SIGSTOP wirkt nicht im selben Augenblick, in dem es abgeschickt wird:
+        # der Kernel hält den Prozess erst an, wenn er ihn das naechste Mal
+        # einplant. Wer sofort danach den Zustand liest, sieht auf einer
+        # beschaeftigten Maschine noch "running" -- und wuerde als Beleg fuer
+        # "angehalten" ausgerechnet das Gegenteil melden. Also nachsehen.
+        status = _await_status(p, proc, {p.STATUS_STOPPED})
+        if status not in (p.STATUS_STOPPED,):
+            raise ToolError(
+                f"{name} (PID {pid}) laeuft nach dem Anhalten weiter "
+                f"(Zustand: {status}).")
+        return ok("system.process.suspend", f"{name} (PID {pid}) angehalten",
+                  pid=int(pid), name=name, status=status)
 
     def process_resume(pid: int) -> ToolResult:
+        p = _psutil()
         proc = _proc(pid)
+        name = proc.name()
         proc.resume()
-        return ok("system.process.resume", f"{proc.name()} (PID {pid}) fortgesetzt",
-                  pid=int(pid), status=proc.status())
+        # Dieselbe Verzoegerung wie oben, nur andersherum.
+        laufend = {p.STATUS_RUNNING, p.STATUS_SLEEPING, p.STATUS_DISK_SLEEP,
+                   p.STATUS_IDLE}
+        status = _await_status(p, proc, laufend)
+        if status in (p.STATUS_STOPPED,):
+            raise ToolError(
+                f"{name} (PID {pid}) ist nach dem Fortsetzen weiter angehalten.")
+        return ok("system.process.resume", f"{name} (PID {pid}) fortgesetzt",
+                  pid=int(pid), name=name, status=status)
 
     def process_priority(pid: int, level: str = "normal") -> ToolResult:
         p = _psutil()
@@ -864,6 +885,26 @@ def build(ctx: ToolContext) -> list[Tool]:
              requires=("powershell",), tags=("windows", "autostart"),
              phrases=("was startet automatisch", "autostart")),
     ]
+
+
+def _await_status(p, proc, wanted: set[str], timeout: float = 2.0) -> str:
+    """Wartet kurz darauf, dass ein Prozess wirklich in einem der ``wanted``
+    Zustaende ankommt, und gibt den zuletzt gesehenen Zustand zurueck.
+
+    Signale wie SIGSTOP/SIGCONT werden asynchron zugestellt. Ohne dieses
+    Nachsehen wuerde der Beleg eines Werkzeugs vom Zufall der Maschinenlast
+    abhaengen -- und ein Beleg, der manchmal stimmt, ist keiner.
+    """
+    ende = time.monotonic() + max(0.0, timeout)
+    status = ""
+    while True:
+        try:
+            status = proc.status()
+        except Exception:  # noqa: BLE001 - beendet zaehlt als "nicht erreicht"
+            return "beendet"
+        if status in wanted or time.monotonic() >= ende:
+            return status
+        time.sleep(0.02)
 
 
 def _still_same(p, pid: int, name: str) -> bool:

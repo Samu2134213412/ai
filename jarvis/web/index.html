@@ -326,6 +326,33 @@ button.dg:hover{background:var(--red);color:var(--void)}
   .legend button{padding:2px 6px;font-size:8.5px}
 }
 @media (min-width:981px){ .tabs{display:none} }
+
+/* ── Finger statt Mauszeiger ───────────────────────────────────
+   Ein Zeigegeraet ohne Praezision (pointer:coarse) ist ein Finger.
+   34 px hohe Knoepfe trifft man damit unzuverlaessig -- Apple nennt
+   44 pt, Android 48 dp als Mindestmass. Das gilt bewusst nach
+   Eingabeart und nicht nach Bildschirmbreite: ein Tablet im
+   Querformat ist breit und wird trotzdem mit dem Finger bedient. */
+@media (pointer:coarse){
+  button{min-height:44px;padding:10px 16px}
+  .tabs button{min-height:44px;font-size:10.5px}
+  .views button{min-height:44px!important;font-size:12px}
+  .netbar button{min-height:44px!important;padding:8px 12px;font-size:10.5px}
+  #store{min-height:44px!important}
+  .legend button{min-height:32px;padding:4px 9px;font-size:9.5px}
+  .linkrow button{min-height:32px;padding:4px 9px;font-size:9.5px}
+  #cmd{font-size:16px;padding:12px 13px}   /* 16px: sonst zoomt iOS beim Tippen */
+  .dock{gap:9px}
+  .btnrow button{flex:1 1 auto}            /* Bestaetigen/Ablehnen gross genug */
+}
+/* Der Demo-Knopf ist auf einem Handy eine ganze Zeile wert -- und
+   genau dort ist Platz das Knappste. Er bleibt erreichbar, nur
+   schmaler und neben den anderen. */
+@media (max-width:640px){
+  #play{flex:0 1 auto;font-size:9.5px;padding:10px 10px;letter-spacing:.08em}
+  #mic{flex:0 1 auto}
+  #modeToggle{flex:1 1 auto}
+}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }

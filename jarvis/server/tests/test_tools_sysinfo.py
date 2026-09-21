@@ -194,11 +194,16 @@ def test_prozess_anhalten_und_fortsetzen_an_einem_echten_kindprozess(tools):
     import subprocess
     kind = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
-        erfolg(tools("system.process.suspend", pid=kind.pid))
+        angehalten = erfolg(tools("system.process.suspend", pid=kind.pid))
         assert psutil.Process(kind.pid).status() == psutil.STATUS_STOPPED
+        # Der gemeldete Zustand muss der echte sein. SIGSTOP wirkt verzoegert;
+        # wer sofort nachliest, sieht in etwa jedem fuenften Lauf noch
+        # "running" und wuerde das als Beleg fuer "angehalten" ausgeben.
+        assert angehalten.evidence["status"] == psutil.STATUS_STOPPED
 
-        erfolg(tools("system.process.resume", pid=kind.pid))
+        fortgesetzt = erfolg(tools("system.process.resume", pid=kind.pid))
         assert psutil.Process(kind.pid).status() != psutil.STATUS_STOPPED
+        assert fortgesetzt.evidence["status"] != psutil.STATUS_STOPPED
 
         # Beenden prüft selbst nach, ob der Prozess wirklich weg ist.
         beendet = erfolg(tools("system.process.kill", pid=kind.pid))

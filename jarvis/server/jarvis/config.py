@@ -198,8 +198,17 @@ class Config:
                 if k in {f.name for f in fields(PermissionConfig)}})
         return cls(**data)
 
-    def save(self) -> Path:
-        target = self.config_path
+    def save(self, path: str | Path | None = None) -> Path:
+        """Schreibt die Konfiguration. Ohne Angabe nach ``config_path``.
+
+        ``path`` ist für den Fall da, dass der Nutzer beim Start ausdrücklich
+        ``--config <datei>`` angegeben hat: dann gehört die Datei dorthin und
+        nicht ins Heimverzeichnis. Vorher landete sie in beiden Fällen in
+        ``~/.jarvis`` -- die Angabe wurde beim Speichern stillschweigend
+        ignoriert, und der Nutzer suchte anschließend eine Datei, die woanders
+        lag.
+        """
+        target = Path(path) if path else self.config_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False),
                           encoding="utf-8")
