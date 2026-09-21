@@ -21,12 +21,13 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import fs
+from . import fs, text
 
 #: Reihenfolge = Ladereihenfolge. Sie ist ohne Bedeutung für das Ergebnis
 #: (Namen sind eindeutig), macht aber die Fehlersuche vorhersagbar.
 PACKS: tuple[tuple[str, Callable], ...] = (
     ("fs", fs.build),
+    ("text", text.build),
 )
 
 __all__ = ["PACKS"]
