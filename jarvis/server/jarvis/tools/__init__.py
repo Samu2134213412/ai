@@ -14,16 +14,23 @@ from ..undo import UndoContext, UndoStore
 from . import codepilot, files, knowledge, shell, system
 from . import undo as undo_tool
 from .base import Registry, Tool, ToolError, ToolMissing, ToolResult
+from .catalog import Availability, ToolContext, availability, dependency_report
+from .discovery import ToolDiscovery, ToolIndex
+from .history import ToolHistory
+from .packs import PACKS
 
 #: Werkzeuge, die vorgesehen, aber noch nicht gebaut sind. Die Oberfläche zeigt
 #: sie als „fehlt", damit klar ist, was Jarvis heute wirklich kann.
 PLANNED = ["screen_capture", "web_search", "mouse_keyboard", "open_program"]
 
 __all__ = ["Registry", "Tool", "ToolError", "ToolMissing", "ToolResult",
+           "ToolContext", "ToolDiscovery", "ToolIndex", "ToolHistory",
+           "Availability", "availability", "dependency_report",
            "build_registry", "tool_status", "PLANNED"]
 
 
-def build_registry(config: Config, store: MemoryStore) -> Registry:
+def build_registry(config: Config, store: MemoryStore,
+                   history: ToolHistory | None = None) -> Registry:
     registry = Registry()
     workspace = files.Workspace(config.roots)
     policy = shell.ShellPolicy(
@@ -56,6 +63,22 @@ def build_registry(config: Config, store: MemoryStore) -> Registry:
     if link.configured:
         for tool in codepilot.build(link):
             registry.add(tool)
+    # ── Die Tool-Packs (Punkt 38: nicht alles hart im Kern) ──────────────
+    # Jedes Pack bekommt denselben ToolContext und gibt eine Liste zurück.
+    # Ein Pack, das beim Bauen scheitert, darf die übrigen nicht mitreißen --
+    # dann fehlen seine Werkzeuge eben, und das steht in ``registry.pack_errors``
+    # statt den ganzen Server am Start zu zerlegen.
+    context = ToolContext(config=config, store=store, workspace=workspace,
+                          home=Path(config.home),
+                          services={"codepilot": link, "undo": undo_store,
+                                    "history": history})
+    registry.pack_errors: dict[str, str] = {}
+    for name, builder in PACKS:
+        try:
+            registry.extend(builder(context))
+        except Exception as exc:  # noqa: BLE001 - siehe oben
+            registry.pack_errors[name] = f"{type(exc).__name__}: {exc}"
+
     # Für den Statusmelder in app.py: der Link existiert immer (auch
     # unkonfiguriert), status_snapshot() sagt dann einfach "configured: false".
     registry.codepilot_link = link
@@ -63,6 +86,7 @@ def build_registry(config: Config, store: MemoryStore) -> Registry:
     # die denselben Arbeitsbereich/dieselbe Undo-Historie brauchen.
     registry.workspace = workspace
     registry.undo_store = undo_store
+    registry.context = context
     return registry
 
 

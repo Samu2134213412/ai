@@ -464,3 +464,85 @@ auf der echten Oberfläche:
   gespeichert und ausgeliefert, aber noch nicht ausgewertet. Sie stehen im
   Datenmodell, weil Punkt 2 sie verlangt — dass sie heute nichts auslösen,
   steht hier, statt es offen zu lassen.
+
+---
+
+## 9. Das große Tool-System — Ist-Zustand vor "Operator Library" (2026-09-21)
+
+Neue Aufgabenstellung (60 Punkte): aus „Jarvis kann Dateien verwalten" sollen
+30–60 konkrete Datei-Operatoren werden, aus „Jarvis kann den PC steuern" 80+
+System-Actions. Ziel sind mindestens 400 tatsächlich nutzbare Tools, mit einer
+Architektur, die auch 5.000 trägt. Denkmodell: **Blender-Operatoren**, nicht
+Features.
+
+Wie in Abschnitt 7 und 8: erst Bestandsaufnahme, dann Entscheidung, dann Code.
+
+### 9.1 Was schon da ist und bleibt
+
+| Punkt der Aufgabenstellung | Ist-Zustand | Entscheidung |
+|---|---|---|
+| 1. `ToolResult` | `tools/base.py::ToolResult(ok, summary, evidence, payload, duration_ms)` | unverändert übernehmen — das ist die tragende Struktur des ganzen Projekts |
+| 1. `ToolRegistry` | `tools/base.py::Registry` mit `add`/`get`/`names`/`schemas`/`call`; `call()` fängt jeden Fehler ab und macht daraus ein ehrliches `ToolResult` | erweitern, nicht ersetzen |
+| 1. `ToolExecutor` | `agent.py::Agent._run_tool` — der **eine** Durchlaufpunkt: Autonomiestufe → Permission → Mutations-Lock → Undo-Snapshot → Ausführung → Audit | bleibt der einzige Weg. Jedes neue Tool läuft **durch** ihn, keins daran vorbei |
+| 31. Permission Levels | `permissions.py`: SAFE/READ/WRITE/SYSTEM/CRITICAL, dazu `.risk` (LOW/MEDIUM/HIGH) | deckungsgleich mit den fünf geforderten Stufen. **Keine sechste Skala** |
+| 29. Undo-System | `undo.py::UndoStore` mit Snapshot vor jeder verändernden Aktion | vorhanden; neue Tools melden über `undoable`, ob sie davon erfasst sind |
+| 36. Tool History (teilweise) | `audit.py::AuditLog` protokolliert Tool, Argumente, Erfolg, Dauer, Ziel-ID | Grundlage vorhanden. Ergänzt wird eine tool-zentrierte Sicht (Favoriten, Aufrufzahlen) statt eines zweiten Logs |
+| 52. Error Recovery | `agent.py` Retry + `decision.py` für einen *anderen* Ansatz + `watchdog.py` gegen Schleifen | vollständig vorhanden (Autonomy V1), gilt automatisch für alle neuen Tools |
+| 34. Parallele Ausführung | `_mutation_lock` serialisiert nur verändernde Tools; Lesen ist bereits parallel | Grundlage vorhanden; Tool-Ketten bauen darauf auf |
+
+### 9.2 Die eine echte Sperre: der Voll-Schema-Dump
+
+`agent.py` ruft an zwei Stellen `self.registry.schemas()` und legt damit **jede**
+Werkzeugbeschreibung in **jede** Modellanfrage. Bei heute 16 Tools ist das
+unauffällig. Bei 400 Tools sind das grob 60.000 Token pro Anfrage — mehr als
+das konfigurierte `context_length` von 8192. Das System würde nicht langsam,
+es würde **gar nicht mehr funktionieren**.
+
+Das ist exakt Punkt 2 und 50 der Aufgabenstellung, und es ist die Änderung,
+die vor allen Tool-Packs kommen muss: nicht „alle Schemas", sondern eine
+Vorauswahl über `ToolDiscovery` — Kernwerkzeuge plus die Top-N zur Anfrage
+passenden. Ohne diesen Umbau wäre jedes weitere Tool ein Rückschritt.
+
+### 9.3 Erweitern statt ersetzen
+
+`Tool` ist ein `frozen dataclass` mit fünf Feldern und wird an rund 30 Stellen
+positionsbasiert konstruiert. Die geforderten Metadaten (Kategorie, Tags,
+Synonyme, Plattformen, Dependencies, Timeout, Undo, Dry-Run, Version,
+Beispiele) kommen deshalb als **zusätzliche Felder mit Vorgabewerten** dazu.
+Jeder bestehende Aufruf bleibt gültig, kein Test muss angefasst werden.
+
+**IDs:** Die Aufgabenstellung will `system.file.rename` statt
+`file_manager_do_everything`. Neue Tools bekommen genau solche gepunkteten
+Namen, und Kategorie/Unterkategorie werden daraus abgeleitet. Die sechzehn
+bestehenden Namen (`write_file`, `get_cpu_info`, …) **bleiben wie sie sind** —
+sie stehen im Router, im Systemprompt und in über hundert Tests. Sie bekommen
+ihren gepunkteten Namen als Alias, damit beide Schreibweisen funktionieren.
+
+**Plattform-Ehrlichkeit:** Ein großer Teil der gewünschten System-Tools ist
+Windows-spezifisch (Dienste, Clipboard, Fenster, Bluetooth). Der Entwicklungs-
+und Testrechner ist Linux, der Zielrechner Windows 11. Es wäre gelogen, 200
+Windows-Tools zu registrieren und zu behaupten, sie funktionierten. Stattdessen
+deklariert jedes Tool seine `platforms` und seine `requires`, und die
+Selbstdiagnose (Punkt 53) meldet ehrlich `UNSUPPORTED_PLATFORM` oder
+`MISSING_DEPENDENCY`, bevor jemand es aufruft.
+
+Dependencies auf diesem Rechner geprüft: `psutil`, `PIL`, `httpx`, `yaml`,
+`git`, `docker`, `node`, `npm`, `unzip` sind da; `playwright`, `ffmpeg`, `7z`,
+`tesseract`, `python-magic` fehlen. Tools, die darauf angewiesen sind, werden
+trotzdem gebaut — sie melden dann `MISSING_DEPENDENCY` statt zu scheitern, und
+der Installations-Assistent (Punkt 55) fragt, statt blind zu installieren.
+
+### 9.4 Aufbau
+
+```
+tools/
+  base.py        Tool (erweitert), Registry (erweitert), ToolResult
+  catalog.py     ToolContext, Dependency-Probes, Selbstdiagnose
+  discovery.py   Keyword/Fuzzy/Tag/Kategorie-Suche, Ranking
+  history.py     Tool-Historie und Favoriten
+  packs/         die Tool-Packs, je ein Modul pro Sachgebiet
+```
+
+Die Reihenfolge der Umsetzung folgt Punkt 57: erst die Infrastruktur
+vollständig, dann Pack für Pack. Jedes Pack wird einzeln getestet und
+committet, damit der Stand jederzeit lauffähig ist.
