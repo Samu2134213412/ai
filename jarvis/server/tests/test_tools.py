@@ -199,9 +199,12 @@ def test_loeschen_ist_critical(workspace):
     assert tools["delete_file"].level is PermissionLevel.CRITICAL
 
 
-def test_systemwerkzeuge_sind_read():
-    for tool in system.build():
-        assert tool.level is PermissionLevel.READ
+def test_systemmodul_registriert_selbst_nichts_mehr():
+    """Die fünf alten Systemwerkzeuge sind in packs/sysinfo.py aufgegangen --
+    ihre Namen leben dort als Alias weiter, die Implementierung gibt es nur
+    noch einmal."""
+    assert system.build() == []
+    assert system.telemetry is not None  # die Telemetriequelle bleibt hier
 
 
 def test_gedaechtnis_lesen_ist_safe_schreiben_ist_write_loeschen_ist_critical(store):

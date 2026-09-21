@@ -40,8 +40,10 @@ def baum(workspace):
 def tools(config, store, baum):
     registry = build_registry(config, store)
 
-    def call(name: str, **arguments) -> ToolResult:
-        return registry.call(name, arguments)
+    # Positional-only (das '/'), damit ein Tool-Argument namens
+    # 'name' nicht mit dem Parameter des Helfers kollidiert.
+    def call(tool: str, /, **arguments) -> ToolResult:
+        return registry.call(tool, arguments)
 
     call.registry = registry
     return call

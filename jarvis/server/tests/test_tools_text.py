@@ -18,8 +18,10 @@ from jarvis.tools.base import ToolResult
 def tools(config, store):
     registry = build_registry(config, store)
 
-    def call(name: str, **arguments) -> ToolResult:
-        return registry.call(name, arguments)
+    # Positional-only (das '/'), damit ein Tool-Argument namens
+    # 'name' nicht mit dem Parameter des Helfers kollidiert.
+    def call(tool: str, /, **arguments) -> ToolResult:
+        return registry.call(tool, arguments)
     return call
 
 

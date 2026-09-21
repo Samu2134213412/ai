@@ -138,34 +138,18 @@ def telemetry() -> dict:
 
 
 def build() -> list[Tool]:
-    empty = {"type": "object", "properties": {}, "required": []}
-    return [
-        Tool("get_system_info", "Betriebssystem, Rechnername, Architektur, Kernzahl.",
-             empty, get_system_info, level=PermissionLevel.READ, category="system",
-             aliases=("system.info",), tags=("system", "info"),
-             phrases=("was für ein system", "systeminfo", "welches betriebssystem")),
-        Tool("get_cpu_info", "Aktuelle CPU-Auslastung, Kernzahl und Takt.",
-             empty, get_cpu_info, level=PermissionLevel.READ, category="system",
-             aliases=("system.cpu.usage",), tags=("system", "cpu", "auslastung"),
-             requires=("psutil",),
-             phrases=("wie ausgelastet ist die cpu", "cpu auslastung",
-                      "prozessor auslastung")),
-        Tool("get_ram_info", "Belegter und freier Arbeitsspeicher in GB.",
-             empty, get_ram_info, level=PermissionLevel.READ, category="system",
-             aliases=("system.ram.usage",), tags=("system", "ram", "speicher"),
-             requires=("psutil",),
-             phrases=("wie viel ram ist frei", "arbeitsspeicher", "ram auslastung")),
-        Tool("get_disk_info", "Freier und belegter Speicherplatz eines Laufwerks.",
-             {"type": "object", "properties": {"path": {"type": "string"}}, "required": []},
-             get_disk_info, level=PermissionLevel.READ, category="system",
-             aliases=("system.disk.usage",), tags=("system", "disk", "speicherplatz"),
-             phrases=("wie viel platz ist frei", "festplatte voll",
-                      "speicherplatz")),
-        Tool("list_processes", "Die speicherhungrigsten laufenden Prozesse.",
-             {"type": "object", "properties": {"limit": {"type": "integer"}}, "required": []},
-             list_processes, level=PermissionLevel.READ, category="system",
-             aliases=("system.process.memory_top",),
-             tags=("system", "prozess", "speicher"), requires=("psutil",),
-             phrases=("was frisst meinen ram", "welche prozesse laufen",
-                      "speicherhungrige prozesse")),
-    ]
+    """Leer, und das mit Absicht.
+
+    Diese fünf Werkzeuge sind in ``packs/sysinfo.py`` aufgegangen, wo aus
+    jedem von ihnen mehrere genauere Operatoren geworden sind (``cpu.usage``
+    je Kern, ``cpu.frequency``, ``cpu.load``, ``ram.top``, ``disk.partitions``
+    …). Ihre alten Namen leben dort als **Alias** weiter, damit Router,
+    Systemprompt und Tests unverändert funktionieren -- aber es gibt jeweils
+    nur noch **eine** Implementierung. Zwei Werkzeuge, die dasselbe tun, wären
+    genau die Doppelung, die dieses Projekt vermeiden soll.
+
+    Die Funktionen oben bleiben: ``telemetry()`` speist das Live-Band der
+    Oberfläche, und ``packs/sysinfo.py`` greift für den Systemüberblick
+    darauf zurück.
+    """
+    return []
