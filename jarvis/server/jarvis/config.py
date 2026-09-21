@@ -34,18 +34,33 @@ class ShellConfig:
 
 
 @dataclass
-class CodePilotConfig:
-    url: str = "http://127.0.0.1:8765"
-    token: str = ""
-    project_id: str = ""
-    timeout: int = 900
-    #: Läuft CodePilot bei einer Codeaufgabe nicht, startet Jarvis es selbst.
-    #: Bewusst erst dann und nicht beim Hochfahren: das Code-Modell belegt
-    #: 18 GB VRAM, die sonst dem Chat-Modell fehlen.
-    autostart: bool = True
-    #: Leer heißt: CodePilot im Repo neben jarvis/ suchen.
-    start_dir: str = ""
-    start_timeout: int = 90
+class CodeConfig:
+    """Der Code-Modus (siehe ``coder.py``).
+
+    Früher lief er über CodePilot Remote: Jarvis -> HTTP -> CodePilot ->
+    Claude Code -> Ollama. Das waren drei Dienste zwischen der Frage und dem
+    Modell, von denen jeder einzeln laufen und eingerichtet sein musste --
+    und wenn einer davon nicht lief, konnte Jarvis gar nichts. Jetzt spricht
+    Jarvis das Code-Modell direkt über Ollama an, mit seinen eigenen
+    Werkzeugen, seinem eigenen Permission-System und seiner eigenen
+    Undo-Historie.
+    """
+
+    #: Das Modell für Code. Bewusst ein anderes als ``Config.model``: es darf
+    #: größer und langsamer sein, weil es nur für Code-Aufträge geladen wird.
+    #: Leer heißt: dasselbe Modell wie im Chat benutzen.
+    model: str = "qwen3-coder:30b"
+    #: Werkzeugrunden je Auftrag. Mehr als im Chat, weil ein Code-Auftrag
+    #: typischerweise erst liest, dann schreibt, dann prüft.
+    max_rounds: int = 14
+    #: Niedriger als im Chat: bei Code ist Erfindungsreichtum keine Tugend.
+    temperature: float = 0.1
+    #: Code-Modelle sind groß und werden beim ersten Aufruf erst geladen.
+    timeout: int = 600
+    #: Nach Änderungen automatisch nachprüfen (Syntax der geänderten Dateien).
+    #: Das ist die Verification-Engine-Idee aus Autonomy V1, angewendet auf
+    #: Code: ein Modell, das "fertig" sagt, ist kein Beleg.
+    auto_check: bool = True
 
 
 @dataclass
@@ -93,7 +108,7 @@ class Config:
     # -- Arbeitsbereich -----------------------------------------------------
     roots: list[str] = field(default_factory=default_roots)
     shell: ShellConfig = field(default_factory=ShellConfig)
-    codepilot: CodePilotConfig = field(default_factory=CodePilotConfig)
+    code: CodeConfig = field(default_factory=CodeConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     permissions: PermissionConfig = field(default_factory=PermissionConfig)
     #: Wie viel Eigeninitiative Jarvis nehmen darf (siehe autonomy.py).
@@ -169,10 +184,10 @@ class Config:
             data["shell"] = ShellConfig(**{
                 k: v for k, v in data["shell"].items()
                 if k in {f.name for f in fields(ShellConfig)}})
-        if isinstance(data.get("codepilot"), dict):
-            data["codepilot"] = CodePilotConfig(**{
-                k: v for k, v in data["codepilot"].items()
-                if k in {f.name for f in fields(CodePilotConfig)}})
+        if isinstance(data.get("code"), dict):
+            data["code"] = CodeConfig(**{
+                k: v for k, v in data["code"].items()
+                if k in {f.name for f in fields(CodeConfig)}})
         if isinstance(data.get("whisper"), dict):
             data["whisper"] = WhisperConfig(**{
                 k: v for k, v in data["whisper"].items()
@@ -203,6 +218,10 @@ class Config:
             problems.append(
                 "shell.enabled ist an, aber die Allowlist ist leer. Es läuft "
                 "dadurch kein Befehl; trage die erlaubten Programme ein.")
+        if self.code.max_rounds < 2:
+            problems.append(
+                f"code.max_rounds ist {self.code.max_rounds}. Unter 2 Runden kann "
+                "der Code-Modus nicht einmal lesen und dann schreiben.")
         if not 0 <= self.autonomy_level <= 4:
             problems.append(
                 f"autonomy_level ist {self.autonomy_level}, gültig ist 0-4 "

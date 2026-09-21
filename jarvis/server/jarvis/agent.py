@@ -22,9 +22,10 @@ import asyncio
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from . import guard, planner, router, world_state
+from . import coder, guard, planner, router, world_state
 from .audit import AuditLog
 from .autonomy import AutonomyLevel
 from .config import Config
@@ -58,7 +59,8 @@ Werkzeug aufgerufen hast UND dieses Werkzeug ERFOLG zurückgegeben hat.
 - Schlägt ein Werkzeug fehl, nenne den echten Fehler. Beschönige nichts.
 - Behaupte niemals einen Erfolg, den du nicht als Werkzeugergebnis gesehen hast.
 
-Programmieraufgaben gibst du an codepilot_task weiter, wenn es verfügbar ist.
+Programmieraufgaben kannst du selbst erledigen -- lies die Datei, ändere sie
+mit write_file, und prüfe danach nach.
 Reine Fragen beantwortest du ohne Werkzeug.
 """
 
@@ -117,7 +119,8 @@ class Agent:
                  tasks: TaskManager | None = None, max_step_retries: int = 2,
                  goals: GoalManager | None = None,
                  decisions: DecisionEngine | None = None,
-                 verification: VerificationEngine | None = None):
+                 verification: VerificationEngine | None = None,
+                 code_client: OllamaClient | None = None):
         self.config = config
         self.store = store
         self.registry = registry
@@ -147,6 +150,10 @@ class Agent:
         self.goals = goals or GoalManager(":memory:")
         self.decisions = decisions or DecisionEngine(client, audit=self.audit)
         self.verification = verification if verification is not None else VerificationEngine()
+        #: Das Modell für den Code-Modus (``coder.py``). Ohne eigenes
+        #: Code-Modell nimmt der Code-Modus schlicht das Chat-Modell -- das
+        #: ist schlechter, aber es läuft, statt eine Absage zu sein.
+        self.code_client = code_client or client
         #: Laufende Ziele, über die von außen gesteuert werden kann.
         self._controls: dict[str, _GoalControl] = {}
         #: Die Hintergrund-Tasks -- gehalten, damit der Garbage Collector sie
@@ -266,34 +273,124 @@ class Agent:
 
     # ---------------------------------------------------------- Code-Modus
     async def handle_code(self, message: str) -> guard.Reply:
-        """Ein Zug im Code-Modus: geht immer direkt an ``codepilot_task``.
+        """Ein Zug im Code-Modus: das Code-Modell arbeitet direkt an den
+        Dateien, mit Jarvis' eigenen Werkzeugen.
 
-        Kein Router, kein Chat-Modell, keine Interpretation. Der Nutzer hat den
-        Modus bewusst eingeschaltet — das ist die eindeutigste Aussage, die es
-        gibt, eindeutiger als jedes erkannte Muster im Text. Also wird hier
-        nicht geraten, sondern direkt das eine Werkzeug gerufen, das für Code
-        zuständig ist.
+        Kein Router, kein Chat-Modell -- der Nutzer hat den Modus bewusst
+        eingeschaltet, das ist die eindeutigste Aussage, die es gibt. Aber
+        auch kein Zwischenserver mehr: früher ging das über CodePilot
+        Remote, und wenn der nicht eingerichtet war (der Normalfall), konnte
+        der Code-Modus gar nichts. Siehe ``coder.py`` für die Begründung.
+
+        Der Ablauf hier ist der Punkt, an dem sich Code-Modus und Chat
+        unterscheiden: nach den Änderungen wird **nachgeprüft**, und die
+        Antwort entsteht aus den geänderten Dateien plus dem Prüfergebnis --
+        nicht aus dem Satz des Modells, es sei fertig.
         """
         task = (message or "").strip()
         if not task:
             return guard.Reply(text="", provenance=guard.TALK)
-        if "codepilot_task" not in self.registry:
+
+        # Die Autonomiestufe gilt hier genauso wie überall sonst: Stufe 0
+        # redet nur, Stufe 1 lässt nichts schreiben, ohne zu fragen. Die
+        # Durchsetzung sitzt in _run_tool, hier steht nur die ehrliche
+        # Absage, bevor das große Modell überhaupt geladen wird.
+        if self.config.autonomy <= AutonomyLevel.NONE:
             await self._state("idle")
             reply = guard.Reply(
-                text=f"{guard.REFUSAL} (benötigt: codepilot_task — CodePilot "
-                     f"ist nicht eingerichtet, siehe jarvis.json unter 'codepilot')",
+                text=(f"Autonomiestufe 0 ({AutonomyLevel.NONE.label}): Ich führe "
+                      "keine Aktionen aus, also auch keine Codeänderungen."),
+                provenance=guard.TALK)
+            self._remember(task, reply)
+            return reply
+
+        verfuegbar = [n for n in coder.CODE_TOOLS if n in self.registry]
+        if not verfuegbar:
+            await self._state("idle")
+            reply = guard.Reply(
+                text=f"{guard.REFUSAL} (im Code-Modus ist kein Dateiwerkzeug "
+                     "registriert -- prüfe 'roots' in jarvis.json)",
                 provenance=guard.FAIL)
             self._remember(task, reply)
             return reply
 
-        await self._state("executing", f"codepilot_task · {task[:70]}")
-        result = await self._run_tool("codepilot_task", {"task": task}, request_text=task)
-        await self._state("failed" if not result.ok else "idle")
-        # Kein Modelltext im Spiel, also nichts zu beschönigen — die
-        # Zusammenfassung des Werkzeugs ist die Antwort.
-        reply = guard.verify("", [result])
+        await self._state("thinking", f"Code-Modell · {task[:60]}")
+        try:
+            text, results = await self._run_tool_loop(
+                self._code_instruction(task), request_text=task,
+                client=self.code_client, tool_names=verfuegbar,
+                system_prompt=coder.CODE_SYSTEM_PROMPT,
+                max_rounds=self.config.code.max_rounds)
+        except OllamaError as exc:
+            await self._state("failed", str(exc))
+            reply = guard.Reply(
+                text=f"Das Code-Modell ist nicht erreichbar: {exc}",
+                provenance=guard.FAIL)
+            self._remember(task, reply)
+            return reply
+
+        outcome = coder.CodeOutcome(changes=coder.changed_paths(results),
+                                    model_text=text.strip())
+        if self.config.code.auto_check and outcome.changes:
+            await self._state("executing", "prüfe die Änderungen nach")
+            results.extend(await self._check_changes(outcome, request_text=task))
+
+        await self._state("failed" if outcome.broken else "idle")
+        reply = guard.verify(outcome.summary(), results)
+        if reply.blocked:
+            await self.emit("guard.blocked", {
+                "verworfen": reply.blocked_text, "ersetzt_durch": reply.text})
         self._remember(task, reply)
         return reply
+
+    def _code_instruction(self, task: str) -> str:
+        """Der Auftrag samt dem, was das Modell über den Arbeitsbereich wissen
+        muss. Ohne diese Angabe rät ein Code-Modell Pfade -- und ein geratener
+        Pfad wird vom Workspace abgewiesen, was eine Runde kostet."""
+        roots = getattr(self.registry, "workspace", None)
+        bereich = roots.describe() if roots is not None else "(unbekannt)"
+        return (f"Arbeitsbereich (nur hier darfst du Dateien anfassen): {bereich}\n\n"
+                f"Auftrag: {task}")
+
+    async def _check_changes(self, outcome: "coder.CodeOutcome",
+                             request_text: str) -> list[ToolResult]:
+        """Liest jede geänderte Datei über ein echtes ``read_file`` zurück und
+        prüft, was prüfbar ist.
+
+        Derselbe Gedanke wie die Verification Engine in Autonomy V1: die
+        Rückmeldung des schreibenden Werkzeugs allein ist zu wenig. Erst ein
+        zweiter, unabhängiger Lesevorgang zeigt, was wirklich in der Datei
+        steht.
+        """
+        geprueft: set[str] = set()
+        results: list[ToolResult] = []
+        for change in outcome.changes:
+            if change.path in geprueft:
+                continue
+            geprueft.add(change.path)
+            if Path(change.path).suffix.lower() not in coder.CHECKABLE:
+                continue
+            gelesen = await self._run_tool("read_file", {"path": change.path},
+                                           request_text=request_text)
+            results.append(gelesen)
+            if not gelesen.ok:
+                outcome.checks.append(coder.CodeCheck(
+                    path=change.path, ok=False,
+                    detail="nach dem Schreiben nicht lesbar"))
+                continue
+            check = coder.check_syntax(change.path, gelesen.payload or "")
+            if check is None:
+                continue
+            outcome.checks.append(check)
+            if not check.ok:
+                # Ein kaputtes Ergebnis ist ein Fehlschlag, kein Erfolg mit
+                # Fußnote -- also kommt es als fehlgeschlagenes ToolResult in
+                # die Beweiskette und färbt die Antwort entsprechend.
+                results.append(ToolResult(
+                    tool="check:syntax", ok=False,
+                    summary=f"{check.name}: {check.detail}",
+                    evidence={"pfad": check.path}))
+        return results
 
     # ------------------------------------------------------------------ Zug
     async def handle(self, message: str) -> guard.Reply:
@@ -808,7 +905,11 @@ class Agent:
     async def _run_tool_loop(self, instruction: str, request_text: str,
                              watchdog: Watchdog | None = None,
                              control: _GoalControl | None = None,
-                             goal_id: str | None = None
+                             goal_id: str | None = None,
+                             client: OllamaClient | None = None,
+                             tool_names: list[str] | None = None,
+                             system_prompt: str | None = None,
+                             max_rounds: int | None = None
                              ) -> tuple[str, list[ToolResult]]:
         """Eine eigenständige Werkzeugaufruf-Runde für einen einzelnen
         Ausführungsschritt (Agent Mode).
@@ -825,8 +926,12 @@ class Agent:
         Verifizierung, weil beide die **Argumente** des Aufrufs brauchen:
         ``ToolResult`` trägt sie nicht.
         """
+        model = client or self.client
+        rounds = int(max_rounds or self.config.max_tool_rounds)
+        schemas = self.registry.schemas(only=tool_names)
         context = await asyncio.to_thread(self.store.context_for, instruction)
-        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
         if context:
             messages.append({"role": "system",
                              "content": "Was du über deinen Nutzer weißt:\n" + context})
@@ -834,9 +939,9 @@ class Agent:
 
         results: list[ToolResult] = []
         final = ""
-        for _round in range(self.config.max_tool_rounds):
+        for _round in range(rounds):
             await self._checkpoint(control)
-            turn: ChatTurn = await self.client.chat(messages, self.registry.schemas())
+            turn: ChatTurn = await model.chat(messages, schemas)
             if not turn.tool_calls:
                 final = turn.text
                 break
@@ -878,7 +983,7 @@ class Agent:
                         "role": "tool", "name": f"verify:{call.name}",
                         "content": f"NACHPRÜFUNG FEHLGESCHLAGEN: {check.summary}"})
         else:
-            final = f"Schritt nach {self.config.max_tool_rounds} Runden abgebrochen."
+            final = f"Schritt nach {rounds} Runden abgebrochen."
         return final, results
 
     @staticmethod

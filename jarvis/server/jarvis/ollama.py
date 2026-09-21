@@ -1,8 +1,8 @@
 """Der Draht zu Ollama.
 
-Benutzt wird ``/api/chat`` mit ``tools`` — Ollamas nativer Werkzeugaufruf. Die
-Anthropic-kompatible Schnittstelle, über die CodePilot läuft, ist hier nicht
-gemeint: Jarvis' Chat-Modell spricht direkt mit Ollama.
+Benutzt wird ``/api/chat`` mit ``tools`` — Ollamas nativer Werkzeugaufruf.
+Jarvis spricht direkt mit Ollama, für das Chat-Modell wie für das Code-Modell
+(siehe ``coder.py``); es steht kein weiterer Dienst dazwischen.
 """
 
 from __future__ import annotations

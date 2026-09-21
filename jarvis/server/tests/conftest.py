@@ -48,10 +48,15 @@ class FakeOllama:
         from jarvis.ollama import ChatTurn
         self.turns = [t if isinstance(t, ChatTurn) else ChatTurn(text=t) for t in turns]
         self.calls: list[list[dict]] = []
+        #: Welche Werkzeugschemata je Anfrage mitgeschickt wurden. Seit die
+        #: Auswahl eingegrenzt wird (Discovery, Code-Modus), ist das prüfbar
+        #: und damit ein eigener Testgegenstand.
+        self.tool_schemas: list[list[dict]] = []
 
     async def chat(self, messages, tools=None):
         from jarvis.ollama import ChatTurn
         self.calls.append(list(messages))
+        self.tool_schemas.append(list(tools or []))
         if not self.turns:
             return ChatTurn(text="(nichts mehr)")
         return self.turns.pop(0)

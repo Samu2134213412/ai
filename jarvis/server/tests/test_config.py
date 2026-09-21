@@ -35,10 +35,12 @@ def test_konfiguration_laedt_mit_und_ohne_bom(tmp_path, bom):
 
 
 def test_bom_bleibt_auch_bei_verschachtelten_bloecken_lesbar(tmp_path):
-    """Die Skripte schreiben den ganzen codepilot-Block mit -- der muss
+    """Die Skripte schreiben auch Blöcke mit, die Jarvis nicht mehr kennt --
+    ein alter codepilot-Block darf das Laden nicht zerlegen, und der muss
     genauso ankommen wie die flachen Felder."""
     ziel = schreibe(tmp_path / "jarvis.json", {
         "model": "qwen3:14b",
+        "code": {"model": "qwen3-coder:30b", "max_rounds": 9},
         "codepilot": {"url": "http://127.0.0.1:8765", "token": "abc",
                       "project_id": "xyz", "timeout": 900},
         "shell": {"enabled": True, "allowlist": ["python"], "cwd": "", "timeout": 60},
@@ -46,8 +48,11 @@ def test_bom_bleibt_auch_bei_verschachtelten_bloecken_lesbar(tmp_path):
 
     config = Config.load(ziel)
 
-    assert config.codepilot.token == "abc"
-    assert config.codepilot.project_id == "xyz"
+    assert config.code.model == "qwen3-coder:30b"
+    assert config.code.max_rounds == 9
+    # Der alte codepilot-Block wird stillschweigend ignoriert, nicht
+    # übernommen und nicht zum Absturz gemacht.
+    assert not hasattr(config, "codepilot")
     assert config.shell.enabled is True
     assert config.shell.allowlist == ["python"]
 
@@ -71,11 +76,11 @@ def test_fehlende_datei_ergibt_die_vorgaben(tmp_path):
 
 def test_gespeicherte_konfiguration_liest_sich_selbst_wieder(tmp_path):
     original = Config(home=str(tmp_path), model="qwen3:14b", port=8123)
-    original.codepilot.token = "geheim"
+    original.code.model = "mein-coder:7b"
     pfad = original.save()
 
     zurueck = Config.load(pfad)
 
     assert zurueck.model == "qwen3:14b"
     assert zurueck.port == 8123
-    assert zurueck.codepilot.token == "geheim"
+    assert zurueck.code.model == "mein-coder:7b"

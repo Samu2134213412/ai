@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from jarvis.permissions import PermissionLevel
-from jarvis.tools import codepilot, knowledge, shell, system
+from jarvis.tools import knowledge, shell, system
 from jarvis.tools.base import Registry, Tool, ToolError, ToolMissing, ToolResult
 from jarvis.tools.files import Workspace, build as build_files
 
@@ -218,10 +218,14 @@ def test_run_command_ist_system():
     assert tools["run_command"].level is PermissionLevel.SYSTEM
 
 
-def test_codepilot_task_ist_system():
-    link = codepilot.CodePilotLink(url="http://x", token="t", project_id="p")
-    tools = {t.name: t for t in codepilot.build(link)}
-    assert tools["codepilot_task"].level is PermissionLevel.SYSTEM
+def test_schreibende_werkzeuge_sind_nicht_safe():
+    """Die Stufe ist das, woran das Permission-System hängt -- ein
+    schreibendes Werkzeug auf SAFE würde ungefragt durchlaufen."""
+    from jarvis.tools.files import Workspace, build as files_build
+    tools = {t.name: t for t in files_build(Workspace([]))}
+    assert tools["write_file"].level is PermissionLevel.WRITE
+    assert tools["delete_file"].level is PermissionLevel.CRITICAL
+    assert tools["read_file"].level is PermissionLevel.SAFE
 
 
 def test_mutating_property_leitet_sich_aus_level_ab():

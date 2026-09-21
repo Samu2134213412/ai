@@ -905,8 +905,7 @@ tickClock(); setInterval(tickClock,20000);
 
 const BRAINS=[
   {role:"Gespräch · Planen · Gedächtnis",id:"—",via:"Ollama · direkt",vram:0,on:0},
-  {role:"Code · Dateien · Terminal",id:"—",via:"CodePilot → Claude Code → Ollama",vram:0,on:0,
-   cps:{lvl:"off",text:"Status unbekannt · ohne Verbindung"}}
+  {role:"Code · Dateien · Terminal",id:"—",via:"Ollama · direkt",vram:0,on:0}
 ];
 function renderBrains(){
   $("brains").innerHTML=BRAINS.map((b)=>`
@@ -923,7 +922,7 @@ renderBrains();
 
 const TOOLS=[["write_file","unknown"],["read_file","unknown"],["run_command","unknown"],
   ["get_system_info","unknown"],["get_cpu_info","unknown"],["get_ram_info","unknown"],
-  ["search_files","unknown"],["memory_search","none"],["codepilot_task","none"],
+  ["search_files","unknown"],["memory_search","none"],["files.grep","none"],
   ["screen_capture","none"],["web_search","none"],["mouse_keyboard","none"]];
 const TS={ok:["✓","bereit"],unknown:["?","unbestätigt"],none:["·","fehlt"]};
 function renderTools(list){
@@ -951,11 +950,11 @@ const SEED={
   nodes:[
     {id:"n1",label:"Grundregel",cat:"regel",text:"Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein Werkzeug tatsächlich lief und Erfolg zurückgab. Fehlt das Werkzeug: sagen, dass es fehlt. Schlägt es fehl: den echten Fehler nennen."},
     {id:"n2",label:"Jarvis",cat:"projekt",text:"Persönlicher Assistent auf dem eigenen PC. Deutsch, Langzeitgedächtnis, bedient Programme und Dateien, sieht den Bildschirm, lernt Abläufe als Skills."},
-    {id:"n3",label:"CodePilot Remote",cat:"projekt",text:"Vorhandenes Projekt im Repo: startet echtes Claude Code gegen Ollama, mit MCP-Freigaben und Pfad-Containment. 5008 Zeilen, 77 Tests grün."},
+    {id:"n3",label:"Code-Modus",cat:"projekt",text:"Jarvis programmiert selbst: Code-Modell direkt über Ollama, mit den eigenen Dateiwerkzeugen, dem Permission-System und Undo. Nach jeder Änderung wird die Datei zurückgelesen und die Syntax geprüft."},
     {id:"n4",label:"Haupt-PC",cat:"hardware",text:"Ryzen 7 7800X3D, Radeon RX 7900 XTX mit 24 GB, Windows 11. Trägt beide Modelle, wenn das Chat-Modell klein genug bleibt."},
     {id:"n5",label:"Raspberry Pi 4",cat:"hardware",text:"2 GB RAM, SD-Karte. Kandidat für Dauerdienste, nicht für das schwere Modell."},
     {id:"n6",label:"Chat-Modell",cat:"projekt",text:"Ollama-Modell für Gespräch, Planung und Gedächtnisabruf. Muss verlässlich Tools aufrufen — genau daran scheiterte llama3.2:3b."},
-    {id:"n7",label:"Code-Modell",cat:"projekt",text:"qwen3-coder:30b, angesprochen über CodePilot statt direkt. Liefert Diffs und Testausgaben als überprüfbares Ergebnis."},
+    {id:"n7",label:"Code-Modell",cat:"projekt",text:"qwen3-coder:30b, direkt über Ollama. Jede Dateiänderung läuft durch denselben Werkzeugpfad wie alles andere und ist damit protokolliert und rückgängig zu machen."},
     {id:"n8",label:"Deutsch",cat:"vorliebe",text:"Jarvis antwortet auf Deutsch."},
     {id:"n9",label:"Lokal statt Cloud",cat:"vorliebe",text:"Läuft lokal. Keine laufenden API-Kosten, private Daten bleiben auf dem Rechner."},
     {id:"n10",label:"Direct Action Router",cat:"skill",text:"Eindeutige Befehle werden deterministisch erkannt und direkt an das Werkzeug geleitet, statt sie dem Modell zu überlassen. Löste die Dateierstellung."},
@@ -1236,7 +1235,7 @@ let live=false;
 const MODES=["chat","code","agent"];
 const MODE_LABEL={chat:"Chat-Modus",code:"Code-Modus",agent:"Agent-Modus"};
 const MODE_PLACEHOLDER={chat:"Befehl oder Frage an Jarvis …",
-  code:"Programmieraufgabe für CodePilot …",
+  code:"Programmieraufgabe — Jarvis ändert die Dateien selbst …",
   agent:"Komplexe, mehrstufige Aufgabe für den Agent Mode …"};
 let modeIdx=0;
 function updateModeButton(){
@@ -1350,10 +1349,10 @@ const SCR=[
    text:"Die Datei <code>notizen.txt</code> liegt auf dem Desktop.",
    ev:"write_file → <b>success=true</b> · C:\\Users\\SohndesDrachen\\Desktop\\notizen.txt · 84 Bytes · 41 ms",prov:"tool"},
   {ask:"Bau in meinem Repo einen Test für die Pfadprüfung und lass ihn laufen.",
-   plan:"Aufgabe ist Code → weiterreichen an <b>codepilot_task</b>",tool:"codepilot_task",
+   plan:"Aufgabe ist Code → Code-Modell ändert die Datei selbst",tool:"write_file",
    run:"qwen3-coder:30b über Claude Code · 3 Werkzeugaufrufe",
    text:"Test geschrieben und ausgeführt: <code>test_paths.py</code>, 4 Fälle, alle grün.",
-   ev:"codepilot_task → <b>success=true</b> · +38 −0 in tests/test_paths.py · pytest: 4 passed · 6,2 s",prov:"tool"},
+   ev:"write_file → <b>success=true</b> · tests/test_paths.py · 1,2 kB · Syntax geprüft: in Ordnung",prov:"tool"},
   {ask:"Mach einen Screenshot und sag mir, was offen ist.",
    plan:"suche Werkzeug für Bildschirmaufnahme",tool:null,run:null,
    text:"Das kann ich aktuell noch nicht ausführen, weil mir dafür kein Tool zur Verfügung steht.",
@@ -1402,17 +1401,6 @@ window.JARVIS={
   models(list){ list.forEach((m,i)=>{ if(!BRAINS[i]) return;
     BRAINS[i].id=m.id||"—"; BRAINS[i].vram=m.vram||0; BRAINS[i].on=m.loaded?1:0;
     if(m.via) BRAINS[i].via=m.via; }); renderBrains(); },
-  codepilotStatus(s){
-    if(!BRAINS[1]) return;
-    const probleme=Array.isArray(s.problems)?s.problems:[];
-    let lvl="off", text="Nicht eingerichtet";
-    if(s.configured){
-      if(!s.running){ lvl="off"; text="Nicht gestartet"; }
-      else if(probleme.length){ lvl="warn"; text="Läuft · "+probleme.join(" · "); }
-      else { lvl="ok"; text="Läuft · bereit"; }
-    }
-    BRAINS[1].cps={lvl,text}; renderBrains();
-  },
   whisperStatus(configured){
     const rt=$("whisperRt");
     rt.textContent=configured?"eingerichtet":"kein Schlüssel";
@@ -1451,7 +1439,6 @@ function applyHello(m){
   if(Array.isArray(m.modelle)) JARVIS.models(m.modelle);
   if(Array.isArray(m.werkzeuge)) JARVIS.tools(m.werkzeuge);
   if(m.telemetrie) JARVIS.telemetry(m.telemetrie);
-  if(m.codepilot_status) JARVIS.codepilotStatus(m.codepilot_status);
   if(typeof m.whisper_configured==="boolean") JARVIS.whisperStatus(m.whisper_configured);
   if(m.gedaechtnis && Array.isArray(m.gedaechtnis.nodes)){
     // Der Server führt das Gedächtnis. Seine Fassung gewinnt.
@@ -1485,7 +1472,6 @@ function onFrame(m){
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
       break;
     case "telemetry": JARVIS.telemetry(m); break;
-    case "codepilot_status": JARVIS.codepilotStatus(m); break;
     case "memory":
       if(Array.isArray(m.nodes) && !$("insIn").contains(document.activeElement)){
         MEM = {nodes: m.nodes, links: m.links || []};
@@ -1559,7 +1545,7 @@ setTimeout(() => {
   say({who:"jarvis",prov:"talk",
     text:"Kommandozentrale geladen. Es besteht <b>keine</b> Verbindung zu einem Jarvis-Server — "
        +"ich kann daher nichts auf deinem Rechner tun. „Ablauf abspielen“ zeigt dreimal, "
-       +"wie ein echter Vorgang aussieht: eine Datei, ein Coding-Auftrag über CodePilot, "
+       +"wie ein echter Vorgang aussieht: eine Datei, ein Coding-Auftrag, "
        +"und ein Fall, für den das Werkzeug fehlt."});
 }, 1200);
 })();

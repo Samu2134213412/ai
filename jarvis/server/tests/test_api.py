@@ -31,13 +31,17 @@ def client(config, monkeypatch, fake_ollama, workspace):
     ])
     app.state.agent.client = model
     app.state.model = model
-    # Ein gefälschtes codepilot_task, um den Code-Modus zu prüfen, ohne
-    # echtes CodePilot zu brauchen.
-    app.state.registry.add(Tool(
-        "codepilot_task", "", {"type": "object", "properties": {}},
-        lambda task, project_id="": ToolResult(
-            tool="codepilot_task", ok=True,
-            summary="CodePilot fertig: 1 Datei geändert", evidence={"dateien": 1})))
+    # Der Code-Modus benutzt seit dem Ausbau von CodePilot ein eigenes
+    # Modell (``agent.code_client``). Hier bekommt es seine eigene Abfolge,
+    # damit ein Code-Zug den Chat-Zug nicht aus dem Takt bringt.
+    code_model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(workspace / "aus_dem_code_modus.py"),
+            "content": "def f():\n    return 1\n"})]),
+        ChatTurn(text="Funktion angelegt."),
+    ])
+    app.state.agent.code_client = code_model
+    app.state.code_model = code_model
     with TestClient(app) as test_client:
         test_client.app_state = app.state
         yield test_client
@@ -51,10 +55,13 @@ def test_health_ist_ohne_token_erreichbar(client):
                for w in body["werkzeuge"])
 
 
-def test_health_traegt_codepilot_status(client):
-    status = client.get("/api/health").json()["codepilot_status"]
-    # In der Test-Konfiguration ist CodePilot nicht eingerichtet.
-    assert status == {"configured": False, "running": False, "problems": []}
+def test_health_nennt_chat_und_code_modell(client):
+    """Beide Modelle gehen direkt an Ollama -- seit CodePilot raus ist, gibt
+    es keine Kette mehr dazwischen, über die etwas 'via' laufen könnte."""
+    modelle = client.get("/api/health").json()["modelle"]
+    assert len(modelle) == 2
+    assert all(m["via"] == "Ollama · direkt" for m in modelle)
+    assert modelle[1]["id"] == "qwen3-coder:30b"
 
 
 def test_health_traegt_whisper_configured(client):
@@ -173,12 +180,15 @@ def test_gedaechtnissuche(client):
 
 
 # ══════════════════════════════════════════════════════════════ Ein Zug
-def test_code_modus_ueber_http_geht_am_chat_modell_vorbei(client):
+def test_code_modus_ueber_http_geht_am_chat_modell_vorbei(client, workspace):
     body = client.post("/api/command",
                        json={"text": "bau was", "mode": "code"}).json()
     assert body["provenance"] == "tool"
-    assert "CodePilot fertig" in body["text"]
-    assert body["evidence"][0]["tool"] == "codepilot_task"
+    # Das Chat-Modell wurde nicht einmal gefragt.
+    assert client.app_state.model.calls == []
+    assert (workspace / "aus_dem_code_modus.py").exists()
+    assert body["evidence"][0]["tool"] == "write_file"
+    assert "aus_dem_code_modus.py" in body["text"]
 
 
 def test_kommando_ueber_http_liefert_beleg(client, workspace):
@@ -219,7 +229,7 @@ def test_code_modus_ueber_websocket(client):
                 break
         assert antwort is not None
         assert antwort["provenance"] == "tool"
-        assert "CodePilot fertig" in antwort["text"]
+        assert "aus_dem_code_modus.py" in antwort["text"]
 
 
 def test_beide_geraete_sehen_denselben_zug(client):

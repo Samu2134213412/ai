@@ -148,7 +148,7 @@ Jedes Werkzeug trägt eine Sicherheitsstufe (`permissions.py`):
 | `SAFE` | `read_file`, `list_dir`, `memory_search` | immer |
 | `READ` | `get_system_info`, `get_cpu_info`, `get_ram_info` | per Vorgabe ja, konfigurierbar |
 | `WRITE` | `write_file`, `move_file`, `memory_add`, `undo_last_action` | per Vorgabe **nein** |
-| `SYSTEM` | `run_command`, `codepilot_task` | per Vorgabe **nein** |
+| `SYSTEM` | `run_command`, `files.permissions.change` | per Vorgabe **nein** |
 | `CRITICAL` | `delete_file`, `memory_forget` | **nie automatisch, nicht konfigurierbar** |
 
 Verlangt eine Aktion eine Bestätigung, sendet der Server ein
@@ -178,73 +178,76 @@ Werkzeug, Sicherheitsstufe, Argumente, Ergebnis. Filterbar über
 
 ## Code-Modus
 
-Ein dritter Weg, neben Router und Agent: der Schalter „Code-Modus" in der
-Oberfläche. Ist er an, geht **jede** Nachricht direkt an `codepilot_task` —
-ohne Router, ohne Chat-Modell, ohne Interpretation.
+Ein dritter Weg, neben Router und Agent: der Schalter Code-Modus in der
+Oberfläche. Ist er an, geht **jede** Nachricht an das Code-Modell — ohne
+Router, ohne Chat-Modell, ohne Interpretation.
 
-Das ist kein Sonderfall des Agenten, sondern bewusst ein eigener, einfacherer
-Pfad: der Nutzer hat den Modus selbst eingeschaltet, das ist die eindeutigste
-Aussage, die es geben kann — eindeutiger als jedes erkannte Muster im Text.
-Ist CodePilot nicht eingerichtet, kommt die ehrliche Absage statt eines
-Rateversuchs (`agent.handle_code`, `tests/test_agent.py`).
+Das ist kein Sonderfall des Agenten, sondern bewusst ein eigener Pfad: der
+Nutzer hat den Modus selbst eingeschaltet, das ist die eindeutigste Aussage,
+die es geben kann — eindeutiger als jedes erkannte Muster im Text.
 
-### CodePilot startet sich selbst
+### Jarvis programmiert selbst (seit dem Ausbau von CodePilot)
 
-Läuft CodePilot bei einer Codeaufgabe nicht, startet Jarvis es — **erst dann,
-nicht beim Hochfahren**. Der Grund ist das VRAM: `qwen3-coder:30b` belegt rund
-18 GB, die sonst dem Chat-Modell fehlen. Ein Dienst, der dauerhaft mitläuft,
-nur damit er vielleicht gebraucht wird, kostet genau die Ressource, um die es
-hier knapp ist.
+Früher lief der Code-Modus über CodePilot Remote:
 
-Der Beleg sagt hinterher, was passiert ist: `codepilot: lief bereits` oder
-`codepilot: von Jarvis gestartet (12 s)`. Klappt der Start nicht, endet die
-Aufgabe mit der Begründung und den letzten Zeilen aus
-`~/.jarvis/codepilot-start.log` — kein stiller Fehlschlag.
+```
+Jarvis → HTTP → CodePilot → Claude Code → Ollama
+```
+
+Drei Dienste zwischen der Frage und dem Modell, von denen jeder einzeln
+laufen und eingerichtet sein musste. War einer davon nicht da, konnte der
+Code-Modus **gar nichts** — und weil `codepilot.project_id` in einer frischen
+Installation leer ist, war genau das der Normalzustand.
+
+Jetzt:
+
+```
+Jarvis → Ollama (qwen3-coder:30b)
+```
+
+Das Code-Modell ist ein zweiter Draht zu demselben Ollama, mit niedrigerer
+Temperatur (bei Code ist Erfindungsreichtum keine Tugend) und längerem
+Timeout (ein 30B-Modell braucht beim ersten Aufruf Zeit zum Laden).
+
+Der Gewinn ist nicht nur eine kürzere Kette. Jede Dateiänderung läuft jetzt
+durch `Agent._run_tool` und damit durch **Permission-System, Undo-Snapshot und
+Audit Log** — dieselben drei Schichten wie bei jeder anderen Aktion. Beim
+Umweg über CodePilot hat ein fremder Prozess die Dateien geschrieben; Jarvis
+hat nur dessen Bericht weitergereicht und konnte ihn weder prüfen noch
+zurücknehmen. Eine Codeänderung lässt sich heute mit `POST /api/undo`
+zurücknehmen.
+
+### Was der Code-Modus bekommt
+
+Eine **eingegrenzte** Werkzeugauswahl (`coder.CODE_TOOLS`, rund zwanzig)
+statt des ganzen Katalogs: lesen, suchen, schreiben, ausführen. Ein
+Code-Auftrag braucht keine Audiogeräte und keine Firewall. Weniger Werkzeuge
+heißt außerdem weniger Kontext pro Anfrage und damit mehr Platz für den
+eigentlichen Code.
+
+### Nachprüfung statt Vertrauen
+
+Nach den Änderungen liest Jarvis jede geänderte Datei über ein echtes
+`read_file` **zurück** und prüft, was prüfbar ist — Python-Syntax über
+`ast.parse`, JSON über `json.loads`. Ist die Datei danach kaputt, ist das
+Ergebnis ein **Fehlschlag**, kein Erfolg mit Fußnote, auch wenn das Modell
+fertig gemeldet hat.
+
+Derselbe Gedanke wie die Verification Engine aus Autonomy V1: die Rückmeldung
+des schreibenden Werkzeugs allein ist zu wenig; erst ein zweiter,
+unabhängiger Lesevorgang zeigt, was wirklich in der Datei steht.
+
+Die Antwort an den Nutzer entsteht aus den geänderten Dateien plus dem
+Prüfergebnis, nie aus dem Satz des Modells. Behauptet das Modell eine
+Änderung, die kein Werkzeug belegt, verwirft der Wächter den Text.
 
 | Feld in `jarvis.json` | |
 |---|---|
-| `codepilot.autostart` | `true` (Vorgabe). `false` heißt: nur von Hand starten |
-| `codepilot.start_dir` | leer = CodePilot im Repo neben `jarvis/` suchen |
-| `codepilot.start_timeout` | Sekunden, die auf „antwortet" gewartet wird (90) |
-
-Der gestartete Prozess ist losgelöst und überlebt einen Neustart von Jarvis.
-Zwei gleichzeitige Codeaufgaben starten ihn nur einmal (`tests/test_codepilot_start.py`).
-
-### Wenn ein Coding-Auftrag scheitert
-
-Bevor die Aufgabe abgeschickt wird, liest Jarvis CodePilots eigenen
-Umgebungsbericht (`/api/status`). Fehlt dort Claude Code, Ollama oder das
-Code-Modell, bricht er **sofort** mit dieser Auskunft ab, statt eine Minute auf
-einen Auftrag zu warten, der scheitern muss.
-
-Scheitert er trotzdem, steht der Grund in der Antwort: `codepilot_task` liest
-ihn aus dem `session.failed`-Ereignis und aus dem `error`-Feld der Sitzung.
-Vorher meldete die Brücke nur „Status: failed" und verschwieg, was CodePilot
-selbst längst wusste — ein Fehlschlag ohne Begründung ist fast so schlecht wie
-ein erfundener Erfolg.
-
-Den ganzen Strang prüft CodePilot selbst:
-
-```powershell
-cd %USERPROFILE%\jarvis-projekt
-start.bat --doctor
-```
-
-## Statusmelder für CodePilot
-
-Die Oberfläche zeigt unter „Modelle" live, ob CodePilot läuft und ob die Kette
-dahinter (Claude Code, Ollama, das Coder-Modell) bereit ist — ohne dass jemand
-in ein Konsolenfenster schauen muss:
-
-* **grau** „Nicht eingerichtet" / „Nicht gestartet"
-* **gelb** „Läuft · <Problem>" — z. B. Ollama oder das Modell fehlt
-* **grün** „Läuft · bereit"
-
-Der Server prüft das alle vier Sekunden (`registry.codepilot_link.status_snapshot()`,
-niemals wirft diese Methode selbst — ein Fehler beim Prüfen zählt als „nicht
-bereit", nicht als Absturz der Statusschleife) und schickt nur eine Meldung,
-wenn sich der Zustand ändert (`codepilot_status` über WebSocket, dasselbe Feld
-auch in `/api/health` und im `hello`-Frame).
+| `code.model` | Das Code-Modell (Vorgabe `qwen3-coder:30b`). Leer = dasselbe wie im Chat |
+| `code.max_rounds` | Werkzeugrunden je Auftrag (14) |
+| `code.temperature` | Vorgabe 0.1 |
+| `code.timeout` | Sekunden je Modellanfrage (600) |
+| `code.auto_check` | Nach Änderungen automatisch nachprüfen (an) |
 
 ## Speech-to-Text (Whisper)
 
@@ -298,7 +301,6 @@ ist der Hosenträger.
 | `memory_forget` | **CRITICAL** — löscht eine Erinnerung endgültig |
 | `undo_last_action` `list_undoable` | letzte(n) Änderung(en) rückgängig machen bzw. ansehen |
 | `run_command` | **aus per Voreinstellung**, Allowlist nötig |
-| `codepilot_task` | nur wenn CodePilot eingerichtet ist |
 
 Noch nicht gebaut und in der Oberfläche als „fehlt" sichtbar: `screen_capture`,
 `web_search`, `mouse_keyboard`, `open_program`.
@@ -327,7 +329,7 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
   "ollama_url": "http://127.0.0.1:11434",
   "roots": ["C:\\Users\\DeinName\\Desktop"],
   "shell": {"enabled": false, "allowlist": [], "timeout": 60},
-  "codepilot": {"url": "http://127.0.0.1:8765", "token": "", "project_id": ""},
+  "code": {"model": "qwen3-coder:30b", "max_rounds": 14, "auto_check": true},
   "whisper": {"api_key": "", "model": "whisper-1", "timeout": 30},
   "permissions": {"confirm_read": false, "confirm_write": true,
                   "confirm_system": true, "confirmation_timeout": 300.0}
@@ -338,9 +340,12 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
 einstellbar. SAFE ist immer automatisch erlaubt, CRITICAL immer
 bestätigungspflichtig — beides absichtlich **kein** Feld hier.
 
-`codepilot.token` ist ein Gerätetoken aus CodePilot Remote (`server/`), die
-`project_id` das dortige Projekt. Erst wenn beides steht, erscheint
-`codepilot_task` als verfügbares Werkzeug.
+`code.model` muss in Ollama vorhanden sein (`ollama pull qwen3-coder:30b`).
+Fehlt es, meldet `/api/health` es als nicht geladen, und der Code-Modus sagt
+beim ersten Auftrag ehrlich, dass das Modell nicht erreichbar ist.
+
+Ein alter `codepilot`-Block in der Datei stört nicht: unbekannte Abschnitte
+werden beim Laden ignoriert.
 
 ## Schnittstelle
 
@@ -363,7 +368,7 @@ bestätigungspflichtig — beides absichtlich **kein** Feld hier.
 | `GET /api/decisions` | protokollierte Abwägungen der Decision Engine |
 | `POST`/`GET /api/events` | ein Ereignis melden / letzte Ereignisse und offene Vorschläge |
 | `POST /api/proactive/{id}` | einem proaktiven Vorschlag zustimmen oder ihn ablehnen |
-| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, CodePilot-Status, Permission-Anfragen, Task- und Ziel-Ereignisse |
+| `WS /ws` | Zustand, Nachrichten, Telemetrie, Gedächtnis, Permission-Anfragen, Task- und Ziel-Ereignisse |
 
 Ein Zug geht an **alle** offenen Verbindungen. Was am PC angefangen wird, läuft
 auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtnis.
@@ -371,10 +376,10 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 321 Tests
+python -m pytest -q      # 355 Tests
 ```
 
-Sie brauchen weder Ollama noch CodePilot noch einen echten Whisper-Schlüssel:
+Sie brauchen weder Ollama noch einen echten Whisper-Schlüssel:
 das Modell wird durch ein vorgegebenes ersetzt (damit sich auch prüfen lässt,
-was passiert, wenn es lügt), und CodePilot sowie Whisper laufen gegen einen
+was passiert, wenn es lügt), und Whisper läuft gegen einen
 echten Mini-HTTP-Server statt einen gefälschten Client.

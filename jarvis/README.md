@@ -19,38 +19,48 @@ die ein überprüfbares Ergebnis zurückgeben.
 
 ## Zwei Modelle, ein Manager
 
-Jarvis benutzt **zwei** Ollama-Modelle mit klar getrennten Aufgaben. Das zweite
-spricht er nicht direkt an, sondern über CodePilot Remote — das Projekt, das in
-diesem Repo bereits fertig unter `server/` liegt.
+Jarvis benutzt **zwei** Ollama-Modelle mit klar getrennten Aufgaben — beide
+direkt, ohne Dienst dazwischen.
 
 ```
    Handy                         PC
      └──────────────┬─────────────┘
                     │  HTTP + WebSocket
          ┌──────────▼───────────┐
-         │   Jarvis-Server      │   Router · Gedächtnis · Skills
+         │   Jarvis-Server      │   Router · Gedächtnis · Werkzeuge
          └──┬────────────────┬──┘
             │                │
   Gespräch, │                │ alles, was Code ist
   Planen,   │                │
   Erinnern  │                │
-     ┌──────▼──────┐   ┌─────▼──────────────────┐
-     │   Ollama    │   │  CodePilot Remote       │
-     │ Chat-Modell │   │   → Claude Code (CLI)   │
-     │   ~7–8 B    │   │   → Ollama qwen3-coder  │
-     └─────────────┘   └─────┬──────────────────┘
+     ┌──────▼──────┐   ┌─────▼───────────┐
+     │   Ollama    │   │     Ollama      │
+     │ Chat-Modell │   │ qwen3-coder:30b │
+     │   ~7–14 B   │   │                 │
+     └─────────────┘   └─────┬───────────┘
                              │
-                   Dateien · Terminal · Git · Tests
+              dieselben Werkzeuge wie überall:
+           Dateien · Suche · Terminal · Permission
+                 · Undo · Audit Log
 ```
 
 Der Gewinn liegt nicht in der Zahl der Modelle, sondern darin, **was
-zurückkommt**. Ein Coding-Auftrag an CodePilot endet mit einem Diff und einer
-Testausgabe. Das ist ein Beleg. Ein Chat-Modell, das behauptet, den Code
-geschrieben zu haben, ist keiner.
+zurückkommt**. Ein Code-Auftrag endet damit, dass Jarvis die geänderte Datei
+zurückliest und ihre Syntax prüft. Das ist ein Beleg. Ein Modell, das
+behauptet, den Code geschrieben zu haben, ist keiner.
 
-Damit gilt die Grundregel des Projekts auch eine Ebene höher: **der Coding-Agent
-ist selbst nur ein Werkzeug**, und `codepilot_task` meldet Erfolg genau dann,
-wenn CodePilot einen gemeldet hat.
+Bis vor Kurzem lief der Code-Modus über CodePilot Remote (das Projekt unter
+`server/` in diesem Repo). Das war eine Kette aus drei Diensten, von denen
+jeder laufen musste — und weil in einer frischen Installation keine
+Projekt-ID eingetragen ist, konnte der Code-Modus in der Praxis meistens gar
+nichts. Seit dem Ausbau spricht Jarvis das Code-Modell selbst an. Der
+wichtigere Gewinn: **jede Dateiänderung läuft jetzt durch Jarvis' eigenen
+Werkzeugpfad** und ist damit bestätigungspflichtig, protokolliert und
+rückgängig zu machen. Vorher hat ein fremder Prozess geschrieben, und Jarvis
+hat nur dessen Bericht weitergereicht.
+
+CodePilot Remote bleibt als eigenständiges Projekt im Repo erhalten — Jarvis
+hängt nur nicht mehr davon ab.
 
 ### Warum nicht ein Modell für beides
 
@@ -92,15 +102,15 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (321 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (355 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * Direct Action Router für eindeutige Befehle
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf
-* `codepilot_task` als Brücke zum Coding-Agenten, per Werkzeugaufruf oder über den Code-Modus-Schalter, der ihn direkt anspricht
+* Code-Modus: das Code-Modell direkt über Ollama, mit denselben Werkzeugen, demselben Permission-System und derselben Undo-Historie wie alles andere — und einer Syntaxprüfung nach jeder Änderung
 * WebSocket an alle Geräte gleichzeitig
-* Speech-to-Text über Whisper (eigener API-Schlüssel), CodePilot-Statusmelder
+* Speech-to-Text über Whisper (eigener API-Schlüssel)
 * **Phase 1 (Agent Mode):** Planner/Executor mit Error Recovery, Task History,
   ein fünfstufiges Permission-System (SAFE…CRITICAL) mit echtem
   Bestätigungs-Round-Trip, ein Undo-System, ein filterbares Audit Log —

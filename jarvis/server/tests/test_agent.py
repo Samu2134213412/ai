@@ -219,55 +219,96 @@ async def test_ollama_ausfall_wird_als_fehler_gemeldet_nicht_verschwiegen(
 
 
 # ═════════════════════════════════════════════════════════ Code-Modus
-async def test_code_modus_geht_direkt_ans_werkzeug_ohne_modell_zu_fragen(
-        config, store, registry, fake_ollama):
+async def test_code_modus_aendert_die_datei_wirklich(
+        config, store, registry, workspace, fake_ollama):
     """Der Code-Modus ist bewusst vom Nutzer gewählt -- eindeutiger als jedes
-    erkannte Muster im Text. Er geht daher immer direkt an codepilot_task,
-    ohne das Chat-Modell überhaupt zu befragen."""
-    from jarvis.tools.base import Tool, ToolResult
-    registry.add(Tool("codepilot_task", "", {"type": "object", "properties": {}},
-                      lambda task, project_id="": ToolResult(
-                          tool="codepilot_task", ok=True,
-                          summary="CodePilot fertig: 1 Datei geändert",
-                          evidence={"dateien": 1})))
-    model = fake_ollama([ChatTurn(text="darf nie gebraucht werden")])
+    erkannte Muster im Text. Er geht daher direkt an das Code-Modell, mit
+    Jarvis' eigenen Werkzeugen, und prüft danach nach."""
+    ziel = workspace / "modul.py"
+    ziel.write_text("def f():\n    return 1\n", encoding="utf-8")
+    model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("read_file", {"path": str(ziel)})]),
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f():\n    return 42\n"})]),
+        ChatTurn(text="Rückgabewert angepasst."),
+    ])
     agent = make_agent(config, store, registry, model)
 
-    reply = await agent.handle_code("Schreib einen Test für die Pfadprüfung")
+    reply = await agent.handle_code("Lass f() 42 zurückgeben")
 
-    assert model.calls == []
+    assert ziel.read_text(encoding="utf-8") == "def f():\n    return 42\n"
     assert reply.provenance == guard.TOOL
-    assert reply.blocked is False
-    assert "CodePilot fertig" in reply.text
+    assert "modul.py" in reply.text
+    assert "Syntax geprüft" in reply.text
 
 
-async def test_code_modus_ohne_codepilot_ist_eine_ehrliche_absage(
-        config, store, registry, fake_ollama):
-    """registry hat standardmäßig kein codepilot_task, weil in der Test-
-    Konfiguration kein CodePilot eingerichtet ist."""
-    model = fake_ollama([])
+async def test_code_modus_meldet_kaputte_syntax_statt_erfolg(
+        config, store, registry, workspace, fake_ollama):
+    """Das Modell sagt "fertig", die geschriebene Datei ist aber kaputt.
+    Dann ist das Ergebnis ein Fehlschlag -- kein Erfolg mit Fußnote."""
+    ziel = workspace / "kaputt.py"
+    model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f(:\n    return\n"})]),
+        ChatTurn(text="Alles erledigt!"),
+    ])
     agent = make_agent(config, store, registry, model)
 
-    reply = await agent.handle_code("Bau mir eine Funktion, die X macht")
+    reply = await agent.handle_code("Bau die Funktion")
 
-    assert model.calls == []
     assert reply.provenance == guard.FAIL
-    assert "codepilot_task" in reply.text
+    # Der Wächter ersetzt die Zusammenfassung durch seine eigene ehrliche
+    # Fassung -- die den Grund trotzdem beim Namen nennt.
+    assert "kaputt.py" in reply.text
+    assert "invalid syntax" in reply.text
+    assert "Alles erledigt" not in reply.text
 
 
-async def test_code_modus_meldet_einen_echten_fehlschlag_ehrlich(
+async def test_code_modus_ohne_werkzeugaufruf_behauptet_nichts(
         config, store, registry, fake_ollama):
-    from jarvis.tools.base import Tool, ToolResult
-    registry.add(Tool("codepilot_task", "", {"type": "object", "properties": {}},
-                      lambda task, project_id="": ToolResult(
-                          tool="codepilot_task", ok=False,
-                          summary="CodePilot nicht erreichbar")))
-    agent = make_agent(config, store, registry, fake_ollama([]))
+    """Das Modell redet nur und ruft kein Werkzeug auf. Dann darf am Ende
+    keine Änderung gemeldet werden -- der Wächter greift wie überall."""
+    model = fake_ollama([ChatTurn(text="Ich habe die Datei angepasst.")])
+    agent = make_agent(config, store, registry, model)
+
+    reply = await agent.handle_code("Ändere irgendwas")
+
+    assert reply.provenance != guard.TOOL
+    assert reply.blocked is True
+    assert "angepasst" not in reply.text
+
+
+async def test_code_modus_bekommt_nur_die_code_werkzeuge(
+        config, store, registry, fake_ollama):
+    """Ein Code-Auftrag braucht Dateien und Suche, nicht den ganzen Katalog.
+    Weniger Werkzeuge heißt mehr Platz für den eigentlichen Code."""
+    from jarvis import coder
+    model = fake_ollama([ChatTurn(text="nichts zu tun")])
+    agent = make_agent(config, store, registry, model)
+
+    await agent.handle_code("Schau dir das Projekt an")
+
+    assert model.tool_schemas, "Es wurden gar keine Werkzeuge mitgeschickt"
+    angeboten = {s["function"]["name"] for s in model.tool_schemas[0]}
+    assert "read_file" in angeboten and "write_file" in angeboten
+    assert angeboten <= set(coder.CODE_TOOLS)
+    assert "memory_add" not in angeboten
+    assert len(angeboten) < len(registry)
+
+
+async def test_code_modus_meldet_ein_nicht_erreichbares_modell_ehrlich(
+        config, store, registry):
+    class ToterDraht:
+        async def chat(self, messages, tools=None):
+            from jarvis.ollama import OllamaError
+            raise OllamaError("Verbindung abgelehnt")
+
+    agent = make_agent(config, store, registry, ToterDraht())
 
     reply = await agent.handle_code("Bau was")
 
     assert reply.provenance == guard.FAIL
-    assert "nicht erreichbar" in reply.text
+    assert "Code-Modell ist nicht erreichbar" in reply.text
 
 
 async def test_verlauf_bleibt_erhalten(config, store, registry, fake_ollama):

@@ -14,10 +14,10 @@ sendet ein ``permission.requested``-Ereignis und wartet auf eine Antwort,
 die von außen über :meth:`PermissionGate.resolve` hereinkommt (vom
 WebSocket-Handler in ``app.py``, wenn ein Gerät antwortet). Ein
 ``asyncio.Future`` ist die Brücke dazwischen -- dasselbe Muster wie
-CodePilots ``ApprovalBroker`` (``server/codepilot/bridge/approvals.py``),
-hier eigenständig für Jarvis, weil beide Projekte bewusst getrennte Pakete
-bleiben und Jarvis CodePilot nur über HTTP anspricht, nie als Bibliothek
-importiert.
+CodePilots ``ApprovalBroker`` (``server/codepilot/bridge/approvals.py``) --
+dort abgeschaut, hier eigenständig gebaut. Die beiden Projekte liegen zwar im
+selben Repo, sind aber getrennte Pakete: Jarvis importiert aus CodePilot
+nichts und hängt von ihm nicht ab.
 """
 
 from __future__ import annotations

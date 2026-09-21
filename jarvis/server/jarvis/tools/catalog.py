@@ -175,8 +175,8 @@ class ToolContext:
     #: hier einen Ringschluss ergäbe.
     workspace: Any
     home: Path
-    #: Beliebige Zusatzdienste, die einzelne Packs brauchen (z. B. der
-    #: CodePilot-Link). Packs greifen defensiv darauf zu.
+    #: Beliebige Zusatzdienste, die einzelne Packs brauchen (Undo-Ablage,
+    #: Werkzeug-Historie). Packs greifen defensiv darauf zu.
     services: dict[str, Any] = field(default_factory=dict)
 
 

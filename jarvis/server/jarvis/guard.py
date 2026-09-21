@@ -31,12 +31,21 @@ TOOL = "tool"
 FAIL = "fail"
 
 #: Partizipien, die eine vollzogene Veränderung an der Welt behaupten.
+#:
+#: Die zweite Zeilengruppe kam mit dem Code-Modus dazu: ein Code-Modell sagt
+#: nicht "ich habe die Datei geändert", es sagt "angepasst", "behoben",
+#: "implementiert". Ohne diese Wörter wäre die Behauptungssperre genau dort
+#: blind gewesen, wo sie am nötigsten ist -- ein Modell, das Code beschreibt,
+#: statt ihn zu schreiben, ist der Ausgangsfehler dieses ganzen Projekts.
 _DONE = (
     r"erstellt|angelegt|geschrieben|gespeichert|abgelegt|gelöscht|entfernt|"
     r"verschoben|umbenannt|kopiert|geöffnet|gestartet|ausgeführt|installiert|"
     r"eingerichtet|geändert|aktualisiert|hinzugefügt|heruntergeladen|gesendet|"
     r"verschickt|beendet|geschlossen|erledigt|abgeschlossen|durchgeführt|"
-    r"gelesen|geprüft|überprüft|abgerufen|ausgelesen|aufgerufen|angezeigt"
+    r"gelesen|geprüft|überprüft|abgerufen|ausgelesen|aufgerufen|angezeigt|"
+    r"angepasst|korrigiert|behoben|repariert|implementiert|eingebaut|ergänzt|"
+    r"umgeschrieben|eingefügt|ersetzt|erzeugt|generiert|committet|gepusht|"
+    r"kompiliert|gebaut|getestet|gepackt|entpackt|refaktoriert|umgestellt"
 )
 
 #: Ein Satz behauptet Vollzug, wenn er eines dieser Muster trägt.

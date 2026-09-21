@@ -121,11 +121,15 @@ bauen, sondern dessen bewährte Schichten mitbenutzen.** Jarvis zieht nach
 ## 5. Getroffene Entscheidungen
 
 1. **Zwei Modelle statt einem.** Ein Chat-Modell für Gespräch, Planung und
-   Gedächtnis; `qwen3-coder:30b` für Code, angesprochen über CodePilot Remote
-   statt direkt. Begründung und VRAM-Rechnung in `../jarvis/README.md`.
-2. **Der Coding-Agent ist ein Werkzeug.** `codepilot_task` meldet Erfolg genau
-   dann, wenn CodePilot einen Diff und eine Testausgabe geliefert hat. Damit
-   gilt die Grundregel auch eine Ebene höher.
+   Gedächtnis; `qwen3-coder:30b` für Code. Begründung und VRAM-Rechnung in
+   `../jarvis/README.md`. ~~Angesprochen über CodePilot Remote statt direkt.~~
+   **Überholt, siehe Abschnitt 10:** Jarvis spricht das Code-Modell direkt an.
+2. ~~**Der Coding-Agent ist ein Werkzeug.** `codepilot_task` meldet Erfolg
+   genau dann, wenn CodePilot einen Diff und eine Testausgabe geliefert hat.~~
+   **Überholt, siehe Abschnitt 10:** Der Beleg kommt jetzt aus Jarvis' eigenen
+   Werkzeugergebnissen plus einer Syntaxprüfung der geänderten Dateien. Die
+   Grundregel gilt damit nicht mehr eine Ebene höher, sondern auf derselben
+   Ebene wie überall sonst — und ist dadurch nachprüfbar statt geglaubt.
 3. **Die Oberfläche ist eine Webseite**, keine zwei Apps — damit läuft dieselbe
    Bedienung auf PC und Handy. Liegt in `../jarvis/web/`.
 4. **Farbe trägt Bedeutung.** Cyan = Ruhezustand, Gold = das Modell denkt,
@@ -546,3 +550,114 @@ tools/
 Die Reihenfolge der Umsetzung folgt Punkt 57: erst die Infrastruktur
 vollständig, dann Pack für Pack. Jedes Pack wird einzeln getestet und
 committet, damit der Stand jederzeit lauffähig ist.
+
+---
+
+## 10. Code-Modus: CodePilot ausgebaut, Code-Modell direkt in Jarvis (2026-09-21)
+
+Anlass: Meldung des Projektinhabers, der Code-Modus funktioniere nicht — mit
+der Anweisung, CodePilot zu streichen und die Code-KI direkt in Jarvis zu
+integrieren.
+
+### 10.1 Warum er nicht funktioniert hat
+
+`Agent.handle_code` prüfte `if "codepilot_task" not in self.registry` und gab
+sonst eine Absage zurück. Registriert wurde `codepilot_task` aber nur, wenn
+`config.codepilot.project_id` **und** `token` gesetzt waren *und* CodePilot
+Remote lief. In einer frischen Installation ist die Projekt-ID leer — der
+Code-Modus war also im Normalfall eine Absage, kein Fehler.
+
+Die Kette dahinter war:
+
+```
+Jarvis → HTTP → CodePilot Remote → Claude Code (CLI) → Ollama
+```
+
+Drei Dienste zwischen der Frage und dem Modell, jeder einzeln zu starten und
+einzurichten.
+
+### 10.2 Was jetzt passiert
+
+```
+Jarvis → Ollama (qwen3-coder:30b)
+```
+
+* **`coder.py`** (neu): Systemprompt für Code, eine eingegrenzte
+  Werkzeugauswahl (`CODE_TOOLS`, 23 Namen statt des ganzen Katalogs), die
+  Auswertung dessen, was wirklich geändert wurde, und die Syntaxprüfung.
+* **`Agent.handle_code`**: läuft über `_run_tool_loop`, das jetzt einen
+  eigenen Client, eine eigene Werkzeugliste, einen eigenen Systemprompt und
+  ein eigenes Rundenlimit annimmt. **Kein zweiter Ausführungspfad** — dieselbe
+  Schleife wie der Agent-Modus, nur anders parametriert.
+* **`CodeConfig`** ersetzt `CodePilotConfig`: Modell, Runden, Temperatur,
+  Timeout, automatische Nachprüfung.
+* Ein zweiter `OllamaClient` in `app.py` mit dem Code-Modell, niedrigerer
+  Temperatur und längerem Timeout.
+
+### 10.3 Der eigentliche Gewinn: der Werkzeugpfad
+
+Beim Umweg über CodePilot hat ein **fremder Prozess** die Dateien geschrieben.
+Jarvis hat dessen Bericht weitergereicht und konnte ihn weder prüfen noch
+zurücknehmen. Jetzt läuft jede Codeänderung durch `Agent._run_tool` und damit
+durch dieselben drei Schichten wie jede andere Aktion:
+
+| | vorher (CodePilot) | jetzt |
+|---|---|---|
+| Permission-System | umgangen — CodePilot hatte eigene MCP-Freigaben | `write_file` ist WRITE, fragt nach Richtlinie |
+| Undo | nicht möglich | `POST /api/undo` stellt den alten Inhalt wieder her |
+| Audit Log | ein Eintrag „codepilot_task ok" | jeder einzelne Werkzeugaufruf mit Stufe und Argumenten |
+| Nachprüfung | Diff + Testausgabe von CodePilot | Jarvis liest die Datei selbst zurück und prüft die Syntax |
+
+Die Nachprüfung folgt der Verification Engine aus Autonomy V1: die Rückmeldung
+des schreibenden Werkzeugs allein ist zu wenig. Ist die Datei nach dem
+Schreiben syntaktisch kaputt, ist das Ergebnis ein **Fehlschlag**, auch wenn
+das Modell „fertig" gesagt hat.
+
+### 10.4 Eine Lücke im Wächter, die dabei aufgefallen ist
+
+`guard._DONE` kannte „geändert" und „aktualisiert", aber **nicht** „angepasst",
+„behoben", „implementiert", „ergänzt" — genau die Wörter, mit denen ein
+Code-Modell eine Änderung behauptet. Die Behauptungssperre war also
+ausgerechnet dort blind, wo sie am nötigsten ist: bei einem Modell, das Code
+beschreibt, statt ihn zu schreiben. Das ist der Ausgangsfehler dieses ganzen
+Projekts.
+
+Aufgefallen ist das, weil ein neuer Test genau diesen Fall prüft: das Modell
+sagt „Ich habe die Datei angepasst" und ruft kein Werkzeug auf. Vorher ging
+der Satz durch.
+
+Zwanzig Partizipien ergänzt, satzweise gegen „soll ich", „könnte", „noch
+nicht" geprüft wie bisher. Gegenprobe: Angebote und Fragen laufen weiterhin
+durch.
+
+### 10.5 Was entfernt wurde
+
+`jarvis/tools/codepilot.py` (380 Zeilen), `tests/test_codepilot_task.py`,
+`tests/test_codepilot_start.py`, der Statusmelder in `app.py`, das
+CodePilot-Feld in `/api/health`, die Statusanzeige im Frontend.
+
+**CodePilot Remote selbst (`server/`, `mobile/`) bleibt unangetastet** — es ist
+ein eigenständiges Produkt in diesem Repo. Entfernt wurde nur Jarvis'
+Abhängigkeit davon. `permissions.py` nennt CodePilots `ApprovalBroker`
+weiterhin als Herkunft des Freigabe-Musters; das ist eine Quellenangabe, keine
+Abhängigkeit.
+
+Eine bestehende `jarvis.json` mit `codepilot`-Block stört nicht: `from_dict`
+verwirft unbekannte Abschnitte. Live geprüft — der Server startet damit ohne
+Beanstandung.
+
+### 10.6 Live geprüft
+
+Gegen einen echten HTTP-Server mit einem Ollama-Doppel, das das Modell und die
+mitgeschickte Werkzeugzahl mitschreibt:
+
+* Der Auftrag ging an **`qwen3-coder:30b`**, nicht an das Chat-Modell, mit
+  **22 Werkzeugen** statt aller 75.
+* Die Datei wurde wirklich geändert (`multipliziere()` ergänzt).
+* Der Beleg zeigt `read_file` → `write_file` → **ein zweites, unabhängiges
+  `read_file`**: die Nachprüfung hat stattgefunden.
+* Das Audit Log führt jeden Aufruf mit seiner Stufe (`write_file` WRITE).
+* `POST /api/undo` hat die Codeänderung zurückgenommen — mit CodePilot war das
+  nicht möglich.
+
+355 Tests grün.

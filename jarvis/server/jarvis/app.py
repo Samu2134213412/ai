@@ -38,10 +38,9 @@ from .whisper import WhisperClient, WhisperError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 TELEMETRY_SECONDS = 3.0
-CODEPILOT_STATUS_SECONDS = 4.0
 
 
-#: "code" geht immer direkt an codepilot_task, ohne das Chat-Modell zu
+#: "code" geht an das Code-Modell (``coder.py``), ohne das Chat-Modell zu
 #: befragen -- der Nutzer hat den Modus bewusst gewählt. "agent" zerlegt den
 #: Auftrag zuerst in Schritte (Planner) und führt sie einzeln aus (Executor,
 #: siehe ``Agent.handle_agent_task``).
@@ -129,6 +128,16 @@ def create_app(config: Config | None = None) -> FastAPI:
                           context_length=config.context_length,
                           temperature=config.temperature,
                           timeout=config.request_timeout)
+    # Ein zweiter Draht zu demselben Ollama, nur mit dem Code-Modell,
+    # niedrigerer Temperatur und längerem Timeout: ein 30B-Modell braucht
+    # beim ersten Aufruf Zeit zum Laden. Steht kein Code-Modell in der
+    # Konfiguration, nimmt der Code-Modus das Chat-Modell -- schlechter,
+    # aber lauffähig statt abwesend.
+    code_client = OllamaClient(url=config.ollama_url,
+                               model=config.code.model or config.model,
+                               context_length=config.context_length,
+                               temperature=config.code.temperature,
+                               timeout=config.code.timeout)
     hub = Hub()
     audit = AuditLog(config.audit_db_path)
     permission_gate = PermissionGate(
@@ -143,7 +152,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     decisions = DecisionEngine(client, audit=audit, log=DecisionLog(config.decision_db_path))
     agent = Agent(config, store, registry, client, emit=hub.send,
                   permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
-                  tasks=tasks, goals=goals, decisions=decisions)
+                  tasks=tasks, goals=goals, decisions=decisions,
+                  code_client=code_client)
     busy = asyncio.Lock()
     bus = EventBus()
     proactive = ProactiveEngine()
@@ -202,32 +212,15 @@ def create_app(config: Config | None = None) -> FastAPI:
                 if values:
                     await hub.send("telemetry", values)
 
-    # ------------------------------------------------- CodePilot-Statusmelder
-    async def codepilot_status_loop() -> None:
-        """Zeigt, ob CodePilot läuft und ob die Kette dahinter bereit ist --
-        ohne dass jemand in ein Konsolenfenster schauen muss."""
-        letzter: dict | None = None
-        while True:
-            await asyncio.sleep(CODEPILOT_STATUS_SECONDS)
-            if not hub.count or not registry.codepilot_link.configured:
-                continue
-            status = await asyncio.to_thread(registry.codepilot_link.status_snapshot)
-            if status != letzter:
-                letzter = status
-                await hub.send("codepilot_status", status)
-
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
         ticker = asyncio.create_task(telemetry_loop())
-        codepilot_ticker = asyncio.create_task(codepilot_status_loop())
         try:
             yield
         finally:
-            for task in (ticker, codepilot_ticker):
-                task.cancel()
-            for task in (ticker, codepilot_ticker):
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+            ticker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ticker
 
     app = FastAPI(title="Jarvis", version="0.1.0", lifespan=lifespan)
     app.state.config = config
@@ -275,9 +268,11 @@ def create_app(config: Config | None = None) -> FastAPI:
             "modelle": [
                 {"id": config.model, "loaded": health.model_present,
                  "via": "Ollama · direkt"},
-                {"id": config.codepilot.project_id and "qwen3-coder:30b" or "—",
-                 "loaded": "codepilot_task" in registry,
-                 "via": "CodePilot → Claude Code → Ollama"},
+                # Das Code-Modell. "loaded" meldet, ob Ollama es wirklich
+                # vorrätig hat -- nicht, ob es in der Konfiguration steht.
+                {"id": config.code.model or config.model,
+                 "loaded": (config.code.model or config.model) in health.models,
+                 "via": "Ollama · direkt"},
             ],
             "ollama": {"online": health.online, "version": health.version,
                        "modell_vorhanden": health.model_present,
@@ -287,7 +282,6 @@ def create_app(config: Config | None = None) -> FastAPI:
             "shell_aktiv": config.shell.enabled,
             "probleme": config.validate(),
             "geraete": hub.count,
-            "codepilot_status": registry.codepilot_link.status_snapshot(),
             "whisper_configured": whisper.configured,
             "berechtigungen": {
                 "read": permission_gate.policy.requires_confirmation(PermissionLevel.READ),
