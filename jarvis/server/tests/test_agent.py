@@ -264,6 +264,78 @@ async def test_code_modus_meldet_kaputte_syntax_statt_erfolg(
     assert "Alles erledigt" not in reply.text
 
 
+async def test_code_modus_merkt_sich_echte_aenderungen_im_wissensnetz(
+        config, store, registry, workspace, fake_ollama):
+    """Der eigentliche Fehler, den dieser Test nachbildet: der Code-Modus
+    konnte frühere Arbeit nicht "lesen", weil er nie etwas darüber im
+    Langzeitgedächtnis ablegte -- ``_run_tool_loop`` ruft vor jedem Auftrag
+    zwar schon ``store.context_for()`` ab (wie im Chat), aber ohne einen
+    Eintrag, den das findet, bleibt der Abruf leer. Nach einer echten
+    Dateiänderung muss jetzt ein "projekt"-Knoten mit dem echten Pfad im
+    Wissensnetz stehen -- demselben, das der Nutzer in der Oberfläche sieht
+    und von Hand bearbeiten kann."""
+    ziel = workspace / "modul.py"
+    ziel.write_text("def f():\n    return 1\n", encoding="utf-8")
+    model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f():\n    return 42\n"})]),
+        ChatTurn(text="Rückgabewert angepasst."),
+    ])
+    agent = make_agent(config, store, registry, model)
+
+    await agent.handle_code("Lass f() 42 zurückgeben")
+
+    treffer = store.search("f() 42 zurückgeben")
+    assert treffer, "kein Wissensnetz-Eintrag für die echte Änderung angelegt"
+    projekt = treffer[0]
+    assert projekt.kind == "projekt"
+    assert str(ziel) in projekt.text
+
+
+async def test_code_modus_ohne_dateiaenderung_legt_nichts_ab(
+        config, store, registry, fake_ollama):
+    """Nur eine Frage, keine echte Änderung -- keine Projekt-Erinnerung.
+    Sonst würde das Wissensnetz mit leeren Einträgen zumüllen."""
+    model = fake_ollama([ChatTurn(text="Sieht gut aus, keine Änderung nötig.")])
+    agent = make_agent(config, store, registry, model)
+    vorher = len(store.all())
+
+    await agent.handle_code("Schau dir die Datei an")
+
+    assert len(store.all()) == vorher
+
+
+async def test_code_modus_findet_vorige_arbeit_beim_naechsten_auftrag(
+        config, store, registry, workspace, fake_ollama):
+    """Der eigentliche Nutzen im Zusammenspiel: ein zweiter Code-Auftrag mit
+    verwandtem Wortlaut bekommt die zuvor gespeicherte Projekt-Erinnerung
+    tatsächlich in den Kontext gereicht -- also genau das, was als "kann
+    nicht lesen, was ich vorher geschrieben habe" gemeldet wurde."""
+    ziel = workspace / "rechner.py"
+    ziel.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    erster_lauf = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def add(a, b):\n    return a + b  # v2\n"})]),
+        ChatTurn(text="Kommentar ergänzt."),
+    ])
+    agent = make_agent(config, store, registry, erster_lauf)
+    await agent.handle_code("Kommentiere die Funktion in rechner.py")
+
+    gesehene_systemnachrichten: list[str] = []
+
+    class AufzeichnendesModell:
+        async def chat(self, messages, tools=None):
+            gesehene_systemnachrichten.extend(
+                m["content"] for m in messages if m["role"] == "system")
+            return ChatTurn(text="(nur geprüft, was das Modell zu sehen bekommt)")
+
+    agent.code_client = AufzeichnendesModell()
+    await agent.handle_code("Arbeite weiter an rechner.py")
+
+    assert any("rechner.py" in block for block in gesehene_systemnachrichten), (
+        "die frühere Arbeit an rechner.py wurde dem Modell nicht als Kontext gereicht")
+
+
 async def test_code_modus_ohne_werkzeugaufruf_behauptet_nichts(
         config, store, registry, fake_ollama):
     """Das Modell redet nur und ruft kein Werkzeug auf. Dann darf am Ende

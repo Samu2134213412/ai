@@ -241,6 +241,24 @@ Die Antwort an den Nutzer entsteht aus den geänderten Dateien plus dem
 Prüfergebnis, nie aus dem Satz des Modells. Behauptet das Modell eine
 Änderung, die kein Werkzeug belegt, verwirft der Wächter den Text.
 
+### Erinnert sich an frühere Arbeit
+
+`_run_tool_loop` ruft vor jedem Auftrag `store.context_for()` ab -- dieselbe
+Stelle, die auch der Chat vor jeder Anfrage befragt. Das allein reichte aber
+nicht: ohne einen Eintrag, den diese Suche findet, blieb der Abruf leer, und
+ein neuer Code-Auftrag wusste nichts von einem vorigen. Nach jeder Änderung,
+die tatsächlich stattgefunden hat (`CodeOutcome.changes`, belegt durch echte
+`ToolResult`s, nie durch eine Behauptung des Modells), legt der Code-Modus
+jetzt selbst einen Eintrag im Wissensnetz an -- Art `projekt`, mit dem
+Auftrag und den echten Dateipfaden im Text. Ein späterer Auftrag mit
+verwandtem Wortlaut bekommt genau diesen Eintrag automatisch in den Kontext
+gereicht und kann direkt an der richtigen Datei weiterarbeiten, statt bei
+null anzufangen. Der Nutzer sieht denselben Eintrag in der
+Wissensnetz-Ansicht und kann ihn dort von Hand ansehen, ergänzen oder
+löschen (`GET`/`PUT /api/memory`) -- keine zweite, versteckte Ablage.
+
+Ein Auftrag ohne echte Dateiänderung legt nichts ab.
+
 | Feld in `jarvis.json` | |
 |---|---|
 | `code.model` | Das Code-Modell (Vorgabe `qwen3-coder:30b`). Leer = dasselbe wie im Chat |

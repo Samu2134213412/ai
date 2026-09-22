@@ -399,6 +399,7 @@ class Agent:
         if reply.blocked:
             await self.emit("guard.blocked", {
                 "verworfen": reply.blocked_text, "ersetzt_durch": reply.text})
+        self._remember_code_work(task, outcome)
         self._remember(task, reply)
         return reply
 
@@ -1168,3 +1169,34 @@ class Agent:
         cap = self.history_turns * 2
         if len(self.history) > cap:
             self.history = self.history[-cap:]
+
+    def _remember_code_work(self, task: str, outcome: coder.CodeOutcome) -> None:
+        """Speichert echte Code-Fortschritte im Langzeitgedächtnis (Wissensnetz).
+
+        ``self.history`` (siehe ``_remember``) lebt nur im Arbeitsspeicher
+        dieses Prozesses -- ein Serverneustart oder ein neues Gespräch
+        beginnt ganz ohne sie. ``_run_tool_loop`` ruft vor jedem Auftrag
+        bereits ``store.context_for()`` ab (dieselbe Stelle wie im Chat),
+        aber ohne einen Eintrag, den es dort finden kann, bleibt der Abruf
+        leer -- genau das war die Lücke: Jarvis konnte frühere Code-Arbeit
+        nicht "lesen", weil nie etwas darüber abgelegt wurde. Hier wird das
+        nachgeholt, als ``kind="projekt"`` (genau dafür in ``memory.KINDS``
+        vorgesehen) und mit echten Dateipfaden aus ``outcome.changes`` --
+        die kommen aus ToolResult-Belegen, nie aus einer Behauptung des
+        Modells. Ein Auftrag ohne Dateiänderung ist keine Projekt-Erinnerung
+        wert und wird nicht gespeichert. Über das Wissensnetz (``net``-
+        Ansicht) sieht und bearbeitet der Nutzer denselben Eintrag von Hand.
+        """
+        if not outcome.changes:
+            return
+        pfade = list(dict.fromkeys(c.path for c in outcome.changes))
+        text = f"Auftrag: {task}\nGeänderte Datei(en): " + ", ".join(pfade)
+        if outcome.broken:
+            kaputt = ", ".join(f"{c.name} ({c.detail})" for c in outcome.broken)
+            text += f"\nAchtung, Nachprüfung fehlgeschlagen bei: {kaputt}"
+        try:
+            self.store.add(label=task[:70], text=text, kind="projekt")
+        except Exception:  # noqa: BLE001 - eine nicht speicherbare Erinnerung
+            # darf den eigentlichen Code-Auftrag nicht scheitern lassen --
+            # dieselbe Vorsicht wie in _learn().
+            pass

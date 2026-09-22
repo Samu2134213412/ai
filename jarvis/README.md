@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (829 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (832 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 406 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/

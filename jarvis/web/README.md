@@ -44,6 +44,18 @@ erfundenen Bestätigung. Die Telemetriebalken bleiben leer, statt Zahlen zu
 erfinden. Werkzeuge stehen auf „unbestätigt“, solange ihr Zustand nicht am Code
 geprüft wurde.
 
+## Zwei Spalten statt drei
+
+Die Kommandozentrale zeigt links den Dialog (breit, der eigentliche Chat-
+und Code-Verlauf) und rechts eine schmale Spalte mit Modellen, Auslastung
+(dieselbe Werte-Kurve wie vorher, nur umgezogen), Werkzeugen, Verlauf
+(Audit/Undo, siehe unten) und Spracheingabe. Die vorherige, separate
+System-Spalte (CPU/GPU/OS als Rundinstrumente + fest eingetragene
+Hardwarezeilen) ist weg -- die Werte waren größtenteils statischer Text,
+keine echten Systeminformationen wert eines eigenen Bereichs, und der Dialog
+brauchte den Platz mehr. Auf dem Handy bleiben die Bereiche als zwei Reiter
+erreichbar (Dialog/Modelle).
+
 ## Als App auf dem Handy installieren
 
 Die Seite ist eine installierbare PWA (Progressive Web App) — dieselbe
@@ -127,7 +139,7 @@ geht in die Zwischenablage, Import über einen Textprompt.
 
 ## Verlauf: Audit Log + Rückgängig, direkt in der Oberfläche
 
-Im Bereich „Modelle" (dritte Spalte) zeigt die Karte **Verlauf** die letzten
+Im Bereich „Modelle" (rechte Spalte) zeigt die Karte **Verlauf** die letzten
 Audit-Einträge (`GET /api/audit`) und die letzten rückgängig machbaren
 Aktionen (`GET /api/undo`) — beide Wege gab es serverseitig schon lange,
 bisher nur über den Chat oder von Hand über HTTP erreichbar. Ein Klick auf
