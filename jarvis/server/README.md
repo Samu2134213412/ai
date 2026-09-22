@@ -465,6 +465,8 @@ werden beim Laden ignoriert.
 | `POST /api/whisper/transcribe` | Audio → Text über Whisper |
 | `GET /api/audit` | Audit Log, filterbar nach `tool`/`level`/`ok` |
 | `GET /api/undo`, `POST /api/undo` | rückgängig machbare Änderungen ansehen / eine rückgängig machen |
+| `GET /api/tools?q=&category=&tag=` | Werkzeugkatalog: ohne `q` gefiltert durchsuchbar (Tool Explorer), mit `q` dieselbe Rangfolge wie im Chat (Action Search) -- siehe „Tool Discovery" |
+| `POST /api/tools/{name}/{favorite\|unfavorite\|disable\|enable}` | ein Werkzeug direkt umschalten, ohne Umweg über das Modell |
 | `POST /api/permission/resolve` | eine offene Bestätigungsanfrage beantworten |
 | `GET /api/tasks`, `GET /api/tasks/{id}` | Task History (Agent Mode) |
 | `GET /api/goals`, `GET /api/goals/{id}` | verfolgte Ziele mit Fortschritt, Budget und Entscheidungen |

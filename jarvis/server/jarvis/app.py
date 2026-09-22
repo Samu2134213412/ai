@@ -33,7 +33,7 @@ from .ollama import OllamaClient
 from .permissions import PermissionGate, PermissionLevel, PermissionPolicy
 from .tasks import TaskManager
 from .undo import UndoError
-from .tools import build_registry, system as system_tools, tool_status
+from .tools import availability, build_registry, system as system_tools, tool_status
 from .whisper import WhisperClient, WhisperError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -89,6 +89,17 @@ class EventIn(BaseModel):
 
 class ProposalIn(BaseModel):
     approved: bool = False
+
+
+#: Was sich an einem einzelnen Werkzeug von außen umschalten lässt --
+#: dieselbe Handlung wie die ``jarvis.tools.*``-Meta-Werkzeuge (Punkt 36),
+#: hier als direkter HTTP-Weg für die Oberfläche (Punkt 47: Tool Explorer),
+#: ohne den Umweg über das Modell.
+ToolAction = Literal["favorite", "unfavorite", "disable", "enable"]
+
+
+class ToolActionIn(BaseModel):
+    reason: str = Field(default="", max_length=300)
 
 
 class Hub:
@@ -354,6 +365,71 @@ def create_app(config: Config | None = None) -> FastAPI:
         except UndoError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ergebnis": summary}
+
+    # ------------------------------------------------------ Werkzeuge (Punkt 47)
+    # Derselbe Suchindex und dieselbe Historie wie ``jarvis.tools.*`` (Punkt 36),
+    # hier direkt über HTTP statt über einen Modell-Zug -- die Command Palette
+    # und der Tool Explorer im Frontend brauchen eine sofortige Antwort, kein
+    # Werkzeugergebnis, das erst durch ``guard.verify()`` läuft.
+    def tool_row(tool, favorites: set[str], disabled: dict[str, str],
+                score: float | None = None) -> dict:
+        zustand, grund = availability(tool)
+        row = {
+            "id": tool.name, "kategorie": tool.category, "unterkategorie": tool.subcategory,
+            "beschreibung": tool.description, "stufe": tool.level.label, "risiko": tool.risk,
+            "tags": list(tool.tags), "verfuegbarkeit": zustand.value,
+            "verfuegbarkeit_grund": grund, "favorit": tool.name in favorites,
+            "abgeschaltet": tool.name in disabled,
+        }
+        if score is not None:
+            row["punkte"] = round(score, 3)
+        return row
+
+    @app.get("/api/tools", dependencies=Guarded)
+    async def list_tools(q: str = "", category: str = "", tag: str = "",
+                         limit: int = 60) -> dict:
+        """Ohne ``q``: der volle, gefilterte Katalog (Tool Explorer). Mit
+        ``q``: dieselbe Rangfolge wie im Chat (Action Search)."""
+        favorites = set(registry.tool_history.favorites())
+        disabled = registry.tool_history.disabled()
+        begrenzt = min(max(limit, 1), 200)
+        frage = q.strip()
+        if frage:
+            treffer = registry.discovery.search(
+                frage, limit=begrenzt, category=category or None,
+                tags=(tag,) if tag else None)
+            rows = [tool_row(h.tool, favorites, disabled, h.score) for h in treffer]
+        else:
+            auswahl = [t for t in registry
+                      if (not category or t.category == category)
+                      and (not tag or tag in t.tags)]
+            rows = [tool_row(t, favorites, disabled) for t in auswahl[:begrenzt]]
+        return {"werkzeuge": rows, "gesamt_im_katalog": len(registry),
+               "kategorien": registry.categories()}
+
+    @app.post("/api/tools/{tool_name}/{action}", dependencies=Guarded)
+    async def control_tool(tool_name: str, action: ToolAction,
+                           body: ToolActionIn = ToolActionIn()) -> dict:
+        if tool_name not in registry:
+            raise HTTPException(status_code=404, detail=f"Unbekanntes Werkzeug: {tool_name}")
+        real = registry.resolve(tool_name)
+        history = registry.tool_history
+        if action == "favorite":
+            history.favorite(real)
+        elif action == "unfavorite":
+            if not history.unfavorite(real):
+                raise HTTPException(status_code=409, detail=f"{real} war kein Favorit.")
+        elif action == "disable":
+            if real in {"jarvis.tools.enable", "jarvis.tools.disable"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{real} lässt sich nicht abschalten -- sonst gäbe es keinen "
+                          "Weg mehr zurück.")
+            history.disable(real, body.reason)
+        elif action == "enable":
+            if not history.enable(real):
+                raise HTTPException(status_code=409, detail=f"{real} war nicht abgeschaltet.")
+        return {"angefordert": action, "werkzeug": real}
 
     @app.post("/api/permission/resolve", dependencies=Guarded)
     async def resolve_permission(body: PermissionResolveIn) -> dict:

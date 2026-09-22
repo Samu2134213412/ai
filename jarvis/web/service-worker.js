@@ -7,7 +7,18 @@
 // Werkzeug- oder Statusabfrage durch alte Daten ersetzen; das würde die
 // Grundregel des Projekts (kein Erfolg ohne echtes Tool-Result) auf der
 // Oberfläche unterlaufen.
-const CACHE = "jarvis-shell-v1";
+// v2: die alte Prüfung erkannte "trifft das die App-Huelle?" ueber
+// pathname.endsWith(shellEintrag.replace("./","")) -- fuer den Eintrag
+// "./" wird daraus ein LEERER String, und jeder Pfad endet auf "".
+// isShellPath war dadurch fuer JEDEN Pfad wahr, also auch fuer /api/*:
+// jede Werkzeug-/Statusabfrage wurde gecacht und beim naechsten Aufruf mit
+// derselben URL (z. B. nach einem Favorit-Umschalten in der Kommando-
+// Palette) als veralteter Stand zurueckgegeben -- genau das, was der
+// Kommentar unten als "darf niemals passieren" beschreibt. Die
+// Cache-Version steigt mit, damit ein schon installierter Service Worker
+// seinen alten, moeglicherweise verunreinigten Cache verwirft statt ihn
+// weiterzuverwenden.
+const CACHE = "jarvis-shell-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -18,6 +29,10 @@ const SHELL = [
   "./icons/apple-touch-icon.png",
   "./icons/favicon-32.png",
 ];
+// Exakte Pfade statt eines Suffix-Vergleichs -- siehe Begruendung oben.
+const SHELL_PATHS = new Set(
+  SHELL.filter((s) => s !== "./").map((s) => s.replace(/^\./, ""))
+);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -42,8 +57,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   // Nur die Hülle bedienen — niemals /api/*, niemals sonst etwas Dynamisches.
-  const isShellPath = SHELL.some((s) => url.pathname.endsWith(s.replace("./", "")));
-  if (!isShellPath && url.pathname !== "/") return;
+  // Exakter Pfadvergleich, kein Suffix-Test (siehe Begründung bei SHELL_PATHS).
+  const isShellPath = url.pathname === "/" || SHELL_PATHS.has(url.pathname);
+  if (!isShellPath) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

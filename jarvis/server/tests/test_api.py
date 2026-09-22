@@ -316,6 +316,77 @@ def test_undo_ohne_aufzeichnung_gibt_400(client):
     assert res.status_code == 400
 
 
+# ══════════════════════════════════════════════════════ Werkzeuge (Punkt 47)
+def test_tools_ohne_suche_zeigt_den_katalog(client):
+    body = client.get("/api/tools", params={"limit": 5}).json()
+    assert len(body["werkzeuge"]) == 5
+    assert body["gesamt_im_katalog"] > 300
+    assert "git" in body["kategorien"]
+
+
+def test_tools_mit_suche_liefert_dieselbe_rangfolge_wie_im_chat(client):
+    body = client.get("/api/tools", params={"q": "git commit"}).json()
+    assert body["werkzeuge"][0]["id"] == "git.commit"
+    assert "punkte" in body["werkzeuge"][0]
+
+
+def test_tools_kategorie_filter(client):
+    body = client.get("/api/tools", params={"category": "git", "limit": 100}).json()
+    assert body["werkzeuge"]
+    assert all(w["kategorie"] == "git" for w in body["werkzeuge"])
+
+
+def test_tool_favorisieren_taucht_im_katalog_auf(client):
+    client.post("/api/tools/write_file/favorite")
+    treffer = client.get("/api/tools", params={"q": "write_file"}).json()["werkzeuge"]
+    ziel = next(w for w in treffer if w["id"] == "write_file")
+    assert ziel["favorit"] is True
+
+
+def test_tool_abschalten_und_wieder_anschalten_ueber_http(client):
+    res = client.post("/api/tools/write_file/disable", json={"reason": "testweise"})
+    assert res.status_code == 200
+    treffer = client.get("/api/tools", params={"q": "write_file"}).json()["werkzeuge"]
+    assert next(w for w in treffer if w["id"] == "write_file")["abgeschaltet"] is True
+
+    client.post("/api/tools/write_file/enable")
+    treffer2 = client.get("/api/tools", params={"q": "write_file"}).json()["werkzeuge"]
+    assert next(w for w in treffer2 if w["id"] == "write_file")["abgeschaltet"] is False
+
+
+def test_tool_wirklich_abgeschaltet_ueber_http_wirkt_auch_im_chat(client, workspace):
+    """Derselbe Weg wie jarvis.tools.disable, nur über HTTP -- muss also
+    auch denselben Effekt auf einen echten Zug haben: die Datei entsteht
+    nicht, und der Beleg nennt den echten Grund."""
+    client.post("/api/tools/write_file/disable")
+    body = client.post("/api/command", json={"text": "leg was an"}).json()
+    assert body["provenance"] == "fail"
+    assert "abgeschaltet" in body["evidence"][0]["summary"]
+    assert not (workspace / "aus_dem_test.txt").exists()
+
+
+def test_unbekanntes_werkzeug_ueber_http_ist_404(client):
+    res = client.post("/api/tools/das.gibt.es.nicht/favorite")
+    assert res.status_code == 404
+
+
+def test_unfavorite_ohne_vorherigen_favorit_ist_409(client):
+    res = client.post("/api/tools/write_file/unfavorite")
+    assert res.status_code == 409
+
+
+def test_sich_selbst_abschalten_ueber_http_ist_verboten(client):
+    res = client.post("/api/tools/jarvis.tools.enable/disable")
+    assert res.status_code == 400
+
+
+def test_tool_disable_ueber_http_loest_alias_auf(client):
+    client.post("/api/tools/get_system_info/disable")
+    treffer = client.get("/api/tools", params={"q": "system.info"}).json()["werkzeuge"]
+    ziel = next(w for w in treffer if w["id"] == "system.info")
+    assert ziel["abgeschaltet"] is True
+
+
 def test_permission_resolve_unbekannte_anfrage(client):
     res = client.post("/api/permission/resolve",
                       json={"request_id": "nie-gestellt", "approved": True})

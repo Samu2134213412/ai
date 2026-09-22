@@ -71,6 +71,33 @@ die Oberfläche war schon vorher für Handy-Breiten ausgelegt (eigene
 `@media`-Regeln, Tab-Leiste statt Spalten); neu ist nur die
 Installierbarkeit.
 
+## Kommando-Palette, Action Search, Tool Explorer
+
+**F3** (oder **Strg/Cmd+K**, auch der „⌘ Palette"-Knopf neben dem
+Befehlsfeld) öffnet eine Palette über der Oberfläche:
+
+* **Ohne Suchtext** zeigt sie den ganzen Werkzeugkatalog — nach Kategorie
+  filterbar über die Chips oben (Tool Explorer).
+* **Mit Suchtext** dieselbe Rangfolge, die auch das Modell im Chat angeboten
+  bekäme (`GET /api/tools?q=…`, derselbe Suchindex wie `discovery.py`) —
+  plus lokale Aktionen (Ansicht wechseln, Modus wechseln, Sprechen, Demo),
+  die rein im Browser laufen.
+* Jede Werkzeugzeile aufklappbar (Beschreibung, Verfügbarkeit, Tags) und mit
+  zwei Schaltern: **★** Favorit setzen, **⊘** abschalten (Punkt 26) — beides
+  direkt über `POST /api/tools/{name}/{aktion}`, ohne Umweg über das Modell.
+  Ein abgeschaltetes Werkzeug läuft danach auch im Chat wirklich nicht mehr.
+* Tastatur: ↑↓ zum Wählen, ⏎ zum Ausführen/Aufklappen, Esc zum Schließen.
+
+Getragen von einem kleinen, eigenen **HotkeyManager** (Punkt 48, direkt im
+Skript-Teil von `index.html`, kein separates Modul): Aktionen registrieren
+sich mit einer oder mehreren Tastenkombinationen und optional einem Kontext
+(„nur wenn die Palette offen ist"); `Mod` steht für Cmd auf dem Mac, sonst
+Strg, eine Registrierung deckt also beide Plattformen ab. Eine Taste feuert
+nie, während in einem Eingabefeld getippt wird, außer die Aktion sagt
+ausdrücklich `allowInInput` (wie F3 selbst oder Esc). Remaps landen über
+`HotkeyManager.exportJSON()`/`.importJSON()` in `localStorage` und
+überleben einen Neustart der Seite.
+
 ## Anbindung an den Server
 
 Die Seite stellt genau fünf Funktionen bereit. Mehr braucht der Adapter nicht:

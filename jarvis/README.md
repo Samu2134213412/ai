@@ -161,6 +161,11 @@ Fertig und getestet (809 Tests, siehe `ROADMAP.md` für die Phasen):
   `server/README.md` und `../docs/JARVIS.md` §8
 * Installierbar auf dem Handy als App (Manifest, Icons, Service Worker) —
   siehe `web/README.md`
+* **Kommando-Palette (F3/Strg+K):** Action Search + Tool Explorer direkt in
+  der Oberfläche — Werkzeuge suchen (dieselbe Rangfolge wie im Chat),
+  favorisieren, abschalten, alles ohne Modell-Umweg (`GET`/`POST
+  /api/tools/*`). Dazu ein kleiner, eigener HotkeyManager: registrierbare,
+  kontextabhängige Tastenkürzel mit Export/Import — siehe `web/README.md`
 * **Handybedienung:** alle Bedienelemente auf Fingergröße (44 px), Eingabe
   mit 16 px, damit iOS beim Tippen nicht zoomt; geprüft auf iPhone SE/13,
   Pixel 7 und Galaxy Fold (280 px) — ohne horizontalen Überlauf.
