@@ -116,9 +116,14 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (478 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (537 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
+* 260 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
+  Prozesse, Netzwerk sowie **Git (43 Operatoren), Python und Node.js**
+  (venv, pip, ruff, pytest, npm) — kleine, benannte Befehle statt eines
+  `git_do_everything`; destruktive (reset --hard, clean) mit echtem
+  Probelauf, siehe `server/jarvis/tools/packs/`
 * Direct Action Router für eindeutige Befehle
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf
