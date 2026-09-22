@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import Config
+from ..macros import MacroStore
 from ..memory import MemoryStore
 from ..undo import UndoContext, UndoStore
 from . import files, knowledge, shell, system
@@ -39,6 +40,7 @@ def build_registry(config: Config, store: MemoryStore,
         timeout=config.shell.timeout)
     undo_store = UndoStore(str(config.undo_db_path),
                           context=UndoContext(workspace=workspace, store=store))
+    macro_store = MacroStore(str(config.macro_db_path))
 
     for tool in files.build(workspace):
         registry.add(tool)
@@ -61,7 +63,8 @@ def build_registry(config: Config, store: MemoryStore,
     # statt den ganzen Server am Start zu zerlegen.
     context = ToolContext(config=config, store=store, workspace=workspace,
                           home=Path(config.home),
-                          services={"undo": undo_store, "history": history})
+                          services={"undo": undo_store, "history": history,
+                                    "macros": macro_store})
     registry.pack_errors: dict[str, str] = {}
     for name, builder in PACKS:
         try:
@@ -73,6 +76,7 @@ def build_registry(config: Config, store: MemoryStore,
     # die denselben Arbeitsbereich/dieselbe Undo-Historie brauchen.
     registry.workspace = workspace
     registry.undo_store = undo_store
+    registry.macro_store = macro_store
     registry.context = context
     return registry
 

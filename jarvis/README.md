@@ -116,18 +116,24 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (704 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (751 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
-* 384 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
+* 388 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
   Prozesse, Netzwerk sowie **Git (43 Operatoren), Python und Node.js**
   (venv, pip, ruff, pytest, npm), **Medien** (Bild über Pillow, Audio/
   Video über ffmpeg/ffprobe, 49 Operatoren), **Docker (19), nginx (8),
   Minecraft (19, über eine eigene RCON-Implementierung) und SQLite (10)**
   sowie **Zwischenablage, Produktivität (Taschenrechner ohne eval, Einheiten/
-  Farben/Datum, QR-Codes) und Suche (19)** — kleine, benannte Befehle statt
-  eines `git_do_everything`; destruktive (reset --hard, clean, DROP TABLE,
-  docker.prune) mit echtem Probelauf, siehe `server/jarvis/tools/packs/`
+  Farben/Datum, QR-Codes, gespeicherte Makros) und Suche (19)** — kleine,
+  benannte Befehle statt eines `git_do_everything`; destruktive (reset
+  --hard, clean, DROP TABLE, docker.prune) mit echtem Probelauf, siehe
+  `server/jarvis/tools/packs/`
+* **Makros:** gespeicherte Schrittfolgen mit IF/LOOP/PARALLEL/RETRY/WAIT
+  (`server/jarvis/macros.py`) — jeder Schritt läuft über dieselbe
+  `Agent._run_tool`-Pipeline wie ein einzelner Werkzeugaufruf (Permission-
+  Gate, Undo, Audit), angelegt/verwaltet über `automation.macro.*`,
+  ausgeführt über den eigenen Modus `mode: "macro"`
 * Direct Action Router für eindeutige Befehle
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf

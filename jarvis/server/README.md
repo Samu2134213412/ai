@@ -249,6 +249,55 @@ Prüfergebnis, nie aus dem Satz des Modells. Behauptet das Modell eine
 | `code.timeout` | Sekunden je Modellanfrage (600) |
 | `code.auto_check` | Nach Änderungen automatisch nachprüfen (an) |
 
+## Makros
+
+Ein vierter Weg, neben Router/Agent/Code-Modus: eine gespeicherte,
+benannte Schrittfolge (`macros.py`), einmal angelegt und beliebig oft ohne
+erneute Planung ausgeführt — mit Kontrollfluss (IF/LOOP/PARALLEL/RETRY/WAIT),
+aber ohne eine zweite Ausführungsmaschine neben der schon vorhandenen: jeder
+Werkzeugschritt eines Makros läuft über exakt dasselbe `Agent._run_tool` wie
+jeder andere Aufruf auch — also mit Permission-Gate, Undo-Snapshot und Audit
+Log. Die Engine selbst kennt weder den Agenten noch die Registry; sie bekommt
+nur das eine `run_tool`-Callable hereingereicht (derselbe Aufbau wie bei
+`verification.py` und `decision.py`).
+
+**Anlegen/Verwalten** über Werkzeuge (`automation.macro.*` in
+`tools/packs/productivity.py`):
+
+| Werkzeug | Berechtigung | |
+|---|---|---|
+| `automation.macro.create` | WRITE | Name, Schrittliste, optionale Beschreibung — die Schritte werden vor dem Speichern strukturell geprüft (bekannte Art, Pflichtfelder), nicht erst beim Ausführen |
+| `automation.macro.list` | READ | alle gespeicherten Makros |
+| `automation.macro.get` | READ | Schritte eines Makros |
+| `automation.macro.delete` | CRITICAL | endgültiges Löschen |
+
+**Ausführen** ist bewusst **kein** Werkzeug, sondern ein eigener Modus
+(`mode: "macro"`, `text` ist dabei der Makroname) — `Agent.run_macro`
+respektiert dieselbe Autonomiestufen-Sperre wie jeder andere Zug und meldet
+das Ergebnis über `guard.verify()`, also aus den tatsächlich gelaufenen
+`ToolResult`s, nie aus einem Text, den irgendetwas "abgeschlossen" nennt.
+
+Ein Schritt ist eines von fünf Dingen:
+
+```jsonc
+{"id": "s1", "kind": "tool", "tool": "files.info", "arguments": {"path": "x.txt"},
+ "retry": 2, "retry_delay": 1.0}
+{"id": "c1", "kind": "if", "condition": {"step": "s1", "field": "ok", "op": "==", "value": true},
+ "then": [...], "else": [...]}
+{"id": "l1", "kind": "loop", "times": 5, "body": [...]}
+{"id": "l2", "kind": "loop", "while": {"step": "s1", "field": "ok", "op": "==", "value": true},
+ "max_iterations": 20, "body": [...]}
+{"id": "p1", "kind": "parallel", "branches": [[...], [...]]}
+{"id": "w1", "kind": "wait", "seconds": 2.5}
+```
+
+`while` wird bewusst **nach** jedem Durchlauf geprüft, nicht davor: der
+Normalfall ist "wiederhole Schritt X, bis er nicht mehr fehlschlägt", und vor
+dem ersten Durchlauf gibt es für X noch kein Ergebnis, das sich prüfen ließe.
+Zwei harte Obergrenzen (`MAX_LOOP_ITERATIONS`, `MAX_STEPS_TOTAL`) schützen vor
+einem Makro, das sich selbst nie beendet — dieselbe Vorsicht wie beim
+Watchdog aus Autonomy V1.
+
 ## Speech-to-Text (Whisper)
 
 Der Mikrofon-Knopf im Bedienfeld nimmt über den Browser auf und schickt die
@@ -356,7 +405,7 @@ werden beim Laden ignoriert.
 | `GET /api/health` | Modelle, Werkzeuge, Ollama-Zustand, offene Probleme |
 | `GET`/`PUT /api/memory` | das Wissensnetz |
 | `GET /api/memory/search?q=` | gewichtete Begriffssuche |
-| `POST /api/command` | ein Zug ohne WebSocket, für Skripte (`mode`: `chat`/`code`/`agent`) |
+| `POST /api/command` | ein Zug ohne WebSocket, für Skripte (`mode`: `chat`/`code`/`agent`/`macro`) |
 | `PUT /api/whisper/key` | eigenen Whisper-API-Schlüssel eintragen/löschen |
 | `POST /api/whisper/transcribe` | Audio → Text über Whisper |
 | `GET /api/audit` | Audit Log, filterbar nach `tool`/`level`/`ok` |
@@ -376,7 +425,7 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 704 Tests (davon bis zu 31 uebersprungen ohne ffmpeg/tesseract/docker-daemon/nginx/Zwischenablage)
+python -m pytest -q      # 751 Tests (davon bis zu 31 uebersprungen ohne ffmpeg/tesseract/docker-daemon/nginx/Zwischenablage)
 ```
 
 Sie brauchen weder Ollama noch einen echten Whisper-Schlüssel:

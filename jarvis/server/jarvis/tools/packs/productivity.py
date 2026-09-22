@@ -21,10 +21,11 @@ import random
 import re
 import time
 
+from ...macros import MacroError
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext
-from ._base import NO_PARAMS, flag, integer, number, ok, params, text
+from ._base import NO_PARAMS, flag, integer, number, ok, params, table, text
 
 try:  # pragma: no cover
     import qrcode
@@ -46,6 +47,10 @@ _OPS = {
     ast.USub: operator.neg, ast.UAdd: operator.pos,
 }
 _KONSTANTEN = {"pi": 3.141592653589793, "e": 2.718281828459045}
+
+_STEPS = {"type": "array", "items": {"type": "object"},
+         "description": "Liste von Makro-Schritten (kind: tool/if/loop/parallel/wait), "
+                        "siehe macros.py für das genaue Format."}
 
 
 def _auswerten(knoten: ast.AST) -> float:
@@ -376,6 +381,79 @@ def build(ctx: ToolContext) -> list[Tool]:
         time.sleep(s)
         return ok("automation.wait", f"{s}s gewartet", sekunden=s)
 
+    # ══════════════════════════════════════════════════════════ Makros
+    # Ablage über den Dienst "macros" (siehe tools/__init__.py::build_registry).
+    # Die Ausführung selbst ist bewusst KEIN Werkzeug hier: ein Makroschritt
+    # muss über Agent._run_tool laufen (Permission-Gate, Undo, Audit -- siehe
+    # macros.py-Docstring), und ein Pack kennt den Agent nicht. Nur die reine
+    # Datenverwaltung (anlegen/auflisten/ansehen/löschen) gehört hierher.
+    _MAKRO_ARTEN = {"tool", "if", "loop", "parallel", "wait"}
+
+    def _pruefe_schritte(schritte: object, pfad: str = "steps") -> None:
+        if not isinstance(schritte, list):
+            raise ToolError(f"{pfad} muss eine Liste von Schritten sein.")
+        for i, schritt in enumerate(schritte):
+            ort = f"{pfad}[{i}]"
+            if not isinstance(schritt, dict):
+                raise ToolError(f"{ort} muss ein Objekt sein.")
+            art = schritt.get("kind", "tool")
+            if art not in _MAKRO_ARTEN:
+                raise ToolError(f"{ort}: unbekannte Schrittart {art!r} (erlaubt: "
+                                f"{', '.join(sorted(_MAKRO_ARTEN))}).")
+            if art == "tool" and not str(schritt.get("tool") or "").strip():
+                raise ToolError(f"{ort}: ein 'tool'-Schritt braucht ein 'tool'-Feld.")
+            elif art == "if":
+                _pruefe_schritte(schritt.get("then", []), f"{ort}.then")
+                _pruefe_schritte(schritt.get("else", []), f"{ort}.else")
+            elif art == "loop":
+                if "times" not in schritt and "while" not in schritt:
+                    raise ToolError(f"{ort}: eine Schleife braucht 'times' oder 'while'.")
+                _pruefe_schritte(schritt.get("body", []), f"{ort}.body")
+            elif art == "parallel":
+                for j, zweig in enumerate(schritt.get("branches", [])):
+                    _pruefe_schritte(zweig, f"{ort}.branches[{j}]")
+
+    def _makro_ablage():
+        store = ctx.services.get("macros")
+        if store is None:
+            raise ToolError("Makro-Ablage ist nicht verfügbar.")
+        return store
+
+    def macro_create(name: str, steps: list, description: str = "") -> ToolResult:
+        ablage = _makro_ablage()
+        _pruefe_schritte(steps)
+        try:
+            definition = ablage.save(name, steps, description or "")
+        except MacroError as exc:
+            raise ToolError(str(exc)) from exc
+        return ok("automation.macro.create",
+                  f"Makro '{definition.name}' gespeichert ({len(definition.steps)} Schritt(e))",
+                  id=definition.id, name=definition.name,
+                  anzahl_schritte=len(definition.steps))
+
+    def macro_list() -> ToolResult:
+        makros = _makro_ablage().list()
+        zeilen = [[m.name, str(len(m.steps)), m.description or "-"] for m in makros]
+        return ok("automation.macro.list", f"{len(makros)} Makro(s)",
+                  payload=table(zeilen, headers=["Name", "Schritte", "Beschreibung"]),
+                  anzahl=len(makros))
+
+    def macro_get(name: str) -> ToolResult:
+        definition = _makro_ablage().get_by_name((name or "").strip())
+        if definition is None:
+            raise ToolError(f"Kein Makro mit dem Namen '{name}' gefunden.")
+        return ok("automation.macro.get",
+                  f"Makro '{definition.name}' ({len(definition.steps)} Schritt(e))",
+                  payload=definition.steps, name=definition.name,
+                  beschreibung=definition.description,
+                  anzahl_schritte=len(definition.steps))
+
+    def macro_delete(name: str) -> ToolResult:
+        n = (name or "").strip()
+        if not _makro_ablage().delete(n):
+            raise ToolError(f"Kein Makro mit dem Namen '{n}' gefunden.")
+        return ok("automation.macro.delete", f"Makro '{n}' gelöscht", name=n)
+
     _out = text("Zielpfad im Arbeitsbereich")
 
     return [
@@ -439,4 +517,20 @@ def build(ctx: ToolContext) -> list[Tool]:
              "läuft -- als Baustein in mehrstufigen Aufträgen.",
              params("seconds", seconds=number("Sekunden, max. 300")), automation_wait,
              level=P.SAFE, tags=("automation",), timeout=310.0),
+        Tool("automation.macro.create", "Speichert eine benannte Schrittfolge (Werkzeug-"
+             "aufrufe mit optional IF/LOOP/PARALLEL/WAIT) unter einem Namen, zum späteren "
+             "Ausführen ohne erneute Planung. Siehe macros.py für das Schrittformat.",
+             params("name", "steps", name=text("Name des Makros"), steps=_STEPS,
+                    description=text("Kurzbeschreibung, optional")),
+             macro_create, level=P.WRITE, tags=("automation", "makro"),
+             phrases=("speichere das als makro", "leg ein makro an")),
+        Tool("automation.macro.list", "Listet gespeicherte Makros auf.", NO_PARAMS,
+             macro_list, level=P.READ, tags=("automation", "makro"),
+             phrases=("welche makros gibt es",)),
+        Tool("automation.macro.get", "Zeigt die Schritte eines gespeicherten Makros.",
+             params("name", name=text("Name des Makros")), macro_get, level=P.READ,
+             tags=("automation", "makro")),
+        Tool("automation.macro.delete", "Löscht ein gespeichertes Makro endgültig.",
+             params("name", name=text("Name des Makros")), macro_delete,
+             level=P.CRITICAL, tags=("automation", "makro", "loeschen")),
     ]

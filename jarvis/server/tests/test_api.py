@@ -191,6 +191,22 @@ def test_code_modus_ueber_http_geht_am_chat_modell_vorbei(client, workspace):
     assert "aus_dem_code_modus.py" in body["text"]
 
 
+def test_makro_modus_ueber_http_fuehrt_gespeichertes_makro_aus(client, workspace):
+    """'macro' geht weder ans Chat- noch ans Code-Modell -- 'text' ist hier
+    der Makroname, kein Auftrag zum Planen."""
+    client.app_state.registry.call("automation.macro.create", {
+        "name": "testlauf", "steps": [
+            {"id": "s1", "kind": "tool", "tool": "write_file",
+             "arguments": {"path": str(workspace / "aus_dem_makro.txt"),
+                          "content": "vom makro"}}]})
+
+    body = client.post("/api/command", json={"text": "testlauf", "mode": "macro"}).json()
+
+    assert body["provenance"] == "tool"
+    assert client.app_state.model.calls == []
+    assert (workspace / "aus_dem_makro.txt").read_text(encoding="utf-8") == "vom makro"
+
+
 def test_kommando_ueber_http_liefert_beleg(client, workspace):
     body = client.post("/api/command", json={"text": "leg was an"}).json()
     assert body["provenance"] == "tool"

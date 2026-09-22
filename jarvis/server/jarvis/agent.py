@@ -31,6 +31,7 @@ from .autonomy import AutonomyLevel
 from .config import Config
 from .decision import DecisionEngine
 from .goals import Goal, GoalBudget, GoalManager, GoalStatus
+from .macros import MacroEngine, MacroError, MacroStore
 from .memory import MemoryStore
 from .ollama import ChatTurn, OllamaClient, OllamaError
 from .permissions import PermissionDenied, PermissionGate, PermissionLevel
@@ -121,7 +122,8 @@ class Agent:
                  decisions: DecisionEngine | None = None,
                  verification: VerificationEngine | None = None,
                  code_client: OllamaClient | None = None,
-                 fast_client: OllamaClient | None = None):
+                 fast_client: OllamaClient | None = None,
+                 macros: MacroStore | None = None):
         self.config = config
         self.store = store
         self.registry = registry
@@ -160,6 +162,11 @@ class Agent:
         #: eigenes schnelles Modell ist das Feature schlicht aus, nicht "das
         #: Hauptmodell tut so, als wäre es schnell".
         self.fast_client = fast_client
+        #: Gespeicherte Makros (``macros.py``) -- eine feste Schrittfolge, die
+        #: unter einem Namen läuft, ohne dass das Modell jedes Mal neu planen
+        #: muss. Ohne eigene Ablage: reine In-Memory-Ablage, wie bei den
+        #: übrigen Maschinen oben.
+        self.macros = macros or MacroStore(":memory:")
         #: Laufende Ziele, über die von außen gesteuert werden kann.
         self._controls: dict[str, _GoalControl] = {}
         #: Die Hintergrund-Tasks -- gehalten, damit der Garbage Collector sie
@@ -347,6 +354,59 @@ class Agent:
             await self.emit("guard.blocked", {
                 "verworfen": reply.blocked_text, "ersetzt_durch": reply.text})
         self._remember(task, reply)
+        return reply
+
+    async def run_macro(self, name: str) -> guard.Reply:
+        """Führt ein gespeichertes Makro (``macros.py``) aus.
+
+        Bewusst blockierend wie ``handle_code``, nicht Hintergrund wie
+        ``start_goal``: ein Makro ist eine feste, im Voraus bekannte
+        Schrittfolge mit harten Obergrenzen -- kein offenes, potenziell
+        langes Ziel, das eine eigene Steuerung (Pause/Fortsetzen/Abbruch)
+        bräuchte.
+
+        Jeder Werkzeugschritt läuft über ``self._run_tool`` -- also mit
+        Permission-Gate, Undo-Snapshot und Audit-Eintrag wie jeder andere
+        Aufruf auch (siehe ``macros.py``-Docstring). Die Autonomiestufe wird
+        hier vorab geprüft, damit bei Stufe 0 nicht erst eine Engine gebaut
+        und dann jeder einzelne Schritt einzeln abgewiesen wird.
+        """
+        macro_name = (name or "").strip()
+        definition = self.macros.get_by_name(macro_name)
+        if definition is None:
+            reply = guard.Reply(
+                text=f"Kein Makro mit dem Namen '{macro_name}' gefunden.",
+                provenance=guard.FAIL)
+            self._remember(f"Makro: {macro_name}", reply)
+            return reply
+
+        if self.config.autonomy <= AutonomyLevel.NONE:
+            await self._state("idle")
+            reply = guard.Reply(
+                text=(f"Autonomiestufe 0 ({AutonomyLevel.NONE.label}): Ich führe "
+                      "keine Aktionen aus, also auch kein Makro."),
+                provenance=guard.TALK)
+            self._remember(f"Makro: {macro_name}", reply)
+            return reply
+
+        async def werkzeug_aufruf(tool_name: str, arguments: dict) -> ToolResult:
+            return await self._run_tool(tool_name, arguments,
+                                        request_text=f"Makro '{macro_name}'")
+
+        await self._state("executing", f"Makro · {macro_name}")
+        engine = MacroEngine(werkzeug_aufruf)
+        try:
+            lauf = await engine.run(definition.steps)
+        except MacroError as exc:
+            await self._state("failed", str(exc))
+            reply = guard.Reply(
+                text=f"Makro '{macro_name}' abgebrochen: {exc}", provenance=guard.FAIL)
+            self._remember(f"Makro: {macro_name}", reply)
+            return reply
+
+        await self._state("failed" if not lauf.ok else "idle")
+        reply = guard.verify(lauf.summary(macro_name), list(lauf.all_results))
+        self._remember(f"Makro: {macro_name}", reply)
         return reply
 
     def _code_instruction(self, task: str) -> str:

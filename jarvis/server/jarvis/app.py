@@ -43,9 +43,11 @@ TELEMETRY_SECONDS = 3.0
 #: "code" geht an das Code-Modell (``coder.py``), ohne das Chat-Modell zu
 #: befragen -- der Nutzer hat den Modus bewusst gewählt. "agent" zerlegt den
 #: Auftrag zuerst in Schritte (Planner) und führt sie einzeln aus (Executor,
-#: siehe ``Agent.handle_agent_task``).
-CommandMode = Literal["chat", "code", "agent"]
-_MODES: tuple[str, ...] = ("chat", "code", "agent")
+#: siehe ``Agent.handle_agent_task``). "macro" führt ein gespeichertes Makro
+#: (``macros.py``) aus -- ``text`` ist dabei der Makroname, kein Auftrag ans
+#: Modell.
+CommandMode = Literal["chat", "code", "agent", "macro"]
+_MODES: tuple[str, ...] = ("chat", "code", "agent", "macro")
 
 #: Was sich an einem laufenden Ziel von außen steuern lässt (Punkt 7/22).
 GoalAction = Literal["pause", "resume", "cancel"]
@@ -161,7 +163,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     agent = Agent(config, store, registry, client, emit=hub.send,
                   permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
                   tasks=tasks, goals=goals, decisions=decisions,
-                  code_client=code_client, fast_client=fast_client)
+                  code_client=code_client, fast_client=fast_client,
+                  macros=registry.macro_store)
     busy = asyncio.Lock()
     bus = EventBus()
     proactive = ProactiveEngine()
@@ -503,6 +506,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             try:
                 if mode == "code":
                     reply = await agent.handle_code(text)
+                elif mode == "macro":
+                    reply = await agent.run_macro(text)
                 else:
                     reply = await agent.handle(text)
             except Exception as exc:  # noqa: BLE001 - der Zug wird per
