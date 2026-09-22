@@ -203,6 +203,20 @@ main[hidden]{display:none!important}
 .hint{font-size:11px;color:var(--mute);line-height:1.55;margin:10px 0 0;
   padding:8px 9px;border-left:2px solid var(--cyan-dim);background:rgba(40,215,255,.05)}
 
+/* ── Verlauf: Audit Log + Rückgängig ──────────────────────────── */
+.vl{display:flex;align-items:center;gap:8px;padding:5px 0;
+  border-bottom:1px solid rgba(18,52,72,.55);font-size:11px}
+.vl:last-child{border-bottom:0}
+.vl .nm{font-family:var(--mono);font-size:11px;flex:none;color:var(--cyan-pale)}
+.vl .ds{flex:1 1 auto;min-width:0;color:var(--mute);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.vl .ti{flex:none;font-family:var(--mono);font-size:10px;color:var(--mute)}
+.vl .st{flex:none;font-family:var(--hud);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--mute)}
+.vl[data-s="fail"] .nm{color:var(--red)}
+.vl[data-s="ok"] .nm{color:var(--green)}
+.vl button[data-undo]{flex:none;min-height:24px;padding:2px 8px;font-size:10px}
+
 /* ── Mitte: Zustand + Dialog ───────────────────────────────── */
 .mid{display:flex;flex-direction:column;justify-content:space-between;gap:9px;
   min-height:0;pointer-events:none}
@@ -474,6 +488,16 @@ button.dg:hover{background:var(--red);color:var(--void)}
             <button class="gh" type="submit">Speichern</button>
           </form>
           <p class="hint" id="whisperHint">Schlüssel bleibt auf dem Jarvis-Server, nicht im Browser.</p>
+        </div>
+      </section>
+      <section class="fr pan" style="flex:none">
+        <h2>Verlauf<button type="button" class="gh" id="verlaufRefresh" title="Aktualisieren"
+              style="margin-left:auto;min-height:24px;padding:2px 9px;font-size:10px">↻</button></h2>
+        <div class="in" style="max-height:230px">
+          <div id="verlaufUndo"></div>
+          <div id="verlaufAudit"></div>
+          <p class="hint">Was zuletzt tatsächlich passiert ist -- aus dem Audit Log und der
+          Rückgängig-Historie, nicht aus dem Gedächtnis des Modells.</p>
         </div>
       </section>
     </div>
@@ -1023,6 +1047,55 @@ function renderTools(list){
 }
 renderTools(TOOLS);
 
+/* ── Verlauf: Audit Log + Rückgängig, direkt aus der Oberfläche ──────
+   Beide Wege (/api/audit, /api/undo) gibt es serverseitig schon lange --
+   bisher ohne jede Anzeige, nur über den Chat ("mach das rückgängig")
+   oder von Hand über HTTP erreichbar. Hier nur ein Fenster darauf, kein
+   neuer Zustand: was tatsächlich passiert ist, entscheidet weiter allein
+   der Server. */
+function renderVerlauf(undo, audit){
+  $("verlaufUndo").innerHTML = !undo.length ? "" : undo.map((e)=>`
+    <div class="vl" data-s="${e.rueckgaengig_gemacht?"":"open"}">
+      <span class="nm">${esc(e.werkzeug)}</span>
+      <span class="ds">${esc(e.beschreibung)}</span>
+      ${e.rueckgaengig_gemacht
+        ? `<span class="st">rückgängig gemacht</span>`
+        : `<button type="button" class="gh" data-undo="${esc(e.id)}">Rückgängig</button>`}
+    </div>`).join("");
+  $("verlaufAudit").innerHTML = !audit.length
+    ? `<p class="empty">Noch keine Einträge.</p>`
+    : audit.map((e)=>`
+    <div class="vl" data-s="${e.erfolg?"ok":"fail"}">
+      <span class="nm">${esc(e.werkzeug)}</span>
+      <span class="ds">${esc(e.ergebnis)}</span>
+      <span class="ti">${esc(e.zeit.slice(11))}</span>
+    </div>`).join("");
+}
+async function loadVerlauf(){
+  try{
+    const [undoRes, auditRes] = await Promise.all([
+      fetch("/api/undo?limit=8", {headers:authHeaders(), cache:"no-store"}),
+      fetch("/api/audit?limit=12", {headers:authHeaders(), cache:"no-store"}),
+    ]);
+    renderVerlauf(
+      undoRes.ok ? (await undoRes.json()).eintraege : [],
+      auditRes.ok ? (await auditRes.json()).eintraege : []);
+  }catch(e){ /* kein Server -- der Verlauf bleibt leer, wie der Rest der Demo */ }
+}
+let verlaufDebounce=0;
+function loadVerlaufSoon(){ clearTimeout(verlaufDebounce); verlaufDebounce=setTimeout(loadVerlauf, 400); }
+$("verlaufRefresh").addEventListener("click", loadVerlauf);
+$("verlaufUndo").addEventListener("click", async (e)=>{
+  const b=e.target.closest("[data-undo]"); if(!b) return;
+  b.disabled=true;
+  try{
+    const res=await fetch("/api/undo", {method:"POST",
+      headers:authHeaders({"Content-Type":"application/json"}),
+      body:JSON.stringify({record_id:b.dataset.undo})});
+    if(res.ok) await loadVerlauf(); else b.disabled=false;
+  }catch(e){ b.disabled=false; }
+});
+
 /* ═══════════════════════════════════════════════════════════════
    5  WISSENSNETZ. Knoten sind Erinnerungen, Kanten ihre Bezuege.
       Speicher: db-Fähigkeit (geraeteuebergreifend) → sonst
@@ -1527,6 +1600,28 @@ const HotkeyManager=(()=>{
   return {register, rebind, list, exportJSON, importJSON, restore, persist};
 })();
 
+/* ── Benachrichtigungen: der Browser meldet, wenn niemand hinschaut ────
+   Nur wenn die Seite gerade NICHT im Vordergrund ist (Tab im Hintergrund,
+   App auf dem Handy minimiert) -- wer ohnehin hinschaut, sieht die Meldung
+   längst im Verlauf, eine zusätzliche Benachrichtigung wäre nur Lärm. Um
+   Erlaubnis wird nie beim Laden gefragt, sondern nur, wenn die Person das
+   über die Kommando-Palette ausdrücklich anstößt (Browser blenden einen
+   automatischen Prompt beim Laden ohnehin zunehmend aus). */
+const Notify = (() => {
+  const supported = () => "Notification" in window;
+  function fire(title, body, tag){
+    if(!supported() || Notification.permission!=="granted") return;
+    if(document.visibilityState==="visible" && document.hasFocus()) return;
+    try{ new Notification(title, {body, tag, icon:"icons/icon-192.png"}); }catch(e){}
+  }
+  async function request(){
+    if(!supported()) return "unsupported";
+    if(Notification.permission!=="default") return Notification.permission;
+    try{ return await Notification.requestPermission(); }catch(e){ return "denied"; }
+  }
+  return {supported, request, fire};
+})();
+
 /* ═══════════════════════════════════════════════════════════════
    7c KOMMANDO-PALETTE — Action Search + Tool Explorer (Punkt 47).
       Ohne Suchtext: der Katalog (Explorer), nach Kategorie filterbar.
@@ -1568,6 +1663,16 @@ const ACTIONS=[
       text:erfolg?"Tastenkürzel übernommen." : "Konnte das JSON nicht lesen -- nichts übernommen.",
       fail:!erfolg});
   }},
+  {id:"notify.enable", label:"Benachrichtigungen aktivieren", run:async()=>{
+    const status=await Notify.request();
+    const TXT={granted:"Benachrichtigungen sind an -- eine Bestätigungsanfrage oder ein "
+        +"abgeschlossenes Ziel meldet sich jetzt auch, wenn dieser Tab gerade nicht offen ist.",
+      denied:"Der Browser hat Benachrichtigungen abgelehnt. Das lässt sich nur in den "
+        +"Website-Einstellungen des Browsers wieder ändern, nicht von hier aus.",
+      unsupported:"Dieser Browser unterstützt keine Web-Benachrichtigungen."};
+    say({who:"jarvis", prov:status==="granted"?"talk":"fail",
+      text:TXT[status] || "Unbekannter Status.", fail:status!=="granted"});
+  }},
 ];
 
 let palOpen=false, palRows=[], palSel=0, palCats=[], palCat="", palOpenDetail=null, palSeq=0;
@@ -1579,9 +1684,10 @@ function palToolAction(name, action){
 }
 async function queryPalette(q){
   const seq=++palSeq;
-  const local = !q.trim() ? [] : ACTIONS.filter((a)=>
-    a.label.toLowerCase().includes(q.trim().toLowerCase()));
-  let tools=[];
+  const text=q.trim().toLowerCase();
+  const local = !text ? [] : ACTIONS.filter((a)=>
+    a.label.toLowerCase().includes(text));
+  let tools=[], macros=[];
   try{
     const params=new URLSearchParams({limit:"30"});
     if(q.trim()) params.set("q", q.trim());
@@ -1593,18 +1699,31 @@ async function queryPalette(q){
     // versehentlich JEDEN Pfad als App-Hülle behandelte -- siehe
     // service-worker.js. cache:"no-store" bleibt trotzdem stehen: es
     // schützt zusätzlich gegen das gewöhnliche HTTP-Caching des Browsers.)
-    const res=await fetch("/api/tools?"+params, {headers:authHeaders(), cache:"no-store"});
-    if(res.ok){
-      const body=await res.json();
+    const [toolRes, macroRes] = await Promise.all([
+      fetch("/api/tools?"+params, {headers:authHeaders(), cache:"no-store"}),
+      fetch("/api/macros", {headers:authHeaders(), cache:"no-store"}),
+    ]);
+    if(toolRes.ok){
+      const body=await toolRes.json();
       tools=body.werkzeuge||[];
       if(!palCats.length && body.kategorien){
         palCats=Object.keys(body.kategorien); renderChips();
       }
     }
+    if(macroRes.ok){
+      // Kein "q" auf /api/macros -- bei einer Handvoll gespeicherter Makros
+      // lohnt sich dafür kein eigener Suchpfad; hier reicht ein Filter im
+      // Browser über Name und Beschreibung.
+      const alle=(await macroRes.json()).makros||[];
+      macros = !text ? alle : alle.filter((m)=>
+        m.name.toLowerCase().includes(text)
+        || (m.beschreibung||"").toLowerCase().includes(text));
+    }
   }catch(e){ /* kein Server -- die Palette zeigt dann nur lokale Aktionen */ }
   if(seq!==palSeq) return;                 // eine spätere Eingabe hat überholt
   palRows=[
     ...local.map((a)=>({kind:"action", ...a})),
+    ...macros.map((m)=>({kind:"macro", ...m})),
     ...tools.map((t)=>({kind:"tool", ...t})),
   ];
   palSel=0; palOpenDetail=null; renderPalette();
@@ -1623,14 +1742,20 @@ function renderPalette(){
     palRes.innerHTML = `<p class="empty">Keine Treffer${palQ.value.trim()?` für „${esc(palQ.value.trim())}“`:""}.</p>`;
     return;
   }
+  const GRP={action:"Aktionen", macro:"Makros"};
   let html="", lastKind="";
   palRows.forEach((r,i)=>{
     if(r.kind!==lastKind){
-      html+=`<div class="grp">${r.kind==="action"?"Aktionen":"Werkzeuge"}</div>`; lastKind=r.kind;
+      html+=`<div class="grp">${GRP[r.kind]||"Werkzeuge"}</div>`; lastKind=r.kind;
     }
     const sel=i===palSel?" sel":"";
     if(r.kind==="action"){
       html+=`<div class="row${sel}" role="option" data-i="${i}"><span class="nm">${esc(r.label)}</span></div>`;
+    } else if(r.kind==="macro"){
+      html+=`<div class="row${sel}" role="option" data-i="${i}" title="Ausführen">
+        <span class="nm">${esc(r.name)}</span>
+        <span class="ct">${r.anzahl_schritte} Schritt${r.anzahl_schritte===1?"":"e"}</span>
+      </div>`;
     } else {
       html+=`<div class="row${sel}" role="option" data-i="${i}">
         <span class="nm">${esc(r.id)}</span>
@@ -1668,8 +1793,30 @@ function renderPalette(){
 function activateSelected(){
   const r=palRows[palSel]; if(!r) return;
   if(r.kind==="action"){ closePalette(); r.run(); return; }
+  if(r.kind==="macro"){ closePalette(); runMacro(r.name); return; }
   palOpenDetail = palOpenDetail===r.id ? null : r.id;
   renderPalette();
+}
+function runMacro(name){
+  // Dieselbe Übergabe wie die Befehlszeile mit Modus "macro" (Punkt 46) --
+  // ein Makro ist bereits eine feste, im Voraus geprüfte Schrittfolge, "name"
+  // ist alles, was der Server braucht. Jeder Schritt läuft serverseitig
+  // trotzdem über dieselbe Permission-Gate/Undo/Audit-Pipeline wie jeder
+  // andere Werkzeugaufruf.
+  if(view!=="cmd") showView("cmd");
+  if(live && sock && sock.readyState === 1){
+    // Der Server schickt die eigene Nachricht zurück (siehe die
+    // "submit"-Behandlung der Befehlszeile weiter unten) -- hier nichts
+    // lokal anhängen, sonst sehen andere Geräte die Zeile doppelt.
+    sock.send(JSON.stringify({type:"command", text:name, mode:"macro"}));
+    return;
+  }
+  say({who:"me", text:`Makro: ${esc(name)}`, mode:"macro"});
+  setMode("failed");
+  say({who:"jarvis", prov:"fail",
+    text:"Kein Jarvis-Server verbunden. Das Makro wurde <b>nicht</b> ausgeführt.",
+    evidence:"kein Tool-Aufruf · kein Ergebnis · keine Änderung auf der Festplatte", fail:true});
+  setTimeout(()=>setMode("idle","Warte auf Verbindung zum Jarvis-Server"),2200);
 }
 function movePalette(delta){
   if(!palRows.length) return;
@@ -1807,6 +1954,7 @@ function applyHello(m){
   if(Array.isArray(m.werkzeuge)) JARVIS.tools(m.werkzeuge);
   if(m.telemetrie) JARVIS.telemetry(m.telemetrie);
   if(typeof m.whisper_configured==="boolean") JARVIS.whisperStatus(m.whisper_configured);
+  loadVerlauf();
   if(m.gedaechtnis && Array.isArray(m.gedaechtnis.nodes)){
     // Der Server führt das Gedächtnis. Seine Fassung gewinnt.
     MEM = {nodes: m.gedaechtnis.nodes, links: m.gedaechtnis.links || []};
@@ -1837,6 +1985,7 @@ function onFrame(m){
       break;
     case "tool.finished":
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
+      loadVerlaufSoon();
       break;
     case "telemetry": JARVIS.telemetry(m); break;
     case "memory":
@@ -1845,7 +1994,10 @@ function onFrame(m){
         seedPositions(false); renderLegend(); paint();
       }
       break;
-    case "permission.requested": sayPermission(m); break;
+    case "permission.requested":
+      sayPermission(m);
+      Notify.fire("Bestätigung nötig", m.detail || m.tool, "perm-"+m.request_id);
+      break;
     case "permission.approved": resolvePermissionUi(m.request_id, "erlaubt", true); break;
     case "permission.denied": resolvePermissionUi(m.request_id, "abgelehnt", false); break;
     case "permission.timeout": resolvePermissionUi(m.request_id, "Zeit abgelaufen", false); break;
@@ -1858,8 +2010,12 @@ function onFrame(m){
       break;
     case "goal.created":
     case "goal.updated":
+      goalCard(m);
+      break;
     case "goal.finished":
       goalCard(m);
+      Notify.fire(m.status === "failed" ? "Ziel gescheitert" : "Ziel abgeschlossen",
+        m.beschreibung, "goal-"+m.id);
       break;
     case "decision.made": sayDecision(m); break;
     case "proactive.suggested": sayProposal(m); break;

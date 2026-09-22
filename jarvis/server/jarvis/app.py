@@ -377,6 +377,15 @@ def create_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ergebnis": summary}
 
+    # ------------------------------------------------------------- Makros
+    @app.get("/api/macros", dependencies=Guarded)
+    async def list_macros() -> dict:
+        """Gespeicherte Makros (Punkt 46) -- direkt, wie ``/api/tools``: die
+        Kommando-Palette braucht sie, um ein Makro per Klick zu starten, ohne
+        den Umweg über den Chat und ohne eine eigene, zweite Ablage."""
+        macros = await asyncio.to_thread(registry.macro_store.list)
+        return {"makros": [m.as_dict() for m in macros]}
+
     # ------------------------------------------------------ Werkzeuge (Punkt 47)
     # Derselbe Suchindex und dieselbe Historie wie ``jarvis.tools.*`` (Punkt 36),
     # hier direkt über HTTP statt über einen Modell-Zug -- die Command Palette

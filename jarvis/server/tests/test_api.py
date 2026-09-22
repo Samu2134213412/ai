@@ -329,6 +329,22 @@ def test_undo_ohne_aufzeichnung_gibt_400(client):
     assert res.status_code == 400
 
 
+# ══════════════════════════════════════════════════════════════ Makros
+def test_makros_ueber_http_gelistet(client):
+    """Die Kommando-Palette braucht eine direkte, schreibfreie Liste, um ein
+    Makro per Klick starten zu können -- ohne den Umweg über den Chat."""
+    assert client.get("/api/macros").json()["makros"] == []
+    client.app_state.registry.call("automation.macro.create", {
+        "name": "testlauf", "description": "nur zum Testen",
+        "steps": [{"id": "s1", "kind": "wait", "seconds": 0}]})
+
+    makros = client.get("/api/macros").json()["makros"]
+    assert len(makros) == 1
+    assert makros[0]["name"] == "testlauf"
+    assert makros[0]["beschreibung"] == "nur zum Testen"
+    assert makros[0]["anzahl_schritte"] == 1
+
+
 # ══════════════════════════════════════════════════════ Werkzeuge (Punkt 47)
 def test_tools_ohne_suche_zeigt_den_katalog(client):
     body = client.get("/api/tools", params={"limit": 5}).json()

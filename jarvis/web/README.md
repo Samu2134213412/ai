@@ -80,8 +80,13 @@ Befehlsfeld) öffnet eine Palette über der Oberfläche:
   filterbar über die Chips oben (Tool Explorer).
 * **Mit Suchtext** dieselbe Rangfolge, die auch das Modell im Chat angeboten
   bekäme (`GET /api/tools?q=…`, derselbe Suchindex wie `discovery.py`) —
-  plus lokale Aktionen (Ansicht wechseln, Modus wechseln, Sprechen, Demo),
-  die rein im Browser laufen.
+  plus lokale Aktionen (Ansicht wechseln, Modus wechseln, Sprechen, Demo,
+  Tastenkürzel anzeigen/exportieren/importieren, Benachrichtigungen
+  aktivieren), die rein im Browser laufen, und die gespeicherten **Makros**
+  (`GET /api/macros`, Punkt 46) — ein Klick führt sie sofort aus
+  (`mode: "macro"`, dieselbe Permission-Gate/Undo/Audit-Pipeline wie jeder
+  andere Werkzeugaufruf je Schritt), ohne den Umweg über den Chat und ohne
+  den Makronamen selbst tippen zu müssen.
 * Jede Werkzeugzeile aufklappbar (Beschreibung, Verfügbarkeit, Tags) und mit
   zwei Schaltern: **★** Favorit setzen, **⊘** abschalten (Punkt 26) — beides
   direkt über `POST /api/tools/{name}/{aktion}`, ohne Umweg über das Modell.
@@ -96,7 +101,29 @@ Strg, eine Registrierung deckt also beide Plattformen ab. Eine Taste feuert
 nie, während in einem Eingabefeld getippt wird, außer die Aktion sagt
 ausdrücklich `allowInInput` (wie F3 selbst oder Esc). Remaps landen über
 `HotkeyManager.exportJSON()`/`.importJSON()` in `localStorage` und
-überleben einen Neustart der Seite.
+überleben einen Neustart der Seite — erreichbar über drei eigene
+Palette-Aktionen ("Tastenkürzel anzeigen/exportieren/importieren"), Export
+geht in die Zwischenablage, Import über einen Textprompt.
+
+## Verlauf: Audit Log + Rückgängig, direkt in der Oberfläche
+
+Im Bereich „Modelle" (dritte Spalte) zeigt die Karte **Verlauf** die letzten
+Audit-Einträge (`GET /api/audit`) und die letzten rückgängig machbaren
+Aktionen (`GET /api/undo`) — beide Wege gab es serverseitig schon lange,
+bisher nur über den Chat oder von Hand über HTTP erreichbar. Ein Klick auf
+**Rückgängig** ruft `POST /api/undo` auf und aktualisiert die Karte. Sie
+lädt sich selbst neu bei jeder Verbindung und nach jedem `tool.finished`
+(leicht entprellt), dazu über den kleinen **↻**-Knopf im Kopf der Karte von
+Hand.
+
+## Benachrichtigungen
+
+Läuft ein Ziel im Hintergrund weiter (Autonomy V1) oder wartet eine
+Bestätigung, während der Tab gerade nicht im Vordergrund ist, meldet sich
+der Browser über die Web-Notification-API — nur dann, nie zusätzlich, wenn
+ohnehin hingeschaut wird (das steht schon im Verlauf). Aktiviert wird das
+ausdrücklich über die Palette-Aktion „Benachrichtigungen aktivieren", nie
+automatisch beim Laden der Seite.
 
 ## Anbindung an den Server
 

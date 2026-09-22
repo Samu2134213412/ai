@@ -164,8 +164,14 @@ Fertig und getestet (827 Tests, siehe `ROADMAP.md` für die Phasen):
 * **Kommando-Palette (F3/Strg+K):** Action Search + Tool Explorer direkt in
   der Oberfläche — Werkzeuge suchen (dieselbe Rangfolge wie im Chat),
   favorisieren, abschalten, alles ohne Modell-Umweg (`GET`/`POST
-  /api/tools/*`). Dazu ein kleiner, eigener HotkeyManager: registrierbare,
+  /api/tools/*`), dazu gespeicherte **Makros per Klick ausführen**
+  (`GET /api/macros`). Ein kleiner, eigener HotkeyManager: registrierbare,
   kontextabhängige Tastenkürzel mit Export/Import — siehe `web/README.md`
+* **Verlauf + Benachrichtigungen:** Audit Log und Rückgängig-Historie direkt
+  in der Oberfläche sichtbar und bedienbar (`GET`/`POST /api/undo`,
+  `GET /api/audit`), dazu Browser-Benachrichtigungen für Bestätigungsanfragen
+  und abgeschlossene Ziele, wenn der Tab gerade nicht im Vordergrund ist —
+  siehe `web/README.md`
 * **Health-Check + Doku-Generator:** `GET /api/health` meldet jede bekannte
   Abhängigkeit (git, ffmpeg, docker, psutil, …) mit Installationshinweis,
   wenn sie fehlt; `python -m jarvis --generate-docs` schreibt die
