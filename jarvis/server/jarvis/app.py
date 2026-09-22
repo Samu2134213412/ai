@@ -411,9 +411,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 tags=(tag,) if tag else None)
             rows = [tool_row(h.tool, favorites, disabled, h.score) for h in treffer]
         else:
-            auswahl = [t for t in registry
-                      if (not category or t.category == category)
-                      and (not tag or tag in t.tags)]
+            auswahl = registry.filter(category, tag)
             rows = [tool_row(t, favorites, disabled) for t in auswahl[:begrenzt]]
         return {"werkzeuge": rows, "gesamt_im_katalog": len(registry),
                "kategorien": registry.categories()}
@@ -431,15 +429,23 @@ def create_app(config: Config | None = None) -> FastAPI:
             if not history.unfavorite(real):
                 raise HTTPException(status_code=409, detail=f"{real} war kein Favorit.")
         elif action == "disable":
-            if real in {"jarvis.tools.enable", "jarvis.tools.disable"}:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"{real} lässt sich nicht abschalten -- sonst gäbe es keinen "
-                          "Weg mehr zurück.")
-            history.disable(real, body.reason)
+            try:
+                history.disable(real, body.reason)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         elif action == "enable":
             if not history.enable(real):
                 raise HTTPException(status_code=409, detail=f"{real} war nicht abgeschaltet.")
+        # Direkter Nutzer-Weg wie /api/undo, /api/goals/*/{pause,resume,cancel}
+        # -- ohne Permission-Gate (der Nutzer bedient hier sein eigenes
+        # Steuerelement, kein Modell handelt in seinem Namen), aber mit
+        # Audit-Eintrag, damit "wer hat wann favorisiert/abgeschaltet" auch
+        # außerhalb des Chat-Wegs nachvollziehbar bleibt.
+        audit.record(tool=f"jarvis.tools.{action}", level=PermissionLevel.WRITE,
+                    arguments={"name": real, "grund": body.reason} if action == "disable"
+                    else {"name": real},
+                    ok=True, summary=f"{real}: {action} (Kommando-Palette)",
+                    request="command-palette")
         return {"angefordert": action, "werkzeug": real}
 
     @app.post("/api/permission/resolve", dependencies=Guarded)

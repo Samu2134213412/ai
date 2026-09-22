@@ -30,6 +30,15 @@ REDACTED = "«entfernt»"
 #: kein Datenspeicher.
 MAX_VALUE = 200
 
+#: Diese beiden dürfen sich nicht selbst abschalten -- sonst gäbe es keinen
+#: Weg mehr zurück außer einer manuellen Änderung an der Datenbank. Die
+#: Prüfung sitzt hier, im Mechanismus selbst (``disable()``), und nicht bei
+#: jedem einzelnen Aufrufer -- zwei Aufrufer (das ``jarvis.tools.disable``-
+#: Werkzeug und der HTTP-Weg der Kommando-Palette) hatten sie zuvor beide
+#: für sich re-implementiert, und ein dritter Aufrufer hätte sie vergessen
+#: können.
+PROTECTED = frozenset({"jarvis.tools.enable", "jarvis.tools.disable"})
+
 
 def redact(arguments: dict[str, Any] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
@@ -224,6 +233,9 @@ class ToolHistory:
         return {r["tool"]: r["reason"] for r in rows}
 
     def disable(self, tool: str, reason: str = "") -> bool:
+        if tool in PROTECTED:
+            raise ValueError(f"{tool} lässt sich nicht abschalten -- sonst gäbe es "
+                             "keinen Weg mehr zurück.")
         with self._lock:
             self._db.execute(
                 "INSERT INTO tool_disabled (tool, ts, reason) VALUES (?,?,?) "

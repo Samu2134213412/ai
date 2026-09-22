@@ -170,6 +170,42 @@ def _feldwert(result: ToolResult, feld: str) -> Any:
                      "(erlaubt: ok, summary, payload, evidence.<schlüssel>)")
 
 
+#: Erlaubte Schrittarten -- dieselbe Liste, die ``MacroEngine._run_steps``
+#: unten tatsächlich verarbeitet. Eine einzige Quelle statt einer zweiten,
+#: unabhängig gepflegten Kopie beim Anlegen eines Makros.
+STEP_KINDS = frozenset({"tool", "if", "loop", "parallel", "wait"})
+
+
+def validate_steps(steps: object, path: str = "steps") -> None:
+    """Prüft eine Schrittliste rekursiv, BEVOR sie gespeichert wird (Punkt 46)
+    -- dieselbe Form, die die Engine zur Laufzeit erwartet, hier vorab, damit
+    ein ungültiges Makro gar nicht erst abgelegt wird. Wird sowohl von
+    ``automation.macro.create`` als auch (indirekt, über ``MacroStore.save``)
+    von jeder anderen Stelle gebraucht, die Schritte entgegennimmt."""
+    if not isinstance(steps, list):
+        raise MacroError(f"{path} muss eine Liste von Schritten sein.")
+    for i, step in enumerate(steps):
+        ort = f"{path}[{i}]"
+        if not isinstance(step, dict):
+            raise MacroError(f"{ort} muss ein Objekt sein.")
+        art = step.get("kind", "tool")
+        if art not in STEP_KINDS:
+            raise MacroError(f"{ort}: unbekannte Schrittart {art!r} (erlaubt: "
+                             f"{', '.join(sorted(STEP_KINDS))}).")
+        if art == "tool" and not str(step.get("tool") or "").strip():
+            raise MacroError(f"{ort}: ein 'tool'-Schritt braucht ein 'tool'-Feld.")
+        elif art == "if":
+            validate_steps(step.get("then", []), f"{ort}.then")
+            validate_steps(step.get("else", []), f"{ort}.else")
+        elif art == "loop":
+            if "times" not in step and "while" not in step:
+                raise MacroError(f"{ort}: eine Schleife braucht 'times' oder 'while'.")
+            validate_steps(step.get("body", []), f"{ort}.body")
+        elif art == "parallel":
+            for j, zweig in enumerate(step.get("branches", [])):
+                validate_steps(zweig, f"{ort}.branches[{j}]")
+
+
 def auswerten(bedingung: dict[str, Any], ergebnisse: dict[str, ToolResult]) -> bool:
     schritt_id = bedingung.get("step")
     if schritt_id not in ergebnisse:
@@ -228,6 +264,40 @@ class MacroRun:
 
 
 # ══════════════════════════════════════════════════════════════ Engine
+class _StepCounter:
+    """Die Gesamtschrittzahl über einen ganzen Lauf -- über alle
+    Verschachtelungen UND alle parallelen Zweige hinweg gemeinsam gezählt
+    (``MAX_STEPS_TOTAL`` gilt makroweit, nicht je Zweig), deshalb ein
+    eigenes, geteiltes Objekt statt eines Felds auf ``_RunState``."""
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value = 0
+
+    def increment(self) -> int:
+        self.value += 1
+        return self.value
+
+
+@dataclass
+class _RunState:
+    """Bündelt, was durch einen Lauf gereicht wird, statt vier einzelne
+    Parameter durch jede ``_schritt_*``-Methode zu fädeln. ``results``/
+    ``log``/``all_results`` sind je Zweig eigene Objekte (siehe ``branch()``);
+    ``counter`` bleibt über alle Zweige hinweg dasselbe Objekt."""
+    counter: _StepCounter
+    results: dict[str, ToolResult] = field(default_factory=dict)
+    log: list[MacroStepLog] = field(default_factory=list)
+    all_results: list[ToolResult] = field(default_factory=list)
+
+    def branch(self) -> "_RunState":
+        """Ein neuer Zustand für einen parallelen Zweig: eigene Ergebnisse/
+        Protokoll/Aufrufliste, damit sich parallele Zweige nicht gegenseitig
+        sehen, bevor sie nach ``asyncio.gather`` zusammengeführt sind --
+        derselbe Zähler, weil die Gesamtobergrenze für das ganze Makro gilt."""
+        return _RunState(counter=self.counter)
+
+
 class MacroEngine:
     #: Harte Obergrenzen, unabhängig davon, was ein einzelnes Makro angibt --
     #: dieselbe Vorsicht wie Watchdog/GoalBudget in Autonomy V1.
@@ -239,52 +309,45 @@ class MacroEngine:
         self._run_tool = run_tool
 
     async def run(self, steps: list[dict[str, Any]]) -> MacroRun:
-        ergebnisse: dict[str, ToolResult] = {}
-        protokoll: list[MacroStepLog] = []
-        alle: list[ToolResult] = []
-        zaehler = [0]
-        ok = await self._run_steps(steps, ergebnisse, protokoll, alle, zaehler)
-        return MacroRun(ok=ok, log=protokoll, results=ergebnisse, all_results=alle)
+        state = _RunState(counter=_StepCounter())
+        ok = await self._run_steps(steps, state)
+        return MacroRun(ok=ok, log=state.log, results=state.results,
+                        all_results=state.all_results)
 
-    async def _run_steps(self, steps: list[dict[str, Any]], ergebnisse: dict[str, ToolResult],
-                         protokoll: list[MacroStepLog], alle: list[ToolResult],
-                         zaehler: list[int]) -> bool:
+    async def _run_steps(self, steps: list[dict[str, Any]], state: _RunState) -> bool:
         for step in steps or []:
-            zaehler[0] += 1
-            if zaehler[0] > self.MAX_STEPS_TOTAL:
+            if state.counter.increment() > self.MAX_STEPS_TOTAL:
                 raise MacroError(f"Makro abgebrochen: mehr als {self.MAX_STEPS_TOTAL} "
                                  "Einzelschritte insgesamt -- vermutlich eine Schleife "
                                  "ohne wirkliches Ende.")
             art = step.get("kind", "tool")
             if art == "tool":
-                if not await self._schritt_werkzeug(step, ergebnisse, protokoll, alle, zaehler):
+                if not await self._schritt_werkzeug(step, state):
                     return False
             elif art == "if":
                 bedingung = step.get("condition") or {}
-                zweig = step.get("then", []) if auswerten(bedingung, ergebnisse) \
+                zweig = step.get("then", []) if auswerten(bedingung, state.results) \
                     else step.get("else", [])
-                if not await self._run_steps(zweig, ergebnisse, protokoll, alle, zaehler):
+                if not await self._run_steps(zweig, state):
                     return False
             elif art == "loop":
-                if not await self._schritt_schleife(step, ergebnisse, protokoll, alle, zaehler):
+                if not await self._schritt_schleife(step, state):
                     return False
             elif art == "parallel":
-                if not await self._schritt_parallel(step, ergebnisse, protokoll, alle, zaehler):
+                if not await self._schritt_parallel(step, state):
                     return False
             elif art == "wait":
                 sekunden = max(0.0, min(float(step.get("seconds", 0) or 0),
                                         self.MAX_WAIT_SECONDS))
                 await asyncio.sleep(sekunden)
-                protokoll.append(MacroStepLog(step.get("id", ""), "wait", True,
+                state.log.append(MacroStepLog(step.get("id", ""), "wait", True,
                                               f"{sekunden}s gewartet"))
             else:
                 raise MacroError(f"Unbekannte Schrittart: {art!r} "
-                                 "(erlaubt: tool, if, loop, parallel, wait)")
+                                 f"(erlaubt: {', '.join(sorted(STEP_KINDS))})")
         return True
 
-    async def _schritt_werkzeug(self, step: dict[str, Any], ergebnisse: dict[str, ToolResult],
-                                protokoll: list[MacroStepLog], alle: list[ToolResult],
-                                zaehler: list[int]) -> bool:
+    async def _schritt_werkzeug(self, step: dict[str, Any], state: _RunState) -> bool:
         tool = (step.get("tool") or "").strip()
         if not tool:
             raise MacroError("Ein Schritt vom Typ 'tool' braucht ein 'tool'-Feld.")
@@ -298,21 +361,19 @@ class MacroEngine:
             if ergebnis.ok or versuch == max_versuche:
                 break
             await asyncio.sleep(verzoegerung)
-        step_id = step.get("id") or f"schritt{zaehler[0]}"
-        ergebnisse[step_id] = ergebnis
-        alle.append(ergebnis)
-        protokoll.append(MacroStepLog(step_id, "tool", ergebnis.ok, ergebnis.summary, versuch))
+        step_id = step.get("id") or f"schritt{state.counter.value}"
+        state.results[step_id] = ergebnis
+        state.all_results.append(ergebnis)
+        state.log.append(MacroStepLog(step_id, "tool", ergebnis.ok, ergebnis.summary, versuch))
         return ergebnis.ok or bool(step.get("continue_on_error"))
 
-    async def _schritt_schleife(self, step: dict[str, Any], ergebnisse: dict[str, ToolResult],
-                                protokoll: list[MacroStepLog], alle: list[ToolResult],
-                                zaehler: list[int]) -> bool:
+    async def _schritt_schleife(self, step: dict[str, Any], state: _RunState) -> bool:
         koerper = step.get("body", [])
         obergrenze = min(int(step.get("max_iterations", 50) or 50), self.MAX_LOOP_ITERATIONS)
         if "times" in step:
             anzahl = max(0, min(int(step["times"]), obergrenze))
             for _ in range(anzahl):
-                if not await self._run_steps(koerper, ergebnisse, protokoll, alle, zaehler):
+                if not await self._run_steps(koerper, state):
                     return False
             return True
         bedingung = step.get("while")
@@ -325,9 +386,9 @@ class MacroEngine:
         # sie lesen könnte. Effektiv also ein repeat-until in umgekehrter
         # Bedingung, nicht das klassische, vorab prüfende while.
         for _ in range(obergrenze):
-            if not await self._run_steps(koerper, ergebnisse, protokoll, alle, zaehler):
+            if not await self._run_steps(koerper, state):
                 return False
-            if not auswerten(bedingung, ergebnisse):
+            if not auswerten(bedingung, state.results):
                 break
         else:
             raise MacroError(f"Schleife nach {obergrenze} Durchläufen abgebrochen -- "
@@ -335,20 +396,15 @@ class MacroEngine:
                              "wirklich so lange dauern soll, oder die Bedingung prüfen.")
         return True
 
-    async def _schritt_parallel(self, step: dict[str, Any], ergebnisse: dict[str, ToolResult],
-                                protokoll: list[MacroStepLog], alle: list[ToolResult],
-                                zaehler: list[int]) -> bool:
+    async def _schritt_parallel(self, step: dict[str, Any], state: _RunState) -> bool:
         zweige = step.get("branches") or []
         if not zweige:
             return True
-        teil_ergebnisse: list[dict[str, ToolResult]] = [dict() for _ in zweige]
-        teil_protokolle: list[list[MacroStepLog]] = [list() for _ in zweige]
-        teil_alle: list[list[ToolResult]] = [list() for _ in zweige]
-        aufgaben = [self._run_steps(zweig, te, tp, ta, zaehler)
-                   for zweig, te, tp, ta in zip(zweige, teil_ergebnisse, teil_protokolle, teil_alle)]
+        teil_zustaende = [state.branch() for _ in zweige]
+        aufgaben = [self._run_steps(zweig, ts) for zweig, ts in zip(zweige, teil_zustaende)]
         resultate = await asyncio.gather(*aufgaben)
-        for te, tp, ta in zip(teil_ergebnisse, teil_protokolle, teil_alle):
-            ergebnisse.update(te)
-            protokoll.extend(tp)
-            alle.extend(ta)
+        for ts in teil_zustaende:
+            state.results.update(ts.results)
+            state.log.extend(ts.log)
+            state.all_results.extend(ts.all_results)
         return all(resultate)

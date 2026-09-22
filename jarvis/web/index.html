@@ -1543,6 +1543,31 @@ const ACTIONS=[
   {id:"mic", label:"Sprechen (Mikrofon)", run:()=>$("mic").click()},
   {id:"memory.add", label:"Neue Erinnerung anlegen", run:()=>{ showView("net"); $("add").click(); }},
   {id:"demo", label:"Ablauf abspielen (Demo)", run:()=>$("play").click()},
+  {id:"hotkeys.list", label:"Tastenkürzel anzeigen", run:()=>{
+    const zeilen=HotkeyManager.list().map((a)=>
+      `${esc(a.keys.join(" / "))} — ${esc(a.describe)}`);
+    say({who:"jarvis", prov:"talk", text:"Belegte Tastenkürzel:",
+      evidence:zeilen.join("<br>")});
+  }},
+  {id:"hotkeys.export", label:"Tastenkürzel exportieren", run:async()=>{
+    const json=HotkeyManager.exportJSON();
+    try{
+      await navigator.clipboard.writeText(json);
+      say({who:"jarvis", prov:"talk", text:"Tastenkürzel als JSON in die Zwischenablage kopiert."});
+    }catch(e){
+      say({who:"jarvis", prov:"talk",
+        text:"Zwischenablage nicht erreichbar -- hier das JSON zum Kopieren von Hand:",
+        evidence:esc(json).replace(/\n/g,"<br>")});
+    }
+  }},
+  {id:"hotkeys.import", label:"Tastenkürzel importieren", run:()=>{
+    const raw=window.prompt("Tastenkürzel-JSON einfügen (wie beim Export erzeugt):");
+    if(raw===null) return;
+    const erfolg=HotkeyManager.importJSON(raw);
+    say({who:"jarvis", prov:erfolg?"talk":"fail",
+      text:erfolg?"Tastenkürzel übernommen." : "Konnte das JSON nicht lesen -- nichts übernommen.",
+      fail:!erfolg});
+  }},
 ];
 
 let palOpen=false, palRows=[], palSel=0, palCats=[], palCat="", palOpenDetail=null, palSeq=0;

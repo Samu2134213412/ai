@@ -89,8 +89,15 @@ def build_registry(config: Config, store: MemoryStore,
                                services={**context.services, "registry": registry,
                                         "discovery": discovery})
     try:
-        registry.extend(meta_pack.build(meta_context))
-        discovery.index.rebuild()  # die gerade hinzugefügten jarvis.tools.* mit erfassen
+        neue_werkzeuge = meta_pack.build(meta_context)
+        registry.extend(neue_werkzeuge)
+        # Einzeln nachgetragen statt discovery.index.rebuild(): der Index
+        # wurde gerade erst über den ganzen (noch unvollständigen) Katalog
+        # aufgebaut -- ein voller rebuild() hier würde alle ~390 bereits
+        # indizierten Werkzeuge ein zweites Mal berechnen, nur um die
+        # Handvoll jarvis.tools.* mit aufzunehmen.
+        for tool in neue_werkzeuge:
+            discovery.index.add(tool)
     except Exception as exc:  # noqa: BLE001 - siehe oben
         registry.pack_errors["meta"] = f"{type(exc).__name__}: {exc}"
 

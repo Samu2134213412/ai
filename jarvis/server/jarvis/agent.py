@@ -85,6 +85,12 @@ _ALTERNATIVE = re.compile(
 _FAILURE_STREAK = 3
 
 
+def _tool_names(schemas: list[dict]) -> str:
+    """Die aktuell angebotene Werkzeugauswahl als Text -- für die Meldung an
+    das Modell, wenn es einen halluzinierten Namen aufruft."""
+    return ", ".join(s["function"]["name"] for s in schemas)
+
+
 class _GoalCancelled(Exception):
     """Der Nutzer hat abgebrochen. Kein Fehler -- eine Anweisung."""
 
@@ -608,7 +614,7 @@ class Agent:
                         # mehr sinnvoll in eine Werkzeugantwort). jarvis.tools.
                         # search steht immer in der Auswahl, falls das Gesuchte
                         # nicht dabei war.
-                        angeboten = ", ".join(s["function"]["name"] for s in schemas)
+                        angeboten = _tool_names(schemas)
                         messages.append({
                             "role": "tool", "name": call.name,
                             "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' existiert "
@@ -1109,7 +1115,7 @@ class Agent:
                                for c in turn.tool_calls]})
             for call in turn.tool_calls:
                 if call.name not in self.registry:
-                    angeboten = ", ".join(s["function"]["name"] for s in schemas)
+                    angeboten = _tool_names(schemas)
                     messages.append({
                         "role": "tool", "name": call.name,
                         "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' existiert "

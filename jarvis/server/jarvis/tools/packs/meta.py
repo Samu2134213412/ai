@@ -13,10 +13,14 @@ kann nicht vor ihnen existieren. Deshalb wird dieser Pack getrennt von den
 ``tools/__init__.py::build_registry``), mit Registry/Discovery/History über
 ``ctx.services`` statt über die üblichen ``ToolContext``-Felder.
 
-Bewusst KEIN zweites Sicherheitssystem: "abschalten" ist eine Vorliebe des
-Nutzers, keine Berechtigungsstufe -- das Permission-System (``permissions.py``)
-bleibt die einzige echte Schranke. Durchgesetzt wird das Abschalten in
-``Agent._run_tool``, nicht hier.
+Bewusst KEIN zweites Sicherheitssystem für das Abschalten selbst: "abschalten"
+ist eine Vorliebe des Nutzers, keine Berechtigungsstufe, und wird durchgesetzt
+in ``Agent._run_tool``, nicht hier. Die BerechtigungsSTUFE jedes einzelnen
+Werkzeugs hier folgt aber sehr wohl der normalen Einordnung (SAFE/READ/WRITE)
+wie jeder andere Pack auch: reine Auskunft ist READ, ein Favorit setzen oder
+ein Werkzeug abschalten verändert gespeicherten Zustand und ist WRITE --
+SAFE wäre hier falsch (SAFE läuft ohne jede Bestätigung, an jeder
+Autonomiestufe vorbei, siehe ``permissions.py``).
 """
 
 from __future__ import annotations
@@ -25,11 +29,6 @@ from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext, availability
 from ._base import NO_PARAMS, integer, ok, params, table, text
-
-#: Diese beiden dürfen sich nicht selbst abschalten -- sonst gäbe es über das
-#: Modell keinen Weg mehr zurück (der Nutzer könnte es nur noch von außen,
-#: über die Datenbank, reparieren).
-_GESCHUETZT = {"jarvis.tools.enable", "jarvis.tools.disable"}
 
 
 def build(ctx: ToolContext) -> list[Tool]:
@@ -66,11 +65,7 @@ def build(ctx: ToolContext) -> list[Tool]:
         return ok("jarvis.tools.info", f"{tool.name}: {tool.description}", payload=daten)
 
     def tools_list(category: str = "", tag: str = "") -> ToolResult:
-        werkzeuge = list(registry)
-        if category:
-            werkzeuge = [t for t in werkzeuge if t.category == category]
-        if tag:
-            werkzeuge = [t for t in werkzeuge if tag in t.tags]
+        werkzeuge = registry.filter(category, tag)
         zeilen = [[t.name, t.category, t.level.label, t.description[:70]] for t in werkzeuge]
         return ok("jarvis.tools.list", f"{len(werkzeuge)} Werkzeug(e)",
                   payload=table(zeilen, headers=["Werkzeug", "Kategorie", "Stufe", "Beschreibung"]),
@@ -98,10 +93,10 @@ def build(ctx: ToolContext) -> list[Tool]:
         real = registry.resolve((name or "").strip())
         if real not in registry:
             raise ToolError(f"Unbekanntes Werkzeug: {name!r}")
-        if real in _GESCHUETZT:
-            raise ToolError(f"{real} lässt sich nicht abschalten -- sonst gäbe es keinen "
-                            "Weg mehr, es über das Modell wieder anzuschalten.")
-        history.disable(real, reason or "")
+        try:
+            history.disable(real, reason or "")
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
         return ok("jarvis.tools.disable", f"{real} abgeschaltet", name=real, grund=reason)
 
     def tools_enable(name: str) -> ToolResult:
@@ -132,38 +127,38 @@ def build(ctx: ToolContext) -> list[Tool]:
              "Werkzeug in der aktuellen Auswahl steht.",
              params("query", query=text("Suchbegriff, z. B. 'gpu temperatur'"),
                     limit=integer("Maximal so viele Treffer, Vorgabe 10")),
-             tools_search, level=P.SAFE, tags=("jarvis", "werkzeuge"),
+             tools_search, level=P.READ, tags=("jarvis", "werkzeuge"),
              phrases=("welche werkzeuge gibt es für", "suche ein werkzeug für")),
         Tool("jarvis.tools.info", "Zeigt alle Details zu einem Werkzeug: Parameter, "
              "Berechtigungsstufe, Verfügbarkeit, Beispiele.",
-             params("name", name=text("Werkzeugname")), tools_info, level=P.SAFE,
+             params("name", name=text("Werkzeugname")), tools_info, level=P.READ,
              tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.list", "Listet Werkzeuge, optional nach Kategorie/Tag gefiltert.",
              params(category=text("Kategorie, optional"), tag=text("Tag, optional")),
-             tools_list, level=P.SAFE, tags=("jarvis", "werkzeuge")),
+             tools_list, level=P.READ, tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.favorite", "Markiert ein Werkzeug als Favorit -- taucht in der "
              "Suche danach bevorzugt auf.",
-             params("name", name=text("Werkzeugname")), tools_favorite, level=P.SAFE,
+             params("name", name=text("Werkzeugname")), tools_favorite, level=P.WRITE,
              tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.unfavorite", "Entfernt die Favoriten-Markierung.",
-             params("name", name=text("Werkzeugname")), tools_unfavorite, level=P.SAFE,
+             params("name", name=text("Werkzeugname")), tools_unfavorite, level=P.WRITE,
              tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.favorites", "Listet alle als Favorit markierten Werkzeuge.",
-             NO_PARAMS, tools_favorites, level=P.SAFE, tags=("jarvis", "werkzeuge")),
+             NO_PARAMS, tools_favorites, level=P.READ, tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.disable", "Schaltet ein Werkzeug ab (Punkt 26) -- keine "
              "Sicherheitsfunktion, sondern eine Vorliebe: das Werkzeug läuft danach nicht "
              "mehr, egal was das Permission-System dazu sagen würde.",
              params("name", name=text("Werkzeugname"), reason=text("Grund, optional")),
-             tools_disable, level=P.SAFE, tags=("jarvis", "werkzeuge")),
+             tools_disable, level=P.WRITE, tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.enable", "Schaltet ein zuvor abgeschaltetes Werkzeug wieder an.",
-             params("name", name=text("Werkzeugname")), tools_enable, level=P.SAFE,
+             params("name", name=text("Werkzeugname")), tools_enable, level=P.WRITE,
              tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.history", "Zeigt zuletzt aufgerufene Werkzeuge samt Ergebnis.",
              params(limit=integer("Maximal so viele Einträge, Vorgabe 30"),
                     tool=text("Nur dieses Werkzeug, optional")),
-             tools_history, level=P.SAFE, tags=("jarvis", "werkzeuge")),
+             tools_history, level=P.READ, tags=("jarvis", "werkzeuge")),
         Tool("jarvis.tools.stats", "Kennzahlen je Werkzeug: Aufrufe, Erfolgsquote, "
              "mittlere Dauer.",
              params(limit=integer("Maximal so viele Werkzeuge, Vorgabe 30")),
-             tools_stats, level=P.SAFE, tags=("jarvis", "werkzeuge")),
+             tools_stats, level=P.READ, tags=("jarvis", "werkzeuge")),
     ]

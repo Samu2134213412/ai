@@ -2701,7 +2701,7 @@ Fügt einen Textzusatz in eine Bildecke ein.
 
 Schaltet ein Werkzeug ab (Punkt 26) -- keine Sicherheitsfunktion, sondern eine Vorliebe: das Werkzeug läuft danach nicht mehr, egal was das Permission-System dazu sagen würde.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** WRITE (MEDIUM)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2714,7 +2714,7 @@ Schaltet ein Werkzeug ab (Punkt 26) -- keine Sicherheitsfunktion, sondern eine V
 
 Schaltet ein zuvor abgeschaltetes Werkzeug wieder an.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** WRITE (MEDIUM)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2726,7 +2726,7 @@ Schaltet ein zuvor abgeschaltetes Werkzeug wieder an.
 
 Markiert ein Werkzeug als Favorit -- taucht in der Suche danach bevorzugt auf.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** WRITE (MEDIUM)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2738,7 +2738,7 @@ Markiert ein Werkzeug als Favorit -- taucht in der Suche danach bevorzugt auf.
 
 Listet alle als Favorit markierten Werkzeuge.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** READ (LOW)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2746,7 +2746,7 @@ Listet alle als Favorit markierten Werkzeuge.
 
 Zeigt zuletzt aufgerufene Werkzeuge samt Ergebnis.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** READ (LOW)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2759,7 +2759,7 @@ Zeigt zuletzt aufgerufene Werkzeuge samt Ergebnis.
 
 Zeigt alle Details zu einem Werkzeug: Parameter, Berechtigungsstufe, Verfügbarkeit, Beispiele.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** READ (LOW)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2771,7 +2771,7 @@ Zeigt alle Details zu einem Werkzeug: Parameter, Berechtigungsstufe, Verfügbark
 
 Listet Werkzeuge, optional nach Kategorie/Tag gefiltert.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** READ (LOW)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2784,7 +2784,7 @@ Listet Werkzeuge, optional nach Kategorie/Tag gefiltert.
 
 Sucht im Werkzeugkasten nach passenden Werkzeugen (Name, Beschreibung, Tags, Beispielsätze). Nützlich, wenn kein passendes Werkzeug in der aktuellen Auswahl steht.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** READ (LOW)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2797,7 +2797,7 @@ Sucht im Werkzeugkasten nach passenden Werkzeugen (Name, Beschreibung, Tags, Bei
 
 Kennzahlen je Werkzeug: Aufrufe, Erfolgsquote, mittlere Dauer.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** READ (LOW)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 
@@ -2809,7 +2809,7 @@ Kennzahlen je Werkzeug: Aufrufe, Erfolgsquote, mittlere Dauer.
 
 Entfernt die Favoriten-Markierung.
 
-- **Stufe:** SAFE (LOW)
+- **Stufe:** WRITE (MEDIUM)
 - **Tags:** jarvis, werkzeuge
 - **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
 

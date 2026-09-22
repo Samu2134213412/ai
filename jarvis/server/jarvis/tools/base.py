@@ -267,6 +267,15 @@ class Registry:
                 if t.category == category and (not subcategory
                                                or t.subcategory == subcategory)]
 
+    def filter(self, category: str = "", tag: str = "") -> list[Tool]:
+        """Werkzeuge nach Kategorie und/oder Tag einschränken -- leer heißt
+        kein Filter. Dieselbe "welche Werkzeuge passen"-Logik, die sowohl
+        der Tool Explorer (``app.py::list_tools``) als auch das Meta-Werkzeug
+        ``jarvis.tools.list`` brauchen."""
+        return [t for t in self
+                if (not category or t.category == category)
+                and (not tag or tag in t.tags)]
+
     def tags(self) -> dict[str, int]:
         counts: dict[str, int] = {}
         for tool in self._tools.values():

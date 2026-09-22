@@ -115,6 +115,15 @@ class ToolIndex:
     def rebuild(self) -> None:
         self._entries = [self._entry(tool) for tool in self.registry]
 
+    def add(self, tool: Tool) -> None:
+        """Ein einzelnes, neu hinzugekommenes Werkzeug nachtragen, ohne die
+        übrigen Einträge neu zu berechnen -- z. B. für ``jarvis.tools.*``,
+        das erst nach dem übrigen Katalog gebaut wird (siehe
+        ``tools/__init__.py::build_registry``) und sonst einen zweiten
+        vollständigen ``rebuild()`` über bereits indizierte Werkzeuge nötig
+        machen würde."""
+        self._entries.append(self._entry(tool))
+
     @staticmethod
     def _entry(tool: Tool) -> _Entry:
         weights: dict[str, float] = {}

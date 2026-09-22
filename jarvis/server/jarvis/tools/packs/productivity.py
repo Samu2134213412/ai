@@ -21,7 +21,7 @@ import random
 import re
 import time
 
-from ...macros import MacroError
+from ...macros import MacroError, validate_steps
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext
@@ -387,31 +387,9 @@ def build(ctx: ToolContext) -> list[Tool]:
     # muss über Agent._run_tool laufen (Permission-Gate, Undo, Audit -- siehe
     # macros.py-Docstring), und ein Pack kennt den Agent nicht. Nur die reine
     # Datenverwaltung (anlegen/auflisten/ansehen/löschen) gehört hierher.
-    _MAKRO_ARTEN = {"tool", "if", "loop", "parallel", "wait"}
-
-    def _pruefe_schritte(schritte: object, pfad: str = "steps") -> None:
-        if not isinstance(schritte, list):
-            raise ToolError(f"{pfad} muss eine Liste von Schritten sein.")
-        for i, schritt in enumerate(schritte):
-            ort = f"{pfad}[{i}]"
-            if not isinstance(schritt, dict):
-                raise ToolError(f"{ort} muss ein Objekt sein.")
-            art = schritt.get("kind", "tool")
-            if art not in _MAKRO_ARTEN:
-                raise ToolError(f"{ort}: unbekannte Schrittart {art!r} (erlaubt: "
-                                f"{', '.join(sorted(_MAKRO_ARTEN))}).")
-            if art == "tool" and not str(schritt.get("tool") or "").strip():
-                raise ToolError(f"{ort}: ein 'tool'-Schritt braucht ein 'tool'-Feld.")
-            elif art == "if":
-                _pruefe_schritte(schritt.get("then", []), f"{ort}.then")
-                _pruefe_schritte(schritt.get("else", []), f"{ort}.else")
-            elif art == "loop":
-                if "times" not in schritt and "while" not in schritt:
-                    raise ToolError(f"{ort}: eine Schleife braucht 'times' oder 'while'.")
-                _pruefe_schritte(schritt.get("body", []), f"{ort}.body")
-            elif art == "parallel":
-                for j, zweig in enumerate(schritt.get("branches", [])):
-                    _pruefe_schritte(zweig, f"{ort}.branches[{j}]")
+    # Die Prüfung der Schrittliste selbst (``validate_steps``) kommt aus
+    # macros.py -- dieselbe Form, die ``MacroEngine`` zur Laufzeit erwartet,
+    # nicht eine hier unabhängig gepflegte zweite Kopie.
 
     def _makro_ablage():
         store = ctx.services.get("macros")
@@ -421,8 +399,8 @@ def build(ctx: ToolContext) -> list[Tool]:
 
     def macro_create(name: str, steps: list, description: str = "") -> ToolResult:
         ablage = _makro_ablage()
-        _pruefe_schritte(steps)
         try:
+            validate_steps(steps)
             definition = ablage.save(name, steps, description or "")
         except MacroError as exc:
             raise ToolError(str(exc)) from exc
