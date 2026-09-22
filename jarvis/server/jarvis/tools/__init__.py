@@ -23,7 +23,11 @@ from .packs import meta as meta_pack
 
 #: Werkzeuge, die vorgesehen, aber noch nicht gebaut sind. Die Oberfläche zeigt
 #: sie als „fehlt", damit klar ist, was Jarvis heute wirklich kann.
-PLANNED = ["screen_capture", "web_search", "mouse_keyboard", "open_program"]
+#: Die letzten vier (screen_capture, web_search, mouse_keyboard, open_program)
+#: sind jetzt gebaut -- als desktop.screen.capture, search.web,
+#: desktop.mouse.*/desktop.keyboard.* und search.apps.open (siehe
+#: tools/packs/desktop.py und tools/packs/search.py).
+PLANNED: list[str] = []
 
 __all__ = ["Registry", "Tool", "ToolError", "ToolMissing", "ToolResult",
            "ToolContext", "ToolDiscovery", "ToolIndex", "ToolHistory",

@@ -1,6 +1,6 @@
 # Werkzeugreferenz
 
-Automatisch erzeugt aus der Registry -- **398 Werkzeuge** in **24 Kategorien**. Nicht von Hand pflegen: `python -m jarvis --generate-docs` schreibt diese Datei neu, aus dem, was tatsächlich registriert ist.
+Automatisch erzeugt aus der Registry -- **406 Werkzeuge** in **25 Kategorien**. Nicht von Hand pflegen: `python -m jarvis --generate-docs` schreibt diese Datei neu, aus dem, was tatsächlich registriert ist.
 
 ## Kategorien
 
@@ -10,6 +10,7 @@ Automatisch erzeugt aus der Registry -- **398 Werkzeuge** in **24 Kategorien**. 
 - [clipboard](#clipboard) (4)
 - [core](#core) (6)
 - [db](#db) (10)
+- [desktop](#desktop) (6)
 - [dev](#dev) (4)
 - [dir](#dir) (10)
 - [docker](#docker) (19)
@@ -24,7 +25,7 @@ Automatisch erzeugt aus der Registry -- **398 Werkzeuge** in **24 Kategorien**. 
 - [npm](#npm) (1)
 - [productivity](#productivity) (12)
 - [python](#python) (10)
-- [search](#search) (2)
+- [search](#search) (4)
 - [system](#system) (44)
 - [text](#text) (55)
 - [video](#video) (14)
@@ -653,6 +654,98 @@ Listet Tabellen und Views einer SQLite-Datenbank.
 | `where` | ja | WHERE-Bedingung ohne das Wort WHERE, z. B. "id = ?" |
 | `where_params` | nein | Werte für '?' in where |
 | `dry_run` | nein | Nur zeigen, wie viele Zeilen betroffen wären |
+
+## desktop
+
+### `desktop.keyboard.press`
+
+Drückt eine Taste oder Tastenkombination, z. B. 'enter' oder 'ctrl+c'.
+
+- **Stufe:** SYSTEM (MEDIUM)
+- **Tags:** desktop, tastatur, automatisierung
+- **Benötigt:** pyautogui
+- **Probelauf:** unterstützt (`dry_run: true`)
+- **Verfügbarkeit hier, jetzt geprüft:** MISSING_DEPENDENCY -- Es fehlt: PyAutoGUI (pip install pyautogui)
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `keys` | ja | Taste(n), mit '+' verbunden für eine Kombination |
+| `dry_run` | nein | Nur zeigen, was gedrückt würde |
+
+### `desktop.keyboard.type`
+
+Tippt Text, als käme er von der Tastatur -- ins gerade fokussierte Fenster, welches das auch immer ist.
+
+- **Stufe:** SYSTEM (MEDIUM)
+- **Tags:** desktop, tastatur, automatisierung
+- **Benötigt:** pyautogui
+- **Probelauf:** unterstützt (`dry_run: true`)
+- **Verfügbarkeit hier, jetzt geprüft:** MISSING_DEPENDENCY -- Es fehlt: PyAutoGUI (pip install pyautogui)
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `text` | ja | Der zu tippende Text |
+| `interval` | nein | Sekunden zwischen den Zeichen, Vorgabe 0 |
+| `dry_run` | nein | Nur zeigen, was getippt würde |
+
+### `desktop.mouse.click`
+
+Bewegt die Maus zu einer Position und klickt dort.
+
+- **Stufe:** SYSTEM (MEDIUM)
+- **Tags:** desktop, maus, automatisierung
+- **Benötigt:** pyautogui
+- **Probelauf:** unterstützt (`dry_run: true`)
+- **Verfügbarkeit hier, jetzt geprüft:** MISSING_DEPENDENCY -- Es fehlt: PyAutoGUI (pip install pyautogui)
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `x` | ja | X-Koordinate in Pixeln |
+| `y` | ja | Y-Koordinate in Pixeln |
+| `button` | nein | left/right/middle, Vorgabe left |
+| `clicks` | nein | Anzahl Klicks, Vorgabe 1 (2 = Doppelklick) |
+| `dry_run` | nein | Nur zeigen, was geklickt würde |
+
+### `desktop.mouse.move`
+
+Bewegt die Maus zu einer Bildschirmposition.
+
+- **Stufe:** SYSTEM (MEDIUM)
+- **Tags:** desktop, maus, automatisierung
+- **Benötigt:** pyautogui
+- **Probelauf:** unterstützt (`dry_run: true`)
+- **Verfügbarkeit hier, jetzt geprüft:** MISSING_DEPENDENCY -- Es fehlt: PyAutoGUI (pip install pyautogui)
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `x` | ja | X-Koordinate in Pixeln |
+| `y` | ja | Y-Koordinate in Pixeln |
+| `duration` | nein | Sekunden für die Bewegung, Vorgabe sofort |
+| `dry_run` | nein | Nur zeigen, wohin sie bewegt würde |
+
+### `desktop.mouse.position`
+
+Wo die Maus gerade steht.
+
+- **Stufe:** READ (LOW)
+- **Tags:** desktop, maus
+- **Benötigt:** pyautogui
+- **Verfügbarkeit hier, jetzt geprüft:** MISSING_DEPENDENCY -- Es fehlt: PyAutoGUI (pip install pyautogui)
+
+### `desktop.screen.capture`
+
+Macht ein Bildschirmfoto und speichert es als Bild. Kann alles zeigen, was gerade auf dem Bildschirm steht -- absichtlich WRITE statt READ, damit es immer bestätigt wird.
+
+- **Stufe:** WRITE (MEDIUM)
+- **Tags:** desktop, bildschirm, screenshot
+- **Benötigt:** pillow
+- **Plattformen:** windows, darwin
+- **Verfügbarkeit hier, jetzt geprüft:** UNSUPPORTED_PLATFORM -- Läuft nur auf: windows, darwin (hier: linux)
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `path` | ja | Zielpfad für das Bild (z. B. foto.png) |
+| `overwrite` | nein | Bestehendes Ziel überschreiben |
 
 ## dev
 
@@ -3902,6 +3995,21 @@ Listet installierte Programme, optional gefiltert nach Name. Startet nichts -- n
 | `query` | nein | Suchbegriff, leer = alle |
 | `limit` | nein | Max. Treffer, Vorgabe 100 |
 
+### `search.apps.open`
+
+Startet ein Programm -- Pfad/Befehl wie ihn search.apps als zweite Spalte zurückgibt, oder ein Programmname im PATH. Kein Shell-Aufruf: keine Umleitung, keine Verkettung, nur genau dieses eine Programm mit genau diesen Argumenten.
+
+- **Stufe:** SYSTEM (MEDIUM)
+- **Tags:** suche, programme, starten
+- **Probelauf:** unterstützt (`dry_run: true`)
+- **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `path` | ja | Pfad oder Programmname (siehe search.apps) |
+| `arguments` | nein | Kommandozeilenargumente, optional |
+| `dry_run` | nein | Nur zeigen, was gestartet würde |
+
 ### `search.files`
 
 Sucht Dateien anhand des Namens (nicht des Inhalts -- dafür gibt es files.grep). Unscharf: die Buchstaben des Suchbegriffs müssen nur in der richtigen Reihenfolge vorkommen.
@@ -3915,6 +4023,19 @@ Sucht Dateien anhand des Namens (nicht des Inhalts -- dafür gibt es files.grep)
 | `query` | ja | Suchbegriff |
 | `path` | nein | Ordner, leer = erste freigegebene Wurzel |
 | `limit` | nein | Max. Treffer, Vorgabe 40 |
+
+### `search.web`
+
+Sucht im Web über einen konfigurierten Suchdienst (SearXNG oder Brave Search, siehe jarvis.json unter "search"). Ohne eingetragenen Dienst meldet sich das Werkzeug ehrlich als nicht eingerichtet, statt aus trainiertem Wissen zu raten.
+
+- **Stufe:** READ (LOW)
+- **Tags:** suche, web, internet
+- **Verfügbarkeit hier, jetzt geprüft:** AVAILABLE
+
+| Parameter | Pflicht | Beschreibung |
+|---|---|---|
+| `query` | ja | Suchbegriff |
+| `limit` | nein | Max. Treffer, Vorgabe 5 |
 
 ## system
 

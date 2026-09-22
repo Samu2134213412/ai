@@ -113,8 +113,11 @@ wurde durch die Hintergrund-Ausführung unvermeidlich und ist mit
 
 ## Phase 4 — Computer Control, Screen Understanding, Browser-Agent
 
-1. `open_program`, Fenstersteuerung, Lautstärke — offizielle APIs statt
-   UI-Automation, wo möglich. Ergänzt die `PLANNED`-Liste in `tools/__init__.py`.
+1. Fenstersteuerung, Lautstärke — offizielle APIs statt UI-Automation, wo
+   möglich. `open_program` (`search.apps.open`) sowie einfache Maus-/
+   Tastatursteuerung (`desktop.mouse.*`/`desktop.keyboard.*`) und ein
+   Bildschirmfoto (`desktop.screen.capture`) sind bereits gebaut -- die
+   `PLANNED`-Liste in `tools/__init__.py` ist damit leer.
 2. Context Awareness (aktives Fenster/Programm/Projekt).
 3. Screen Understanding (Screenshots analysieren, vor jeder Aktion:
    was ist sichtbar → was soll sich ändern → welche Wirkung wird erwartet).

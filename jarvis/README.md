@@ -116,25 +116,26 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (827 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (829 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
-* 398 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
+* 406 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
   Prozesse, Netzwerk sowie **Git (43 Operatoren), Python und Node.js**
   (venv, pip, ruff, pytest, npm), **Medien** (Bild über Pillow, Audio/
   Video über ffmpeg/ffprobe, 49 Operatoren), **Docker (19), nginx (8),
   Minecraft (19, über eine eigene RCON-Implementierung) und SQLite (10)**
   sowie **Zwischenablage, Produktivität (Taschenrechner ohne eval, Einheiten/
-  Farben/Datum, QR-Codes, gespeicherte Makros) und Suche (19)** — kleine,
-  benannte Befehle statt eines `git_do_everything`; destruktive (reset
-  --hard, clean, DROP TABLE, docker.prune) mit echtem Probelauf, siehe
-  `server/jarvis/tools/packs/`
+  Farben/Datum, QR-Codes, gespeicherte Makros), Suche (21, inkl. Web-Suche
+  über SearXNG/Brave und Programme starten) und Desktop (6: Bildschirmfoto,
+  Maus/Tastatur-Automatisierung über PyAutoGUI)** — kleine, benannte Befehle
+  statt eines `git_do_everything`; destruktive (reset --hard, clean, DROP
+  TABLE, docker.prune) mit echtem Probelauf, siehe `server/jarvis/tools/packs/`
 * **Makros:** gespeicherte Schrittfolgen mit IF/LOOP/PARALLEL/RETRY/WAIT
   (`server/jarvis/macros.py`) — jeder Schritt läuft über dieselbe
   `Agent._run_tool`-Pipeline wie ein einzelner Werkzeugaufruf (Permission-
   Gate, Undo, Audit), angelegt/verwaltet über `automation.macro.*`,
   ausgeführt über den eigenen Modus `mode: "macro"`
-* **Tool Discovery:** bei 398 Werkzeugen passen die vollständigen Schemata
+* **Tool Discovery:** bei 406 Werkzeugen passen die vollständigen Schemata
   nicht mehr ins Kontextfenster — vor jeder Modellanfrage sucht
   `discovery.py` lokal und deterministisch (Begriffstreffer, Tippfehler-
   toleranz, Favoriten-/Verlaufs-/Kontextbonus) die passende Handvoll
@@ -191,4 +192,6 @@ Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
    `complexity.is_simple()` unterscheiden einfach/komplex für zwei Modelle.
    Offen bleiben mehr als zwei Modelle sowie die Dimensionen
    privacy/cost/latency und ein Ollama-Umschalter für Nicht-Ollama-Backends.
-4. Skills, `screen_capture`, `web_search`, `mouse_keyboard`, `open_program` (Phase 3/4)
+4. Skills (Phase 3/4) — `screen_capture`, `web_search`, `mouse_keyboard` und
+   `open_program` sind inzwischen gebaut (`desktop.screen.capture`,
+   `search.web`, `desktop.mouse.*`/`desktop.keyboard.*`, `search.apps.open`)

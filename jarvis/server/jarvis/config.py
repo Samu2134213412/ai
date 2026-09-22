@@ -86,6 +86,18 @@ class WhisperConfig:
 
 
 @dataclass
+class SearchConfig:
+    """Web-Suche (``search.web``) -- dasselbe Prinzip wie bei Whisper: Jarvis
+    bringt keinen eigenen Schlüssel oder Dienst mit, leer heißt aus. Bevorzugt
+    eine selbst gehostete SearXNG-Instanz (kein Schlüssel, keine dritte
+    Partei, passt zum Rest des Projekts); ersatzweise die Brave Search API
+    (Schlüssel nötig, aber ohne eigene Infrastruktur)."""
+    searxng_url: str = ""
+    brave_api_key: str = ""
+    timeout: int = 15
+
+
+@dataclass
 class Config:
     # -- Netz ---------------------------------------------------------------
     host: str = "127.0.0.1"
@@ -116,6 +128,7 @@ class Config:
     shell: ShellConfig = field(default_factory=ShellConfig)
     code: CodeConfig = field(default_factory=CodeConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
+    search: SearchConfig = field(default_factory=SearchConfig)
     permissions: PermissionConfig = field(default_factory=PermissionConfig)
     #: Wie viel Eigeninitiative Jarvis nehmen darf (siehe autonomy.py).
     #: 2 ist "ein sinnvoller mittlerer Level", wie gefordert: normale
@@ -206,6 +219,10 @@ class Config:
             data["whisper"] = WhisperConfig(**{
                 k: v for k, v in data["whisper"].items()
                 if k in {f.name for f in fields(WhisperConfig)}})
+        if isinstance(data.get("search"), dict):
+            data["search"] = SearchConfig(**{
+                k: v for k, v in data["search"].items()
+                if k in {f.name for f in fields(SearchConfig)}})
         if isinstance(data.get("permissions"), dict):
             data["permissions"] = PermissionConfig(**{
                 k: v for k, v in data["permissions"].items()

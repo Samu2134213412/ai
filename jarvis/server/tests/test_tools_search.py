@@ -1,11 +1,22 @@
 """Das Such-Pack: search.files läuft gegen einen echten Dateibaum. search.apps
 läuft plattformabhängig -- unter Linux gegen echte, selbst angelegte
-.desktop-Dateien (kein Mock, echte Dateien im XDG-Format)."""
+.desktop-Dateien (kein Mock, echte Dateien im XDG-Format). search.web läuft
+gegen einen echten, lokalen Fake-SearXNG-Server (siehe test_websearch.py für
+die ausführliche Prüfung des Clients selbst). search.apps.open startet
+echte, harmlose Prozesse (python3 -c "pass")."""
 
 from __future__ import annotations
 
+import json
+import socket
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 import pytest
 
+from jarvis.config import SearchConfig
 from jarvis.tools import build_registry
 from jarvis.tools.base import ToolResult
 
@@ -135,3 +146,83 @@ def test_search_apps_lehnt_unbekannte_plattform_nicht_ab_bei_bekannter(tools):
     # haengt vom System ab, auf dem der Test laeuft.
     res = tools("search.apps", limit=5)
     assert res.ok
+
+
+# ═══════════════════════════════════════════════════════ search.apps.open
+def test_apps_open_startet_ein_echtes_programm(tools, workspace):
+    beleg = workspace / "gestartet.txt"
+    res = erfolg(tools("search.apps.open", path=sys.executable,
+                       arguments=["-c", f"open({str(beleg)!r}, 'w').close()"]))
+    assert res.evidence["pid"] > 0
+    for _ in range(50):
+        if beleg.exists():
+            break
+        time.sleep(0.05)
+    assert beleg.exists()
+
+
+def test_apps_open_probelauf_startet_nichts(tools, workspace):
+    beleg = workspace / "sollte_nicht_entstehen.txt"
+    res = tools("search.apps.open", path=sys.executable,
+               arguments=["-c", f"open({str(beleg)!r}, 'w').close()"], dry_run=True)
+    assert res.ok
+    assert res.evidence.get("probelauf") is True
+    assert not beleg.exists()
+
+
+def test_apps_open_ohne_pfad_wird_abgelehnt(tools):
+    fehler(tools("search.apps.open", path=""))
+
+
+def test_apps_open_unbekanntes_programm_meldet_ehrlichen_fehler(tools):
+    fehler(tools("search.apps.open", path="dieses-programm-gibt-es-ganz-sicher-nicht"))
+
+
+# ══════════════════════════════════════════════════════════════ search.web
+def freier_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def starte_fake_searxng(antwort: dict):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_a):
+            pass
+
+        def do_GET(self):
+            roh = json.dumps(antwort).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(roh)))
+            self.end_headers()
+            self.wfile.write(roh)
+
+    port = freier_port()
+    server = HTTPServer(("127.0.0.1", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, port
+
+
+def test_search_web_ohne_konfiguration_meldet_das_ehrlich(tools):
+    res = fehler(tools("search.web", query="irgendwas"))
+    assert "eingerichtet" in res.summary
+
+
+def test_search_web_leerer_suchbegriff_wird_abgelehnt(tools):
+    fehler(tools("search.web", query=""))
+
+
+def test_search_web_liefert_echte_treffer(config, store, workspace):
+    server, port = starte_fake_searxng({"results": [
+        {"title": "Ein echter Treffer", "url": "https://beispiel.test",
+         "content": "Ein Ausschnitt"}]})
+    try:
+        config.search = SearchConfig(searxng_url=f"http://127.0.0.1:{port}")
+        registry = build_registry(config, store)
+        res = erfolg(registry.call("search.web", {"query": "testbegriff"}))
+        assert res.evidence["anzahl"] == 1
+        assert "Ein echter Treffer" in res.payload
+        assert "beispiel.test" in res.payload
+    finally:
+        server.shutdown()

@@ -1,29 +1,33 @@
 """Tool Pack: Suche.
 
-Zwei Lücken, die es noch nicht gab: ``files.grep`` (``fs.py``) durchsucht den
+Drei Lücken, die es noch nicht gab: ``files.grep`` (``fs.py``) durchsucht den
 **Inhalt** von Dateien, aber nicht ihre **Namen** -- ``search.files`` holt
-das nach. Und es gibt bisher keine Möglichkeit, herauszufinden, welche
-Programme auf dem Rechner überhaupt installiert sind, bevor man sie starten
-will -- ``search.apps`` listet sie plattformabhängig auf (Desktop-Dateien
-unter Linux, Verknüpfungen im Startmenü unter Windows, .app-Bündel unter
-macOS). Das tatsächliche *Starten* eines Programms ist ein eigener,
-zurückgestellter Punkt (``open_program``, siehe ``PLANNED`` in
-``tools/__init__.py``) -- hier wird nur gefunden, nicht ausgeführt.
+das nach. ``search.apps`` findet installierte Programme, plattformabhängig
+(Desktop-Dateien unter Linux, Verknüpfungen im Startmenü unter Windows,
+.app-Bündel unter macOS), und ``search.apps.open`` startet, was sie findet
+-- derselbe Pfad/Befehl, den ``search.apps`` als zweite Spalte zurückgibt.
+Und ``search.web`` fragt einen echten Suchdienst (siehe ``websearch.py``);
+ohne eingetragenen Dienst sagt es das ehrlich, statt aus trainiertem Wissen
+zu raten.
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 from ...permissions import PermissionLevel as P
+from ...websearch import WebSearchClient, WebSearchError
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext, current_platform
-from ._base import integer, ok, params, table, text
+from ._base import flag, integer, ok, params, planned, table, text
 
 MAX_ERGEBNISSE = 200
 _AUSGESCHLOSSEN = {".git", "node_modules", "__pycache__", ".venv", "venv",
                   "dist", "build", ".mypy_cache", ".pytest_cache"}
+_ARGUMENTE = {"type": "array", "items": {"type": "string"},
+             "description": "Kommandozeilenargumente, optional"}
 
 
 def _aehnlichkeit(muster: str, name: str) -> int | None:
@@ -109,6 +113,9 @@ def macos_apps(limit: int, ordner: list[Path] | None = None) -> list[list[str]]:
 
 def build(ctx: ToolContext) -> list[Tool]:
     ws = ctx.workspace
+    suche = WebSearchClient(searxng_url=ctx.config.search.searxng_url,
+                            brave_api_key=ctx.config.search.brave_api_key,
+                            timeout=ctx.config.search.timeout)
 
     def search_files(query: str, path: str = "", limit: int = 40) -> ToolResult:
         muster = (query or "").strip()
@@ -161,6 +168,41 @@ def build(ctx: ToolContext) -> list[Tool]:
                   payload=table(gezeigt, headers=["Name", "Pfad/Befehl"]) if gezeigt
                   else "(keine gefunden)", anzahl=len(alle))
 
+    def apps_open(path: str, arguments: list[str] | None = None,
+                 dry_run: bool = False) -> ToolResult:
+        programm = (path or "").strip()
+        if not programm:
+            raise ToolError("Kein Programm/Pfad angegeben -- search.apps findet ihn.")
+        argumente = [str(a) for a in (arguments or [])]
+        anzeige = programm + (f" {' '.join(argumente)}" if argumente else "")
+        if dry_run:
+            return planned("search.apps.open", f"Würde starten: {anzeige}",
+                           programm=programm, argumente=argumente or None)
+        try:
+            # Ohne Shell, feste Argumentliste (wie catalog.run_process) -- ein
+            # Programmname mit Sonderzeichen kann so nicht zu einem zweiten
+            # Befehl werden. Bewusst subprocess statt os.startfile: das gibt
+            # eine echte PID als Beleg zurück und funktioniert auf jeder
+            # Plattform gleich, nicht nur unter Windows.
+            proc = subprocess.Popen([programm, *argumente])  # noqa: S603
+        except OSError as exc:
+            raise ToolError(f"Konnte {programm!r} nicht starten: {exc}") from exc
+        return ok("search.apps.open", f"{programm} gestartet (PID {proc.pid})",
+                  programm=programm, argumente=argumente or None, pid=proc.pid)
+
+    def search_web(query: str, limit: int = 5) -> ToolResult:
+        muster = (query or "").strip()
+        if not muster:
+            raise ToolError("Kein Suchbegriff angegeben.")
+        try:
+            treffer = suche.search(muster, limit=max(1, min(int(limit or 5), 20)))
+        except WebSearchError as exc:
+            raise ToolError(str(exc)) from exc
+        zeilen = [[t.title, t.url, t.snippet[:120]] for t in treffer]
+        return ok("search.web", f"{len(treffer)} Treffer für {muster!r}",
+                  payload=table(zeilen, headers=["Titel", "URL", "Ausschnitt"]) if zeilen
+                  else "(keine Treffer)", anzahl=len(treffer))
+
     return [
         Tool("search.files", "Sucht Dateien anhand des Namens (nicht des Inhalts -- "
              "dafür gibt es files.grep). Unscharf: die Buchstaben des Suchbegriffs "
@@ -176,4 +218,20 @@ def build(ctx: ToolContext) -> list[Tool]:
                     limit=integer("Max. Treffer, Vorgabe 100")),
              search_apps, level=P.READ, tags=("suche", "programme"),
              phrases=("welche programme sind installiert", "ist x installiert")),
+        Tool("search.apps.open", "Startet ein Programm -- Pfad/Befehl wie ihn search.apps "
+             "als zweite Spalte zurückgibt, oder ein Programmname im PATH. Kein "
+             "Shell-Aufruf: keine Umleitung, keine Verkettung, nur genau dieses eine "
+             "Programm mit genau diesen Argumenten.",
+             params("path", path=text("Pfad oder Programmname (siehe search.apps)"),
+                    arguments=_ARGUMENTE, dry_run=flag("Nur zeigen, was gestartet würde")),
+             apps_open, level=P.SYSTEM, tags=("suche", "programme", "starten"),
+             dry_run=True, phrases=("starte das programm", "öffne die anwendung")),
+        Tool("search.web", "Sucht im Web über einen konfigurierten Suchdienst "
+             "(SearXNG oder Brave Search, siehe jarvis.json unter \"search\"). Ohne "
+             "eingetragenen Dienst meldet sich das Werkzeug ehrlich als nicht "
+             "eingerichtet, statt aus trainiertem Wissen zu raten.",
+             params("query", query=text("Suchbegriff"),
+                    limit=integer("Max. Treffer, Vorgabe 5")),
+             search_web, level=P.READ, tags=("suche", "web", "internet"),
+             phrases=("suche im internet nach", "google mal", "was sagt das internet zu")),
     ]

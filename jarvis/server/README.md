@@ -300,7 +300,7 @@ Watchdog aus Autonomy V1.
 
 ## Tool Discovery
 
-Bei 398 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
+Bei 406 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
 Modellanfrage -- grob 60.000 Token, mehr als das Kontextfenster. Nicht
 langsam, sondern kaputt. Deshalb bekommt das Modell nie mehr den ganzen
 Katalog: ``discovery.py`` sucht vorher lokal und deterministisch (kein
@@ -372,6 +372,27 @@ Jarvis-Server, nie im Browser. Leeres Feld speichern löscht ihn wieder.
 | `whisper.model` | `whisper-1` (Vorgabe) |
 | `whisper.timeout` | Sekunden, Vorgabe 30 |
 
+## Web-Suche (`search.web`)
+
+Dasselbe Prinzip wie bei Whisper: Jarvis bringt keinen eigenen Schlüssel oder
+Dienst mit, und ein Treffer kommt nur zurück, wenn ein echter Suchdienst
+tatsächlich geantwortet hat (siehe `jarvis/websearch.py`). Zwei Wege, einer
+reicht:
+
+* **SearXNG** (bevorzugt) -- eine selbst gehostete Instanz, kein Schlüssel,
+  keine dritte Partei. `search.formats` muss in ihrer `settings.yml` `json`
+  enthalten (nicht jede öffentliche Instanz erlaubt das).
+* **Brave Search API** -- ein Schlüssel von <https://brave.com/search/api>,
+  wenn keine eigene Infrastruktur zur Verfügung steht.
+
+Sind beide eingetragen, spricht Jarvis zuerst SearXNG an.
+
+| Feld in `jarvis.json` | |
+|---|---|
+| `search.searxng_url` | z. B. `http://192.168.1.10:8888`, leer = aus |
+| `search.brave_api_key` | Ersatzweg ohne eigene Infrastruktur, leer = aus |
+| `search.timeout` | Sekunden, Vorgabe 15 |
+
 ## Die Grundregel als Mechanismus
 
 > Eine reale Aktion darf nur dann als erfolgreich gemeldet werden, wenn ein
@@ -405,9 +426,10 @@ ist der Hosenträger.
 | `memory_forget` | **CRITICAL** — löscht eine Erinnerung endgültig |
 | `undo_last_action` `list_undoable` | letzte(n) Änderung(en) rückgängig machen bzw. ansehen |
 | `run_command` | **aus per Voreinstellung**, Allowlist nötig |
-
-Noch nicht gebaut und in der Oberfläche als „fehlt" sichtbar: `screen_capture`,
-`web_search`, `mouse_keyboard`, `open_program`.
+| `desktop.screen.capture` | Bildschirmfoto -- **WRITE** (nicht READ: kann alles zeigen, was gerade auf dem Bildschirm steht), nur Windows/macOS |
+| `desktop.mouse.*` `desktop.keyboard.*` | Maus bewegen/klicken, Text tippen, Tasten drücken -- **SYSTEM**, braucht PyAutoGUI + einen echten Bildschirm |
+| `search.web` | Web-Suche über SearXNG oder Brave Search -- siehe „Web-Suche" unten, ohne eingetragenen Dienst ehrlich als nicht eingerichtet gemeldet |
+| `search.apps.open` | startet ein von `search.apps` gefundenes Programm -- **SYSTEM**, kein Shell-Aufruf |
 
 ### Sicherheit
 
@@ -435,6 +457,7 @@ Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
   "shell": {"enabled": false, "allowlist": [], "timeout": 60},
   "code": {"model": "qwen3-coder:30b", "max_rounds": 14, "auto_check": true},
   "whisper": {"api_key": "", "model": "whisper-1", "timeout": 30},
+  "search": {"searxng_url": "", "brave_api_key": "", "timeout": 15},
   "permissions": {"confirm_read": false, "confirm_write": true,
                   "confirm_system": true, "confirmation_timeout": 300.0}
 }
@@ -467,6 +490,7 @@ werden beim Laden ignoriert.
 | `GET /api/undo`, `POST /api/undo` | rückgängig machbare Änderungen ansehen / eine rückgängig machen |
 | `GET /api/tools?q=&category=&tag=` | Werkzeugkatalog: ohne `q` gefiltert durchsuchbar (Tool Explorer), mit `q` dieselbe Rangfolge wie im Chat (Action Search) -- siehe „Tool Discovery" |
 | `POST /api/tools/{name}/{favorite\|unfavorite\|disable\|enable}` | ein Werkzeug direkt umschalten, ohne Umweg über das Modell |
+| `GET /api/macros` | gespeicherte Makros, direkt für die Kommando-Palette (Punkt 46) |
 | `POST /api/permission/resolve` | eine offene Bestätigungsanfrage beantworten |
 | `GET /api/tasks`, `GET /api/tasks/{id}` | Task History (Agent Mode) |
 | `GET /api/goals`, `GET /api/goals/{id}` | verfolgte Ziele mit Fortschritt, Budget und Entscheidungen |

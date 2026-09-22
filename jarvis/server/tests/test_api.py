@@ -114,10 +114,17 @@ def test_whisper_echtes_ergebnis_kommt_beim_client_an(client):
     assert res.json() == {"text": "mach eine Notiz"}
 
 
-def test_geplante_werkzeuge_stehen_als_fehlend_drin(client):
+def test_frueher_geplante_werkzeuge_sind_jetzt_gebaut(client):
+    """screen_capture/web_search/mouse_keyboard/open_program standen lange in
+    PLANNED und damit als "fehlt" in der Oberfläche -- jetzt sind sie echte,
+    registrierte Werkzeuge (desktop.screen.capture, search.web,
+    desktop.mouse.*/desktop.keyboard.*, search.apps.open)."""
     werkzeuge = {w["name"]: w["status"] for w in client.get("/api/health").json()["werkzeuge"]}
-    assert werkzeuge["screen_capture"] == "none"
-    assert werkzeuge["run_command"] == "none"      # shell ist aus
+    assert werkzeuge["desktop.screen.capture"] == "ok"
+    assert werkzeuge["search.web"] == "ok"
+    assert werkzeuge["desktop.mouse.move"] == "ok"
+    assert werkzeuge["search.apps.open"] == "ok"
+    assert werkzeuge["run_command"] == "none"      # shell ist aus, unabhängig davon
 
 
 def test_oberflaeche_wird_ausgeliefert(client):

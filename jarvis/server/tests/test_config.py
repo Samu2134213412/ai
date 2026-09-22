@@ -77,6 +77,7 @@ def test_fehlende_datei_ergibt_die_vorgaben(tmp_path):
 def test_gespeicherte_konfiguration_liest_sich_selbst_wieder(tmp_path):
     original = Config(home=str(tmp_path), model="qwen3:14b", port=8123)
     original.code.model = "mein-coder:7b"
+    original.search.searxng_url = "http://192.168.1.10:8888"
     pfad = original.save()
 
     zurueck = Config.load(pfad)
@@ -84,3 +85,10 @@ def test_gespeicherte_konfiguration_liest_sich_selbst_wieder(tmp_path):
     assert zurueck.model == "qwen3:14b"
     assert zurueck.port == 8123
     assert zurueck.code.model == "mein-coder:7b"
+    assert zurueck.search.searxng_url == "http://192.168.1.10:8888"
+
+
+def test_search_config_ist_ohne_eintrag_leer():
+    # Wie bei Whisper: leer heisst aus, kein Standarddienst wird untergeschoben.
+    assert Config().search.searxng_url == ""
+    assert Config().search.brave_api_key == ""
