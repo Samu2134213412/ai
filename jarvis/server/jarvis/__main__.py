@@ -51,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--open-network", action="store_true",
                         help="Auf 0.0.0.0 binden und ein Token erzeugen, "
                              "damit das Handy sich verbinden kann")
+    parser.add_argument("--generate-docs", metavar="PFAD", nargs="?", const="",
+                        help="Werkzeugreferenz aus der Registry schreiben und "
+                             "beenden (Vorgabe: docs/WERKZEUGE.md neben server/)")
     args = parser.parse_args(argv)
 
     config = Config.load(args.config)
@@ -62,6 +65,18 @@ def main(argv: list[str] | None = None) -> int:
         config.host = "0.0.0.0"  # noqa: S104 - ausdrücklich angefordert
         if not config.token:
             config.token = secrets.token_urlsafe(24)
+
+    if args.generate_docs is not None:
+        from .docgen import generate
+        from .memory import MemoryStore
+        from .tools import build_registry
+        registry = build_registry(config, MemoryStore(":memory:"))
+        ziel = Path(args.generate_docs) if args.generate_docs else (
+            Path(__file__).resolve().parents[2] / "docs" / "WERKZEUGE.md")
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        ziel.write_text(generate(registry), encoding="utf-8")
+        print(f"Werkzeugreferenz geschrieben: {ziel} ({len(registry)} Werkzeuge)")
+        return 0
 
     gewuenscht = args.config or config.config_path
     if args.init or not Path(gewuenscht).is_file():

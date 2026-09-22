@@ -55,6 +55,19 @@ def test_health_ist_ohne_token_erreichbar(client):
                for w in body["werkzeuge"])
 
 
+def test_health_nennt_abhaengigkeiten_mit_installationshinweis(client):
+    """Health-Check (Punkt 49/53): was auf diesem Rechner installiert ist,
+    mit einem echten Installationsweg für alles, was fehlt -- kein Rätselraten."""
+    eintraege = client.get("/api/health").json()["abhaengigkeiten"]
+    assert eintraege
+    namen = {e["schluessel"] for e in eintraege}
+    assert "git" in namen and "psutil" in namen
+    for e in eintraege:
+        assert isinstance(e["vorhanden"], bool)
+        if not e["vorhanden"]:
+            assert e["installation"], f"{e['schluessel']} fehlt ohne Installationshinweis"
+
+
 def test_health_nennt_chat_und_code_modell(client):
     """Beide Modelle gehen direkt an Ollama -- seit CodePilot raus ist, gibt
     es keine Kette mehr dazwischen, über die etwas 'via' laufen könnte."""

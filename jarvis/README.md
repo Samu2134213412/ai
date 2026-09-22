@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (809 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (827 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 398 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -166,6 +166,11 @@ Fertig und getestet (809 Tests, siehe `ROADMAP.md` für die Phasen):
   favorisieren, abschalten, alles ohne Modell-Umweg (`GET`/`POST
   /api/tools/*`). Dazu ein kleiner, eigener HotkeyManager: registrierbare,
   kontextabhängige Tastenkürzel mit Export/Import — siehe `web/README.md`
+* **Health-Check + Doku-Generator:** `GET /api/health` meldet jede bekannte
+  Abhängigkeit (git, ffmpeg, docker, psutil, …) mit Installationshinweis,
+  wenn sie fehlt; `python -m jarvis --generate-docs` schreibt die
+  vollständige Werkzeugreferenz (`docs/WERKZEUGE.md`) direkt aus der
+  laufenden Registry, nie von Hand gepflegt — siehe `server/README.md`
 * **Handybedienung:** alle Bedienelemente auf Fingergröße (44 px), Eingabe
   mit 16 px, damit iOS beim Tippen nicht zoomt; geprüft auf iPhone SE/13,
   Pixel 7 und Galaxy Fold (280 px) — ohne horizontalen Überlauf.

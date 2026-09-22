@@ -12,6 +12,66 @@ from jarvis.memory import MemoryStore  # noqa: E402
 from jarvis.tools import build_registry  # noqa: E402
 
 
+# ══════════════════════════════════════════════════ Werkzeug-Abdeckung
+# Bei 398 Werkzeugen ist ein einzelner "ruf alle mit Beispielargumenten
+# auf"-Test keine echte Prüfung mehr (siehe test_tool_registry.py-Docstring
+# -- fast keines trägt echte Beispielargumente). Stattdessen zeichnet dieser
+# Patch jeden tatsächlichen Aufruf über ``Registry.call`` mit auf, egal aus
+# welchem Testmodul er kommt, und am Ende der ganzen Sitzung steht ein
+# ehrlicher Bericht: welche Werkzeuge in DIESEM Lauf nie liefen. Bewusst kein
+# Fehlschlag -- manche Werkzeuge sind absichtlich nur über einen laufenden
+# Dienst (Docker/nginx/Minecraft) oder destruktiv prüfbar und werden in ihrer
+# eigenen Testdatei bedingt übersprungen (siehe dort), nicht hier erzwungen.
+_AUFGERUFENE_WERKZEUGE: set[str] = set()
+
+
+def _mit_abdeckung(original):
+    def aufruf(self, name, arguments):
+        try:
+            self._AUFGERUFENE_WERKZEUGE_merken(name)
+        except Exception:  # noqa: BLE001 - die Aufzeichnung darf nie einen Test kippen
+            pass
+        return original(self, name, arguments)
+    return aufruf
+
+
+def _merken(self, name: str) -> None:
+    _AUFGERUFENE_WERKZEUGE.add(self.resolve(name))
+
+
+def _patch_registry_abdeckung() -> None:
+    from jarvis.tools.base import Registry
+    if getattr(Registry.call, "_abdeckung_gepatcht", False):
+        return
+    Registry._AUFGERUFENE_WERKZEUGE_merken = _merken
+    gepatcht = _mit_abdeckung(Registry.call)
+    gepatcht._abdeckung_gepatcht = True
+    Registry.call = gepatcht
+
+
+_patch_registry_abdeckung()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as heim:
+            alle = set(build_registry(
+                Config(home=heim, roots=[]), MemoryStore(":memory:")).names())
+    except Exception:  # noqa: BLE001 - der Bericht ist nie wichtiger als die Testergebnisse
+        return
+    fehlend = sorted(alle - _AUFGERUFENE_WERKZEUGE)
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    schreiben = reporter.write_line if reporter else print
+    if not fehlend:
+        schreiben(f"[Werkzeug-Abdeckung] Alle {len(alle)} Werkzeuge liefen "
+                  "mindestens einmal über Registry.call().")
+        return
+    schreiben(f"[Werkzeug-Abdeckung] {len(alle) - len(fehlend)}/{len(alle)} Werkzeuge "
+              f"liefen in dieser Sitzung. Nie aufgerufen ({len(fehlend)}): "
+              + ", ".join(fehlend))
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     root = tmp_path / "arbeitsbereich"

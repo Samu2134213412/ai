@@ -1,10 +1,20 @@
 """Die Tool-Registry als Katalog: Metadaten, Aliase, Kategorien, Probelauf.
 
-Der wichtigste Test hier ist ``test_jedes_werkzeug_ist_aufrufbar``: er ruft
-**jedes** registrierte Werkzeug einmal mit seinen Beispielargumenten auf.
-Bei mehreren hundert Werkzeugen ist das die einzige Absicherung dagegen,
-dass eines davon eine Attrappe ist, die beim ersten echten Aufruf zerbricht
-(Aufgabenstellung Punkt 40/60).
+Kein einzelner Test hier ruft jedes Werkzeug mit echten Argumenten auf --
+das übernehmen die einzelnen Pack-Tests (``test_tools_*.py``), jeweils mit
+einem zum Werkzeug passenden Aufbau (ein echtes Git-Repository für
+``git.py``, ein echter Dateibaum für ``fs.py``, …). Ein einziger
+"ruf-alles-mit-Beispielargumenten-auf"-Test wäre hier keine echte Prüfung:
+nur 1 von 398 Werkzeugen trägt überhaupt ``examples`` (Aufgabenstellung
+Punkt 40 verbietet genau das -- eine Prüfung, die nur so aussieht, als
+prüfe sie etwas). ``conftest.py`` zählt stattdessen mit, welche Werkzeuge
+über eine gesamte Testsitzung hinweg NIE über ``Registry.call`` liefen, und
+meldet das am Ende als Bericht (kein Fehlschlag -- manche Werkzeuge sind
+absichtlich nur über einen laufenden Dienst oder destruktiv prüfbar).
+
+Was hier tatsächlich geprüft wird: dass jedes Werkzeug in sich konsistent
+ist -- Schema passt zur Implementierung, Berechtigungsstufe zu Undo/Probelauf,
+und jede angegebene Abhängigkeit existiert wirklich als Probe.
 """
 
 from __future__ import annotations
@@ -240,3 +250,14 @@ def test_dry_run_flag_und_parameter_stimmen_ueberein(config, store):
         if akzeptiert and not tool.dry_run:
             falsch.append(f"{tool.name}: nimmt dry_run an, meldet es aber nicht")
     assert not falsch, "\n".join(falsch)
+
+
+def test_jede_angegebene_abhaengigkeit_existiert_als_probe(config, store):
+    """``requires=("ffmepg",)`` (Tippfehler) würde sonst nie MISSING_DEPENDENCY
+    melden, sondern erst beim echten Aufruf scheitern -- availability() kennt
+    nur bekannte PROBES-Schlüssel, ein unbekannter Schlüssel fällt durch."""
+    from jarvis.tools.catalog import PROBES
+    registry = build_registry(config, store)
+    unbekannt = [f"{t.name}: {schluessel!r}" for t in registry
+                for schluessel in t.requires if schluessel not in PROBES]
+    assert not unbekannt, "Unbekannte Probe-Schlüssel:\n" + "\n".join(unbekannt)

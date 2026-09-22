@@ -33,7 +33,8 @@ from .ollama import OllamaClient
 from .permissions import PermissionGate, PermissionLevel, PermissionPolicy
 from .tasks import TaskManager
 from .undo import UndoError
-from .tools import availability, build_registry, system as system_tools, tool_status
+from .tools import (availability, build_registry, dependency_report,
+                    system as system_tools, tool_status)
 from .whisper import WhisperClient, WhisperError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -307,6 +308,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                        "modell_vorhanden": health.model_present,
                        "hinweis": health.detail},
             "werkzeuge": tool_status(registry, config),
+            # Health-Check (Punkt 49/53): was auf DIESEM Rechner tatsächlich
+            # installiert ist, mit Installationshinweis -- kein Rätselraten,
+            # warum ein Werkzeug MISSING_DEPENDENCY meldet. dependency_report()
+            # ist gecacht (siehe catalog.py), also billig bei jeder Anfrage.
+            "abhaengigkeiten": dependency_report(),
             "arbeitsbereich": config.roots,
             "shell_aktiv": config.shell.enabled,
             "probleme": config.validate(),

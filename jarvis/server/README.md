@@ -482,10 +482,30 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 809 Tests (davon bis zu 31 uebersprungen ohne ffmpeg/tesseract/docker-daemon/nginx/Zwischenablage)
+python -m pytest -q      # 827 Tests (davon bis zu 31 uebersprungen ohne ffmpeg/tesseract/docker-daemon/nginx/Zwischenablage)
 ```
 
 Sie brauchen weder Ollama noch einen echten Whisper-Schlüssel:
 das Modell wird durch ein vorgegebenes ersetzt (damit sich auch prüfen lässt,
 was passiert, wenn es lügt), und Whisper läuft gegen einen
 echten Mini-HTTP-Server statt einen gefälschten Client.
+
+Nach jedem Lauf steht eine Zeile **Werkzeug-Abdeckung**: wie viele der
+Werkzeuge in dieser Sitzung tatsächlich über `Registry.call()` liefen, und
+welche nicht (`tests/conftest.py`). Bewusst ein Bericht, kein Fehlschlag --
+ein Werkzeug, das einen laufenden Docker-Daemon oder ffmpeg braucht, wird in
+seiner eigenen Testdatei bedingt übersprungen, nicht hier erzwungen. Bei
+mehreren hundert Werkzeugen ist das ehrlicher als ein einzelner
+"ruf-alles-mit-Beispielargumenten-auf"-Test, für den kaum ein Werkzeug
+überhaupt Beispielargumente trägt.
+
+**Health-Check** (Punkt 53): `GET /api/health` trägt seit Kurzem
+`abhaengigkeiten` -- für jede über `catalog.PROBES` bekannte Abhängigkeit
+(git, ffmpeg, docker, psutil, …), ob sie auf diesem Rechner vorhanden ist,
+und wenn nicht, wie man sie installiert. Kein Rätselraten mehr, warum ein
+Werkzeug `MISSING_DEPENDENCY` meldet.
+
+**Doku-Generator** (Punkt 49): `python -m jarvis --generate-docs` schreibt
+`../docs/WERKZEUGE.md` neu -- eine vollständige Werkzeugreferenz direkt aus
+der laufenden Registry (`jarvis/docgen.py`), nicht von Hand gepflegt und
+daher nie veraltet. Ein eigener Pfad ist möglich: `--generate-docs PFAD`.
