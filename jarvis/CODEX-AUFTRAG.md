@@ -44,8 +44,11 @@ Fehlermeldung, statt zum nächsten zu springen.
 
 4) TESTS
    Führe in `jarvis/server` `python -m pytest -q` aus.
-   Erwartung: 537 Tests grün. Kommt etwas anderes heraus, zeig mir die
-   Ausgabe — ich will die Zahl sehen, nicht die Zusammenfassung „läuft".
+   Erwartung: 586 Tests, alle grün oder übersprungen (bis zu 24 werden
+   übersprungen, wenn ffmpeg/ffprobe/tesseract auf diesem Rechner fehlen --
+   das ist kein Fehler, nur ein fehlendes optionales Programm). Kommt
+   irgendetwas als FAILED heraus, zeig mir die Ausgabe — ich will die Zahl
+   sehen, nicht die Zusammenfassung „läuft".
 
 5) OLLAMA UND MODELLE
    Prüfe, ob Ollama läuft: `curl http://127.0.0.1:11434/api/tags`

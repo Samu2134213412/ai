@@ -4,3 +4,4 @@ httpx>=0.26
 pydantic>=2.6
 psutil>=5.9
 python-multipart>=0.0.9
+Pillow>=10.0

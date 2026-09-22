@@ -376,7 +376,7 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 537 Tests
+python -m pytest -q      # 586 Tests (davon bis zu 24 uebersprungen ohne ffmpeg/tesseract)
 ```
 
 Sie brauchen weder Ollama noch einen echten Whisper-Schlüssel:

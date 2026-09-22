@@ -28,6 +28,10 @@ def integer(description: str) -> dict[str, Any]:
     return {**INT, "description": description}
 
 
+def number(description: str) -> dict[str, Any]:
+    return {**NUM, "description": description}
+
+
 def flag(description: str) -> dict[str, Any]:
     return {**BOOL, "description": description}
 
