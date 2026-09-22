@@ -65,6 +65,26 @@ einen schnellen Kaltstart — **niemals** `/api/*` oder die WebSocket-Verbindung
 Ohne Server bleibt die Oberfläche also ehrlich bei „Kein Server" stehen,
 statt veraltete Antworten aus dem Cache zu zeigen.
 
+**Das Token übersteht die Installation.** `manifest.webmanifest`s
+`start_url` zeigte früher auf `./index.html` — eine Adresse, die der
+Jarvis-Server nie ausgeliefert hat (er kennt nur `/`), und jeder erneute
+Start der installierten App landete auf einem 404. Behoben: `start_url`
+zeigt jetzt auf `./`. Zusätzlich merkt sich der Browser das Token beim
+ersten Öffnen (`localStorage`, nicht nur in der URL) und nimmt es aus der
+sichtbaren Adresszeile — ein App-Icon, das ohne `?token=…` in der Adresse
+öffnet (genau das, was jede installierte PWA beim Neustart tut), bleibt
+trotzdem verbunden. Ändert sich das Token (siehe unten), reicht ein
+erneutes Öffnen über den neuen Link, das alte wird überschrieben.
+
+**Das Token übersteht auch einen Server-Neustart.** `python -m jarvis
+--open-network` erzeugt beim allerersten Mal ein zufälliges Token und
+schreibt es sofort in die Konfigurationsdatei zurück -- jeder weitere Start
+verwendet danach dasselbe. Vorher wurde ein neues Token nur dann
+gespeichert, wenn die Konfigurationsdatei gerade erst angelegt wurde; bei
+jedem weiteren Start stand plötzlich ein anderes Token da, ohne dass sich
+etwas geändert hätte, und jede zuvor aufs Handy eingetippte oder installierte
+Adresse hörte auf zu funktionieren.
+
 Es handelt sich nicht um eine native App und nicht um das separate
 Expo-Projekt unter `../../mobile/` (das gehört zu CodePilot Remote) —
 die Oberfläche war schon vorher für Handy-Breiten ausgelegt (eigene

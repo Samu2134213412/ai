@@ -2,7 +2,7 @@
   "name": "Jarvis Core",
   "short_name": "Jarvis",
   "description": "Lokaler Agent — Kommandozentrale und Wissensnetz",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

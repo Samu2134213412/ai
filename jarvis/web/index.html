@@ -1933,7 +1933,27 @@ window.JARVIS={
       ehrlichen Demo-Ansicht -- sie täuscht keine Verbindung vor.
    ═══════════════════════════════════════════════════════════════ */
 let sock = null, retry = 0, retryTimer = 0;
-const TOKEN = new URLSearchParams(location.search).get("token") || "";
+//: Ohne dieses Gedächtnis würde jede Adresse ohne "?token=…" (genau das,
+//: was eine als Handy-App installierte PWA beim Start aufruft -- ihr
+//: ``start_url`` im Manifest hat keinen Token) für immer unverbunden
+//: bleiben, obwohl sie schon einmal erfolgreich verbunden war. Einmal aus
+//: der URL gelesen, merkt der Browser sich das Token; ein neuer Link mit
+//: eigenem Token überschreibt das alte (z. B. nach einem Server-Neustart
+//: ohne bereits gespeicherte Konfiguration).
+const TOKEN = (() => {
+  const ausUrl = new URLSearchParams(location.search).get("token");
+  try{
+    if(ausUrl){ localStorage.setItem("jarvis.token", ausUrl); return ausUrl; }
+    return localStorage.getItem("jarvis.token") || "";
+  }catch(e){ return ausUrl || ""; }             // z. B. privates Fenster
+})();
+// Das Token aus der sichtbaren Adresszeile nehmen, sobald es gemerkt ist --
+// es ist ein Zugangsschlüssel, kein Lesezeichen-Inhalt.
+if(new URLSearchParams(location.search).has("token") && history.replaceState){
+  const ohneToken = new URL(location.href);
+  ohneToken.searchParams.delete("token");
+  history.replaceState(null, "", ohneToken.pathname + ohneToken.search + ohneToken.hash);
+}
 
 function evidenceHtml(list){
   if(!Array.isArray(list) || !list.length) return null;

@@ -61,10 +61,19 @@ def main(argv: list[str] | None = None) -> int:
         config.host = args.host
     if args.port:
         config.port = args.port
+    #: Ob gerade ein neues Token erzeugt wurde -- dann MUSS die Konfiguration
+    #: gleich gespeichert werden (siehe unten), sonst ist das Token weg,
+    #: sobald der Prozess endet, und jeder nächste Start von
+    #: ``--open-network`` erzeugt ein anderes. Jede zuvor aufs Handy
+    #: eingetippte oder als App installierte Adresse würde dann bei jedem
+    #: Neustart erneut ungültig -- genau das Gegenteil von "im selben WLAN
+    #: einfach benutzbar".
+    neues_token = False
     if args.open_network:
         config.host = "0.0.0.0"  # noqa: S104 - ausdrücklich angefordert
         if not config.token:
             config.token = secrets.token_urlsafe(24)
+            neues_token = True
 
     if args.generate_docs is not None:
         from .docgen import generate
@@ -79,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     gewuenscht = args.config or config.config_path
-    if args.init or not Path(gewuenscht).is_file():
+    if args.init or neues_token or not Path(gewuenscht).is_file():
         path = config.save(args.config)
         print(f"Konfiguration: {path}")
         print(f"Arbeitsbereich: {', '.join(config.roots) or '(leer)'}")

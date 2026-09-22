@@ -63,6 +63,45 @@ def test_open_network_nennt_eine_tippbare_adresse(tmp_path, capsys, monkeypatch)
     assert "?token=" in ausgabe
 
 
+def test_open_network_token_bleibt_ueber_einen_neustart_hinweg(tmp_path, capsys, monkeypatch):
+    """Der eigentliche Fehler: ein frisch erzeugtes Token wurde nie in die
+    Konfiguration zurückgeschrieben, solange die Datei schon existierte --
+    jeder weitere Start von --open-network erzeugte ein ANDERES Token, und
+    jede zuvor aufs Handy eingetippte oder als App installierte Adresse
+    wurde damit beim nächsten Serverstart ungültig."""
+    ziel = tmp_path / "jarvis.json"
+    main(["--config", str(ziel), "--init"])
+    capsys.readouterr()
+
+    import sys
+    import types
+
+    class _Abbruch(Exception):
+        pass
+
+    falsches_uvicorn = types.ModuleType("uvicorn")
+
+    def _run(*args, **kwargs):
+        raise _Abbruch()
+    falsches_uvicorn.run = _run
+    monkeypatch.setitem(sys.modules, "uvicorn", falsches_uvicorn)
+
+    def _token_aus(ausgabe: str) -> str:
+        zeile = next(z for z in ausgabe.splitlines() if z.startswith("Token: "))
+        return zeile.removeprefix("Token: ")
+
+    with pytest.raises(_Abbruch):
+        main(["--config", str(ziel), "--open-network"])
+    erstes_token = _token_aus(capsys.readouterr().out)
+    assert f'"token": "{erstes_token}"' in ziel.read_text(encoding="utf-8")
+
+    with pytest.raises(_Abbruch):
+        main(["--config", str(ziel), "--open-network"])
+    zweites_token = _token_aus(capsys.readouterr().out)
+
+    assert zweites_token == erstes_token
+
+
 def test_ohne_open_network_steht_der_hinweis_fuers_handy(tmp_path, capsys, monkeypatch):
     ziel = tmp_path / "jarvis.json"
     main(["--config", str(ziel), "--init"])

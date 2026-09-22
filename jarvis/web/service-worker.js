@@ -18,10 +18,17 @@
 // Cache-Version steigt mit, damit ein schon installierter Service Worker
 // seinen alten, moeglicherweise verunreinigten Cache verwirft statt ihn
 // weiterzuverwenden.
-const CACHE = "jarvis-shell-v2";
+// v3: "./index.html" gehörte nie in diese Liste -- der Jarvis-Server
+// liefert die Oberfläche ausschließlich unter "/" aus (app.py registriert
+// keine eigene Route für /index.html). cache.addAll() bricht die GANZE
+// Liste ab, sobald EIN Eintrag darin fehlschlägt (404) -- die Hülle wurde
+// dadurch nie gecacht, still und ohne Fehlermeldung (siehe der catch()
+// beim install-Ereignis unten). Genau dieselbe falsche Adresse stand bis
+// eben auch als "start_url" im Manifest: eine als Startbildschirm-App
+// installierte Seite wäre beim Öffnen auf einen 404 gelaufen.
+const CACHE = "jarvis-shell-v3";
 const SHELL = [
   "./",
-  "./index.html",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
