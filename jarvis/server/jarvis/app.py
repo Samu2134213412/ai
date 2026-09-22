@@ -164,7 +164,8 @@ def create_app(config: Config | None = None) -> FastAPI:
                   permission_gate=permission_gate, audit=audit, undo=registry.undo_store,
                   tasks=tasks, goals=goals, decisions=decisions,
                   code_client=code_client, fast_client=fast_client,
-                  macros=registry.macro_store)
+                  macros=registry.macro_store, tool_history=registry.tool_history,
+                  discovery=registry.discovery)
     busy = asyncio.Lock()
     bus = EventBus()
     proactive = ProactiveEngine()

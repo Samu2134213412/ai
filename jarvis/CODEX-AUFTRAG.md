@@ -44,7 +44,7 @@ Fehlermeldung, statt zum nächsten zu springen.
 
 4) TESTS
    Führe in `jarvis/server` `python -m pytest -q` aus.
-   Erwartung: 751 Tests, alle grün oder übersprungen (bis zu 31 werden
+   Erwartung: 809 Tests, alle grün oder übersprungen (bis zu 31 werden
    übersprungen, wenn ffmpeg/ffprobe/tesseract/nginx/eine Zwischenablage
    fehlen oder kein Docker-Daemon läuft -- das ist kein Fehler, nur ein
    fehlendes optionales Programm). Kommt irgendetwas als FAILED heraus, zeig mir die Ausgabe — ich will die Zahl

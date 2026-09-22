@@ -19,6 +19,7 @@ from .catalog import Availability, ToolContext, availability, dependency_report
 from .discovery import ToolDiscovery, ToolIndex
 from .history import ToolHistory
 from .packs import PACKS
+from .packs import meta as meta_pack
 
 #: Werkzeuge, die vorgesehen, aber noch nicht gebaut sind. Die Oberfläche zeigt
 #: sie als „fehlt", damit klar ist, was Jarvis heute wirklich kann.
@@ -41,6 +42,7 @@ def build_registry(config: Config, store: MemoryStore,
     undo_store = UndoStore(str(config.undo_db_path),
                           context=UndoContext(workspace=workspace, store=store))
     macro_store = MacroStore(str(config.macro_db_path))
+    history = history or ToolHistory(str(config.tool_history_db_path))
 
     for tool in files.build(workspace):
         registry.add(tool)
@@ -72,11 +74,33 @@ def build_registry(config: Config, store: MemoryStore,
         except Exception as exc:  # noqa: BLE001 - siehe oben
             registry.pack_errors[name] = f"{type(exc).__name__}: {exc}"
 
+    # ── Suchindex + jarvis.tools.* (Punkt 34/35/36) ───────────────────────
+    # Erst jetzt, mit der fertigen Registry: der Suchindex braucht alle
+    # Werkzeuge, die es gibt, und die jarvis.tools.*-Werkzeuge (Suche,
+    # Favoriten, Verlauf) brauchen wiederum den Suchindex. Ein normaler Pack
+    # bekommt absichtlich nur den ToolContext und keinen Zugriff auf die
+    # Registry selbst (siehe packs/__init__.py) -- dieser eine Sonderfall
+    # (Introspektion über den Werkzeugkasten) braucht sie zwangsläufig und
+    # bekommt sie deshalb gezielt über ``services`` statt über die üblichen
+    # ToolContext-Felder.
+    discovery = ToolDiscovery(registry, history=history)
+    meta_context = ToolContext(config=config, store=store, workspace=workspace,
+                               home=Path(config.home),
+                               services={**context.services, "registry": registry,
+                                        "discovery": discovery})
+    try:
+        registry.extend(meta_pack.build(meta_context))
+        discovery.index.rebuild()  # die gerade hinzugefügten jarvis.tools.* mit erfassen
+    except Exception as exc:  # noqa: BLE001 - siehe oben
+        registry.pack_errors["meta"] = f"{type(exc).__name__}: {exc}"
+
     # Für Agent._run_tool (Permission-Snapshots) und ggf. weitere Werkzeuge,
     # die denselben Arbeitsbereich/dieselbe Undo-Historie brauchen.
     registry.workspace = workspace
     registry.undo_store = undo_store
     registry.macro_store = macro_store
+    registry.tool_history = history
+    registry.discovery = discovery
     registry.context = context
     return registry
 

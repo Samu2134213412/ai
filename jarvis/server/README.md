@@ -298,6 +298,61 @@ Zwei harte Obergrenzen (`MAX_LOOP_ITERATIONS`, `MAX_STEPS_TOTAL`) schützen vor
 einem Makro, das sich selbst nie beendet — dieselbe Vorsicht wie beim
 Watchdog aus Autonomy V1.
 
+## Tool Discovery
+
+Bei 398 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
+Modellanfrage -- grob 60.000 Token, mehr als das Kontextfenster. Nicht
+langsam, sondern kaputt. Deshalb bekommt das Modell nie mehr den ganzen
+Katalog: ``discovery.py`` sucht vorher lokal und deterministisch (kein
+Embedding-Dienst, keine zusätzliche Abhängigkeit, in Millisekunden fertig)
+die passende Handvoll heraus.
+
+* **``ToolIndex``**: gewichtete Begriffstreffer über Name, Beschreibung,
+  Tags, Aliase und natürlichsprachliche Beispielsätze, dazu unscharfer
+  Namensvergleich (``difflib``) für Tippfehler und Präfix-Teiltreffer
+  ("temp" findet "temperature").
+* **``ToolDiscovery``**: legt Favoriten-, Verlaufs- und Kontextbonus über
+  das Ranking (``discovery.CORE_TOOLS`` -- u. a. Datei- und
+  Gedächtniswerkzeuge -- steht dabei immer zur Verfügung, egal was gesucht
+  wurde, damit eine schlechte Suche Jarvis nicht handlungsunfähig macht).
+
+Verkabelt an zwei Stellen in ``agent.py``: im normalen Gespräch
+(``handle()``) anhand der Nutzeranfrage, in der Zielverfolgung
+(``_run_tool_loop``) anhand des jeweiligen Schrittauftrags -- beide Male
+einmal berechnet, nicht pro Runde neu. Der Code-Modus bleibt ausdrücklich
+davon unberührt: er bekommt weiterhin die feste, kleine Liste aus
+``coder.CODE_TOOLS``, keine Suche.
+
+**``jarvis.tools.*``** (10 Werkzeuge, ``tools/packs/meta.py``) macht denselben
+Suchindex und die Werkzeug-Historie (``history.py``) auch dem Modell selbst
+zugänglich -- ein Sonderfall unter den Packs, da er zwangsläufig die fertige
+Registry braucht und deshalb erst nach allen anderen Packs gebaut wird
+(siehe ``tools/__init__.py::build_registry``):
+
+| Werkzeug | |
+|---|---|
+| `jarvis.tools.search` | gezielt im ganzen Katalog nachsuchen, wenn die Auswahl nichts Passendes bot |
+| `jarvis.tools.info` | Parameter, Berechtigungsstufe, Verfügbarkeit eines Werkzeugs |
+| `jarvis.tools.list` | nach Kategorie/Tag filtern |
+| `jarvis.tools.favorite` / `unfavorite` / `favorites` | Favoriten setzen -- heben das Werkzeug im Ranking |
+| `jarvis.tools.disable` / `enable` | ein Werkzeug abschalten (Punkt 26) -- keine Sicherheitsfunktion, eine Vorliebe |
+| `jarvis.tools.history` / `stats` | zuletzt aufgerufene Werkzeuge, Erfolgsquote, mittlere Dauer |
+
+Ein abgeschaltetes Werkzeug läuft danach wirklich nicht mehr -- durchgesetzt
+in ``Agent._run_tool``, noch vor der Autonomiestufe geprüft, und zwar über
+den **echten** Namen (ein über einen Alias abgeschaltetes Werkzeug bleibt
+auch unter jedem anderen Alias gesperrt). `jarvis.tools.enable` und
+`jarvis.tools.disable` lassen sich nicht gegenseitig abschalten, sonst gäbe
+es über das Modell keinen Weg mehr zurück.
+
+Die Werkzeug-Historie (``ToolHistory``, ``werkzeugverlauf.sqlite3``) ist
+bewusst **kein** zweites Audit Log: das Audit Log bleibt das
+sicherheitsrelevante, unveränderliche Protokoll jedes Aufrufs -- auch
+verweigerter. Die Historie zeichnet nur tatsächlich gelaufene Aufrufe auf
+(Dauer und Erfolgsquote sagen bei einer verweigerten Berechtigung nichts
+über das Werkzeug selbst aus) und schwärzt geheim wirkende Argumente
+(Punkt 51) beim Schreiben.
+
 ## Speech-to-Text (Whisper)
 
 Der Mikrofon-Knopf im Bedienfeld nimmt über den Browser auf und schickt die
@@ -425,7 +480,7 @@ auf dem Handy weiter — dieselbe Sitzung, derselbe Verlauf, dasselbe Gedächtni
 ## Tests
 
 ```bash
-python -m pytest -q      # 751 Tests (davon bis zu 31 uebersprungen ohne ffmpeg/tesseract/docker-daemon/nginx/Zwischenablage)
+python -m pytest -q      # 809 Tests (davon bis zu 31 uebersprungen ohne ffmpeg/tesseract/docker-daemon/nginx/Zwischenablage)
 ```
 
 Sie brauchen weder Ollama noch einen echten Whisper-Schlüssel:

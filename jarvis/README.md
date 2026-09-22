@@ -116,10 +116,10 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (751 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (809 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
-* 388 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
+* 398 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
   Prozesse, Netzwerk sowie **Git (43 Operatoren), Python und Node.js**
   (venv, pip, ruff, pytest, npm), **Medien** (Bild über Pillow, Audio/
   Video über ffmpeg/ffprobe, 49 Operatoren), **Docker (19), nginx (8),
@@ -134,6 +134,15 @@ Fertig und getestet (751 Tests, siehe `ROADMAP.md` für die Phasen):
   `Agent._run_tool`-Pipeline wie ein einzelner Werkzeugaufruf (Permission-
   Gate, Undo, Audit), angelegt/verwaltet über `automation.macro.*`,
   ausgeführt über den eigenen Modus `mode: "macro"`
+* **Tool Discovery:** bei 398 Werkzeugen passen die vollständigen Schemata
+  nicht mehr ins Kontextfenster — vor jeder Modellanfrage sucht
+  `discovery.py` lokal und deterministisch (Begriffstreffer, Tippfehler-
+  toleranz, Favoriten-/Verlaufs-/Kontextbonus) die passende Handvoll
+  Werkzeuge heraus, statt den ganzen Katalog zu schicken. `jarvis.tools.*`
+  (10 Meta-Werkzeuge: `search`/`info`/`list`/`favorite`/`disable`/`history`/
+  `stats`/…) macht denselben Suchindex und die Werkzeug-Historie auch dem
+  Modell selbst zugänglich, samt einer Möglichkeit, einzelne Werkzeuge
+  gezielt abzuschalten (Punkt 26) — siehe `server/README.md`
 * Direct Action Router für eindeutige Befehle
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf

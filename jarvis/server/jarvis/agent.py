@@ -36,7 +36,7 @@ from .memory import MemoryStore
 from .ollama import ChatTurn, OllamaClient, OllamaError
 from .permissions import PermissionDenied, PermissionGate, PermissionLevel
 from .tasks import StepStatus, Task, TaskManager, TaskStatus
-from .tools import Registry, ToolMissing, ToolResult
+from .tools import Registry, ToolDiscovery, ToolHistory, ToolMissing, ToolResult
 from .undo import UndoStore
 from .verification import VerificationEngine
 from .watchdog import Watchdog
@@ -123,7 +123,9 @@ class Agent:
                  verification: VerificationEngine | None = None,
                  code_client: OllamaClient | None = None,
                  fast_client: OllamaClient | None = None,
-                 macros: MacroStore | None = None):
+                 macros: MacroStore | None = None,
+                 tool_history: ToolHistory | None = None,
+                 discovery: ToolDiscovery | None = None):
         self.config = config
         self.store = store
         self.registry = registry
@@ -148,6 +150,18 @@ class Agent:
         self.permission_gate = permission_gate or PermissionGate(emit=self.emit)
         self.audit = audit or AuditLog(":memory:")
         self.undo = undo or getattr(registry, "undo_store", None) or UndoStore(":memory:")
+        #: Werkzeug-Historie/Favoriten/Abschalten (``history.py``, Punkt 36).
+        #: Wie bei ``undo`` zuerst die von der Registry mitgebrachte Instanz
+        #: übernehmen -- so teilen sich Werkzeugaufruf und die
+        #: ``jarvis.tools.*``-Meta-Werkzeuge dieselbe Ablage statt zweier
+        #: SQLite-Verbindungen auf dieselbe Datei.
+        self.tool_history = (tool_history or getattr(registry, "tool_history", None)
+                             or ToolHistory(":memory:"))
+        #: Die Werkzeugauswahl vor jeder Modellanfrage (``discovery.py``,
+        #: Punkt 34/35) -- ohne sie ginge der volle Katalog (mehrere hundert
+        #: Schemata) in jede Chat-Anfrage, was das Kontextfenster sprengt.
+        self.discovery = (discovery or getattr(registry, "discovery", None)
+                          or ToolDiscovery(registry, history=self.tool_history))
         # Autonomy V1. Die drei Maschinen sind bewusst hereinreichbar: app.py
         # gibt dateibasierte Instanzen, Tests bauen eigene.
         self.goals = goals or GoalManager(":memory:")
@@ -211,6 +225,23 @@ class Agent:
         """
         tool = self.registry.get(name)
         detail = f"{name}({', '.join(f'{k}={v}' for k, v in (arguments or {}).items())})"
+        real_name = self.registry.resolve(name)
+
+        # Abgeschaltet (Punkt 26, jarvis.tools.disable): eine Vorliebe des
+        # Nutzers, keine Berechtigungsstufe -- deshalb vor der Autonomiestufe
+        # geprüft, nicht als Sonderfall des Permission-Systems.
+        abgeschaltet = self.tool_history.disabled()
+        if real_name in abgeschaltet:
+            result = ToolResult(
+                tool=name, ok=False,
+                summary=(f"{real_name} ist abgeschaltet"
+                         + (f" ({abgeschaltet[real_name]})" if abgeschaltet[real_name] else "")
+                         + " -- jarvis.tools.enable schaltet es wieder an."),
+                evidence={"stufe": tool.level.label, "abgeschaltet": True})
+            self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
+                              ok=False, summary=result.summary, request=request_text,
+                              task_id=goal_id)
+            return result
 
         # Autonomiestufe (autonomy.py) ist der Rahmen um das Permission-System
         # herum, nicht dessen Ersatz: Stufe 0 lässt gar nichts laufen, Stufe 1
@@ -252,6 +283,15 @@ class Agent:
         self.audit.record(tool=name, level=tool.level, arguments=arguments or {},
                           ok=result.ok, summary=result.summary, request=request_text,
                           task_id=goal_id)
+        # Die werkzeugzentrierte Historie (Punkt 36) -- anders als das Audit
+        # Log nur für tatsächlich gelaufene Aufrufe: eine verweigerte
+        # Berechtigung hat keine echte Dauer und sagt nichts über die
+        # Zuverlässigkeit des Werkzeugs selbst aus.
+        self.tool_history.record(
+            tool=real_name, arguments=arguments, ok=result.ok, summary=result.summary,
+            duration_ms=result.duration_ms, level=tool.level.label,
+            request=request_text, request_id=goal_id or "")
+        self.discovery.note_use(real_name)
         await self._note_reliability(name, result)
         return result
 
@@ -534,13 +574,23 @@ class Agent:
             if fast_reply is not None:
                 return fast_reply
 
+        # Werkzeugauswahl über Discovery statt des vollen Katalogs (Punkt 35):
+        # bei mehreren hundert Tools passen die vollständigen Schemata nicht
+        # mehr ins Kontextfenster. Einmal berechnet, nicht pro Runde neu --
+        # die Auswahl richtet sich nach der Nutzeranfrage, nicht danach,
+        # welches Werkzeug die letzte Runde gerade aufgerufen hat. Findet das
+        # Modell darunter nichts Passendes, steht ihm jarvis.tools.search
+        # (immer in der Auswahl, siehe discovery.CORE_TOOLS) offen, um gezielt
+        # nachzusuchen.
+        schemas = self.discovery.schemas_for(text)
+
         results: list[ToolResult] = []
         final = ""
         try:
             for round_no in range(self.config.max_tool_rounds):
                 await self._state("thinking",
                                   "plane" if round_no == 0 else f"plane weiter ({round_no + 1})")
-                turn: ChatTurn = await self.client.chat(messages, self.registry.schemas())
+                turn: ChatTurn = await self.client.chat(messages, schemas)
 
                 if not turn.tool_calls:
                     final = turn.text
@@ -552,13 +602,19 @@ class Agent:
                                    for c in turn.tool_calls]})
                 for call in turn.tool_calls:
                     if call.name not in self.registry:
-                        # Halluzinierter Werkzeugname. Das Modell erfährt es und
-                        # bekommt die echte Liste zu sehen.
+                        # Halluzinierter Werkzeugname. Das Modell erfährt es --
+                        # mit der aktuell angebotenen Auswahl, nicht dem ganzen
+                        # Katalog (der passt bei mehreren hundert Tools nicht
+                        # mehr sinnvoll in eine Werkzeugantwort). jarvis.tools.
+                        # search steht immer in der Auswahl, falls das Gesuchte
+                        # nicht dabei war.
+                        angeboten = ", ".join(s["function"]["name"] for s in schemas)
                         messages.append({
                             "role": "tool", "name": call.name,
-                            "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' "
-                                        f"existiert nicht. Verfügbar: "
-                                        f"{', '.join(self.registry.names())}")})
+                            "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' existiert "
+                                        f"nicht oder steht gerade nicht zur Auswahl. Angeboten: "
+                                        f"{angeboten}. Mit jarvis.tools.search lässt sich der "
+                                        "ganze Werkzeugkasten durchsuchen.")})
                         continue
                     await self._state("executing", f"{call.name}")
                     result = await self._run_tool(call.name, call.arguments, request_text=text)
@@ -1026,7 +1082,11 @@ class Agent:
         """
         model = client or self.client
         rounds = int(max_rounds or self.config.max_tool_rounds)
-        schemas = self.registry.schemas(only=tool_names)
+        # Explizite Liste (Code-Modus: coder.CODE_TOOLS) bleibt exakt das --
+        # ohne eine, wie im Agent Mode, entscheidet Discovery anhand des
+        # Schritt-Auftrags, denselben Grund wie in ``handle()`` (Punkt 35).
+        schemas = (self.registry.schemas(only=tool_names) if tool_names is not None
+                  else self.discovery.schemas_for(instruction))
         context = await asyncio.to_thread(self.store.context_for, instruction)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
@@ -1049,10 +1109,13 @@ class Agent:
                                for c in turn.tool_calls]})
             for call in turn.tool_calls:
                 if call.name not in self.registry:
+                    angeboten = ", ".join(s["function"]["name"] for s in schemas)
                     messages.append({
                         "role": "tool", "name": call.name,
                         "content": (f"FEHLGESCHLAGEN: Werkzeug '{call.name}' existiert "
-                                    f"nicht. Verfügbar: {', '.join(self.registry.names())}")})
+                                    f"nicht oder steht gerade nicht zur Auswahl. Angeboten: "
+                                    f"{angeboten}. Mit jarvis.tools.search lässt sich der "
+                                    "ganze Werkzeugkasten durchsuchen.")})
                     continue
                 await self._checkpoint(control)
                 # ── EXECUTE ───────────────────────────────────────────────

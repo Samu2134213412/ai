@@ -154,6 +154,10 @@ class Config:
         return Path(self.home) / "makros.sqlite3"
 
     @property
+    def tool_history_db_path(self) -> Path:
+        return Path(self.home) / "werkzeugverlauf.sqlite3"
+
+    @property
     def config_path(self) -> Path:
         return Path(self.home) / "jarvis.json"
 
