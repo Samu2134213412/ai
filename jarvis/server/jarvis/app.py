@@ -286,6 +286,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     # -------------------------------------------------------------- Status
     async def snapshot() -> dict:
         health = await client.health()
+        # In einen Thread ausgelagert: dependency_report() ist nach dem ersten
+        # Aufruf gecacht (siehe catalog.py), aber genau dieser erste Aufruf
+        # prüft jede PROBE einzeln (shutil.which/importlib.import_module) --
+        # synchron in der Event-Loop würde das jede andere gleichzeitige
+        # Anfrage bis zum Abschluss blockieren.
+        abhaengigkeiten = await asyncio.to_thread(dependency_report)
         return {
             "host": config.host,
             "model": config.model,
@@ -310,9 +316,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             "werkzeuge": tool_status(registry, config),
             # Health-Check (Punkt 49/53): was auf DIESEM Rechner tatsächlich
             # installiert ist, mit Installationshinweis -- kein Rätselraten,
-            # warum ein Werkzeug MISSING_DEPENDENCY meldet. dependency_report()
-            # ist gecacht (siehe catalog.py), also billig bei jeder Anfrage.
-            "abhaengigkeiten": dependency_report(),
+            # warum ein Werkzeug MISSING_DEPENDENCY meldet.
+            "abhaengigkeiten": abhaengigkeiten,
             "arbeitsbereich": config.roots,
             "shell_aktiv": config.shell.enabled,
             "probleme": config.validate(),

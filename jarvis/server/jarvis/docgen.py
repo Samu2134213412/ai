@@ -15,9 +15,9 @@ from .tools.base import Registry, Tool
 from .tools.catalog import availability
 
 
-def _parameter_table(tool: Tool) -> list[str]:
-    required = set(tool.parameters.get("required") or [])
-    properties: dict = tool.parameters.get("properties") or {}
+def _parameter_table(parameter_schema: dict) -> list[str]:
+    required = set(parameter_schema.get("required") or [])
+    properties: dict = parameter_schema.get("properties") or {}
     if not properties:
         return []
     zeilen = ["", "| Parameter | Pflicht | Beschreibung |", "|---|---|---|"]
@@ -29,29 +29,33 @@ def _parameter_table(tool: Tool) -> list[str]:
 
 
 def _tool_section(tool: Tool) -> str:
+    # Aus tool.as_dict() statt jedes Feld hier einzeln erneut abzuschreiben --
+    # ein Feld, das dort dazukommt, taucht sonst nie in der Referenz auf,
+    # ohne dass jemand daran denkt, diese Datei mit zu pflegen.
+    daten = tool.as_dict()
     zustand, grund = availability(tool)
-    zeilen = [f"### `{tool.name}`", "", tool.description, "",
-             f"- **Stufe:** {tool.level.label} ({tool.risk})"]
-    if tool.aliases:
-        zeilen.append(f"- **Aliase:** {', '.join(f'`{a}`' for a in tool.aliases)}")
-    if tool.tags:
-        zeilen.append(f"- **Tags:** {', '.join(tool.tags)}")
-    if tool.requires:
-        zeilen.append(f"- **Benötigt:** {', '.join(tool.requires)}")
-    if tool.platforms:
-        zeilen.append(f"- **Plattformen:** {', '.join(tool.platforms)}")
-    if tool.undoable:
+    zeilen = [f"### `{daten['id']}`", "", daten["beschreibung"], "",
+             f"- **Stufe:** {daten['stufe']} ({daten['risiko']})"]
+    if daten["aliase"]:
+        zeilen.append(f"- **Aliase:** {', '.join(f'`{a}`' for a in daten['aliase'])}")
+    if daten["tags"]:
+        zeilen.append(f"- **Tags:** {', '.join(daten['tags'])}")
+    if daten["benoetigt"]:
+        zeilen.append(f"- **Benötigt:** {', '.join(daten['benoetigt'])}")
+    if daten["plattformen"]:
+        zeilen.append(f"- **Plattformen:** {', '.join(daten['plattformen'])}")
+    if daten["rueckgaengig"]:
         zeilen.append("- **Rückgängig machbar:** ja (`undo_last_action`)")
-    if tool.dry_run:
+    if daten["probelauf"]:
         zeilen.append("- **Probelauf:** unterstützt (`dry_run: true`)")
     zeilen.append(f"- **Verfügbarkeit hier, jetzt geprüft:** {zustand.value}"
                   + (f" -- {grund}" if grund else ""))
-    zeilen.extend(_parameter_table(tool))
-    if tool.examples:
+    zeilen.extend(_parameter_table(daten["parameter"]))
+    if daten["beispiele"]:
         zeilen.append("")
         zeilen.append("Beispiel:")
         zeilen.append("```json")
-        zeilen.append(json.dumps(dict(tool.examples[0]), ensure_ascii=False, indent=2))
+        zeilen.append(json.dumps(daten["beispiele"][0], ensure_ascii=False, indent=2))
         zeilen.append("```")
     zeilen.append("")
     return "\n".join(zeilen)
