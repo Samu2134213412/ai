@@ -82,6 +82,7 @@ PROBES: dict[str, Probe] = {p.key: p for p in (
           "https://github.com/tesseract-ocr/tesseract"),
     Probe("sevenzip", "7-Zip", "binary", "7z", "https://www.7-zip.org"),
     Probe("java", "Java", "binary", "java", "https://adoptium.net"),
+    Probe("qrcode", "qrcode", "module", "qrcode", "pip install qrcode"),
 )}
 
 #: Ergebnis-Zwischenspeicher, damit dieselbe Frage keinen zweiten Prozess kostet.

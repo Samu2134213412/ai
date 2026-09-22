@@ -21,7 +21,8 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import db, dev, docker, fs, git, media, minecraft, net, nginx, sysinfo, text
+from . import (clipboard, db, dev, docker, fs, git, media, minecraft, net,
+              nginx, productivity, search, sysinfo, text)
 
 #: Reihenfolge = Ladereihenfolge. Sie ist ohne Bedeutung für das Ergebnis
 #: (Namen sind eindeutig), macht aber die Fehlersuche vorhersagbar.
@@ -37,6 +38,9 @@ PACKS: tuple[tuple[str, Callable], ...] = (
     ("nginx", nginx.build),
     ("minecraft", minecraft.build),
     ("db", db.build),
+    ("clipboard", clipboard.build),
+    ("productivity", productivity.build),
+    ("search", search.build),
 )
 
 __all__ = ["PACKS"]
