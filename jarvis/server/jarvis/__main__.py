@@ -7,12 +7,53 @@ Standardwerten loszulaufen, von denen der Nutzer nichts weiß.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import secrets
 import socket
 import sys
 from pathlib import Path
 
 from .config import Config
+
+#: Tailscales eigener Adressbereich (RFC 6598, "Carrier-Grade NAT"). Wer
+#: Tailscale auf diesem Rechner UND dem Handy einrichtet, bekommt darüber
+#: eine Adresse, die von überall erreichbar ist -- ohne eine einzige Pforte
+#: am Router zu öffnen und ohne dieselbe Angriffsfläche, die ein Port ins
+#: offene Internet hätte. Der Server merkt davon nichts: dieselbe Bindung
+#: (0.0.0.0), dasselbe Token, nur eine zusätzliche Schnittstelle.
+_TAILSCALE_BEREICH = ipaddress.ip_network("100.64.0.0/10")
+
+
+def tailscale_addresses() -> list[str]:
+    """Adressen dieses Rechners aus Tailscales Bereich, falls es läuft.
+
+    Anders als ``lan_addresses()`` (eine Route über die Standard-
+    Netzwerkschnittstelle) reicht der UDP-Verbindungstrick hier nicht -- ein
+    VPN-Adapter liegt nie auf der Standardroute. Also werden alle
+    Schnittstellen durchsucht, nicht nur die eine.
+    """
+    gefunden: list[str] = []
+    try:
+        import psutil
+    except ImportError:
+        return gefunden
+    try:
+        for adressen in psutil.net_if_addrs().values():
+            for adresse in adressen:
+                if adresse.family != socket.AF_INET:
+                    continue
+                try:
+                    ip = ipaddress.ip_address(adresse.address)
+                except ValueError:
+                    continue
+                if ip in _TAILSCALE_BEREICH:
+                    gefunden.append(adresse.address)
+    except Exception:  # noqa: BLE001 - Netzwerkschnittstellen sind je nach
+        # Betriebssystem/Treiber unterschiedlich unzuverlässig abzufragen;
+        # das darf den Start nicht verhindern, nur diese eine Adresse fehlen
+        # lassen (siehe catalog.Probe.check() für dasselbe Muster).
+        pass
+    return gefunden
 
 
 def lan_addresses() -> list[str]:
@@ -115,6 +156,15 @@ def main(argv: list[str] | None = None) -> int:
             print("  ACHTUNG  Es war keine Netzwerkadresse zu ermitteln. "
                   "Der Server lauscht, aber ich kann dir nicht sagen, "
                   "unter welcher Adresse.", file=sys.stderr)
+        tailscale = tailscale_addresses()
+        if tailscale:
+            print("Adresse (Handy, auch unterwegs -- über Tailscale):")
+            for adresse in tailscale:
+                print(f"  http://{adresse}:{config.port}/{frage}")
+        else:
+            print("Nur im selben WLAN erreichbar. Für unterwegs (mobile Daten, "
+                  "fremdes WLAN): Tailscale auf diesem Rechner und dem Handy "
+                  "einrichten, siehe README, Abschnitt \"Von unterwegs erreichbar\".")
     else:
         print(f"Adresse: http://{config.host}:{config.port}/{frage}")
         if config.is_loopback:

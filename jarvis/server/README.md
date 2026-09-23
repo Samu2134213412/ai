@@ -20,6 +20,11 @@ Das bindet auf alle Schnittstellen **und erzeugt ein Token**. Die vollständige
 Adresse samt Token steht danach im Terminal. Ohne Token bindet der Server nicht
 offen — er lehnt Anfragen mit 503 ab, statt sich ungeschützt zu öffnen.
 
+Das reicht fürs selbe WLAN. Für unterwegs (mobile Daten, fremdes WLAN) läuft
+danach automatisch auch eine zweite, mit Tailscale erreichbare Adresse mit,
+falls Tailscale eingerichtet ist — siehe `web/README.md`, Abschnitt „Von
+unterwegs erreichbar".
+
 ## Wie ein Zug abläuft
 
 ```

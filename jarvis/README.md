@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (849 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (854 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 406 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -182,7 +182,10 @@ Fertig und getestet (849 Tests, siehe `ROADMAP.md` für die Phasen):
   mit 16 px, damit iOS beim Tippen nicht zoomt; geprüft auf iPhone SE/13,
   Pixel 7 und Galaxy Fold (280 px) — ohne horizontalen Überlauf.
   `python -m jarvis --open-network` nennt beim Start die Adresse, die sich
-  auf dem Handy eintippen lässt
+  auf dem Handy eintippen lässt, samt einer zweiten, über Tailscale
+  erreichbaren Adresse, wenn eingerichtet — funktioniert dann auch
+  außerhalb des eigenen Netzwerks (mobile Daten, fremdes WLAN), siehe
+  `web/README.md`
 
 Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
 

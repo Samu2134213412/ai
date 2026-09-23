@@ -103,6 +103,43 @@ die Oberfläche war schon vorher für Handy-Breiten ausgelegt (eigene
 `@media`-Regeln, Tab-Leiste statt Spalten); neu ist nur die
 Installierbarkeit.
 
+## Von unterwegs erreichbar (außerhalb des eigenen Netzwerks)
+
+`python -m jarvis --open-network` reicht fürs selbe WLAN — die Adresse, die
+es nennt, ist eine private Netzwerkadresse (192.168.x.x/10.x.x.x), die
+außerhalb der eigenen Fritzbox/des eigenen Routers niemand erreicht. Für
+unterwegs (mobile Daten, ein fremdes WLAN, ein anderes Land) braucht es eine
+zweite Adresse, die von überall aus zu diesem Rechner findet.
+
+**Empfohlener Weg: [Tailscale](https://tailscale.com/)** (kostenlos für den
+persönlichen Gebrauch). Statt eine Pforte am eigenen Router zu öffnen (der
+naheliegende, aber bei einem Werkzeug mit Datei-/Prozesszugriff riskante Weg
+— jede Schwachstelle im Server wäre dann direkt aus dem ganzen Internet
+erreichbar), baut Tailscale ein privates, Ende-zu-Ende-verschlüsseltes
+Netz (WireGuard) zwischen den eigenen Geräten auf. Jarvis merkt davon
+nichts: derselbe `--open-network`-Aufruf, dasselbe Token, nur eine
+zusätzliche Netzwerkschnittstelle mit einer Adresse aus `100.64.0.0/10`.
+
+1. Tailscale auf dem Rechner installieren, auf dem Jarvis läuft, und
+   anmelden: <https://tailscale.com/download>.
+2. Dieselbe Tailscale-App auf dem Handy installieren und mit **demselben
+   Konto** anmelden.
+3. `python -m jarvis --open-network` wie gewohnt starten. Im Terminal steht
+   jetzt zusätzlich:
+   ```
+   Adresse (Handy, auch unterwegs -- über Tailscale):
+     http://100.x.x.x:8770/?token=…
+   ```
+4. Diese Adresse auf dem Handy öffnen (Tailscale-App muss dafür laufen,
+   braucht aber keine eigene Bedienung) — funktioniert im selben WLAN genauso
+   wie unterwegs, eine einzige Adresse für beides. Als App installieren
+   (siehe oben) funktioniert damit genauso.
+
+Kommt keine solche Zeile, sondern nur der Hinweis auf diesen Abschnitt, läuft
+entweder kein Tailscale auf diesem Rechner, oder `psutil` (siehe
+`requirements.txt`) findet dessen Netzwerkschnittstelle nicht — ein
+`tailscale status` im Terminal zeigt, ob der Dienst überhaupt aktiv ist.
+
 ## Kommando-Palette, Action Search, Tool Explorer
 
 **F3** (oder **Strg/Cmd+K**, auch der „⌘ Palette"-Knopf neben dem
