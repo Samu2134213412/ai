@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (839 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (849 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 406 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -187,7 +187,12 @@ Fertig und getestet (839 Tests, siehe `ROADMAP.md` für die Phasen):
 Offen (siehe `ROADMAP.md` für die volle Reihenfolge):
 
 1. Chat-Modell auf der echten Maschine wählen und messen
-2. Memory-Tiers (Short-/Session-/Long-Term/Project) mit Metadatenfeldern (Phase 2)
+2. Memory-Tiers (Phase 2) — Metadatenfelder erledigt: jeder Knoten trägt
+   jetzt `importance` (fließt in die Rangfolge beim Abruf ein), `source`
+   und echte `created`/`updated`-Zeitstempel, im Wissensnetz sichtbar und
+   die Wichtigkeit dort auch bearbeitbar. Project-Ebene existiert bereits
+   (`kind="projekt"`, siehe „Erinnert sich an frühere Arbeit"). Offen bleibt
+   eine eigene Session-Ebene zwischen Short- und Long-Term.
 3. Multi-Model-Router (Phase 2) — erster Schritt fertig: `fast_model` +
    `complexity.is_simple()` unterscheiden einfach/komplex für zwei Modelle.
    Offen bleiben mehr als zwei Modelle sowie die Dimensionen

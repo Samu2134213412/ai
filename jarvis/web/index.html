@@ -328,6 +328,10 @@ body[data-st="failed"] .status .md{color:var(--red);text-shadow:0 0 24px rgba(25
   font-family:var(--mono);font-size:11.5px;padding:4px 0;border-bottom:1px solid rgba(18,52,72,.5)}
 .linkrow button{padding:1px 7px;font-size:9px;min-height:0}
 .empty{color:var(--mute);font-size:11.5px;font-style:italic}
+.range-row{display:flex;align-items:center;gap:9px}
+.range-row input[type=range]{flex:1;accent-color:var(--cyan)}
+.range-row span{font-family:var(--mono);font-size:11.5px;color:var(--mute);min-width:30px;text-align:right}
+.meta{font-family:var(--mono);font-size:10.5px;color:var(--mute);margin:-4px 0 9px}
 
 /* ── Knöpfe ────────────────────────────────────────────────── */
 button{font-family:var(--hud);font-size:11px;font-weight:600;letter-spacing:.16em;
@@ -1077,6 +1081,8 @@ const SEED={
   links:[["n1","n11"],["n1","n10"],["n1","n2"],["n2","n6"],["n2","n7"],["n2","n8"],["n2","n9"],
     ["n7","n3"],["n6","n11"],["n4","n12"],["n12","n7"],["n12","n6"],["n2","n5"],["n3","n4"],["n10","n6"]]
 };
+// Vorgaben statt Wiederholung in jedem der zwölf Knoten oben.
+SEED.nodes.forEach((n)=>{ n.importance=0.5; n.source="seed"; });
 
 let MEM={nodes:[],links:[]}, sel=null, joinMode=false, joinFrom=null, filter="", hidden=new Set();
 let store={kind:"none",save:async()=>{}};
@@ -1257,6 +1263,13 @@ function renderLegend(){
 $("find").addEventListener("input",(e)=>{ filter=e.target.value.trim().toLowerCase(); paint(); });
 
 /* ── Erinnerung bearbeiten ─────────────────────────────────── */
+function fmtDatum(sekunden){
+  if(!sekunden) return "gerade eben";
+  return new Date(sekunden*1000).toLocaleString("de-DE",
+    {day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+}
+const QUELLE={modell:"Modell",user:"von Hand",seed:"Grundausstattung",
+  "code-modus":"Code-Modus",autonomy:"Zielverfolgung"};
 function inspect(id){
   const box=$("insIn"), n=MEM.nodes.find((x)=>x.id===id);
   $("insRt").textContent=n?(CAT[n.cat]||CAT.fakt).n:"";
@@ -1271,6 +1284,8 @@ function inspect(id){
     .map((l)=>{ const o=MEM.nodes.find((x)=>x.id===(l[0]===id?l[1]:l[0]));
       return o?`<div class="linkrow"><span>${esc(o.label)}</span>
         <button class="gh" data-un="${o.id}">trennen</button></div>`:""; }).join("");
+  const imp=typeof n.importance==="number"?n.importance:0.5;
+  const quelle=QUELLE[n.source]||"unbekannt";
   box.innerHTML=`
     <div class="field"><label for="fLab">Titel</label>
       <input id="fLab" value="${esc(n.label)}"></div>
@@ -1278,12 +1293,19 @@ function inspect(id){
       <select id="fCat">${opts}</select></div>
     <div class="field"><label for="fTxt">Was Jarvis weiß</label>
       <textarea id="fTxt">${esc(n.text||"")}</textarea></div>
+    <div class="field"><label for="fImp">Wichtigkeit beim Abruf</label>
+      <div class="range-row"><input id="fImp" type="range" min="0" max="1" step="0.1" value="${imp}">
+        <span id="fImpV">${Math.round(imp*100)}%</span></div></div>
+    <p class="meta">Quelle: ${esc(quelle)} · angelegt ${fmtDatum(n.created)}</p>
     <div class="field"><label>Verbunden mit</label>
       ${nb||'<p class="empty">noch nichts</p>'}</div>
     <div class="btnrow"><button id="fSave">Speichern</button>
       <button class="dg" id="fDel">Löschen</button></div>`;
+  $("fImp").addEventListener("input",()=>{
+    $("fImpV").textContent=Math.round($("fImp").value*100)+"%"; });
   const save=()=>{ n.label=$("fLab").value.trim()||"Ohne Titel"; n.cat=$("fCat").value;
-    n.text=$("fTxt").value.trim(); persist(); renderLegend(); inspect(id); };
+    n.text=$("fTxt").value.trim(); n.importance=parseFloat($("fImp").value);
+    persist(); renderLegend(); inspect(id); };
   $("fSave").addEventListener("click",save);
   $("fDel").addEventListener("click",()=>{
     MEM.nodes=MEM.nodes.filter((x)=>x.id!==id);
@@ -1305,6 +1327,7 @@ $("add").addEventListener("click",()=>{
   const id="n"+Date.now().toString(36);
   const a=anchors.fakt||{x:0,y:0};
   MEM.nodes.push({id,label:"Neue Erinnerung",cat:"fakt",text:"",
+    importance:0.5,source:"user",
     x:a.x+(Math.random()-0.5)*0.2,y:a.y+(Math.random()-0.5)*0.2,vx:0,vy:0});
   sel=id; persist(); renderLegend(); inspect(id);
   alpha=0.5; run(); if(phone()) showTab("insp");

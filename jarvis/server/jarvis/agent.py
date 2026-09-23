@@ -927,7 +927,7 @@ class Agent:
                 label=f"Erfahrung: {step_description[:70]}",
                 text=(f"Erster Versuch scheiterte an: {error}. "
                       f"Erfolgreich war danach: {result}"),
-                kind="erfahrung")
+                kind="erfahrung", source="autonomy")
         except Exception:  # noqa: BLE001 - eine Lehre, die sich nicht ablegen
             # lässt, darf den laufenden Auftrag nicht scheitern lassen.
             pass
@@ -1195,7 +1195,7 @@ class Agent:
             kaputt = ", ".join(f"{c.name} ({c.detail})" for c in outcome.broken)
             text += f"\nAchtung, Nachprüfung fehlgeschlagen bei: {kaputt}"
         try:
-            self.store.add(label=task[:70], text=text, kind="projekt")
+            self.store.add(label=task[:70], text=text, kind="projekt", source="code-modus")
         except Exception:  # noqa: BLE001 - eine nicht speicherbare Erinnerung
             # darf den eigentlichen Code-Auftrag nicht scheitern lassen --
             # dieselbe Vorsicht wie in _learn().

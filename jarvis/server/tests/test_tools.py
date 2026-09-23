@@ -172,6 +172,23 @@ def test_memory_add_liest_zurueck_was_es_geschrieben_hat(store):
     assert store.get(result.evidence["id"]).label == "Kaffee"
 
 
+def test_memory_add_setzt_wichtigkeit_und_markiert_die_quelle(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    result = add.run(label="Wichtig", text="nie vergessen", kind="regel", importance=0.9)
+    assert result.ok is True
+    gespeichert = store.get(result.evidence["id"])
+    assert gespeichert.importance == 0.9
+    # Herkunft ist immer "modell" -- dieses Werkzeug wird nur vom Modell
+    # aufgerufen, nie direkt von der Oberfläche (die schreibt über /api/memory).
+    assert gespeichert.source == "modell"
+
+
+def test_memory_add_lehnt_wichtigkeit_ausserhalb_0_bis_1_ab(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    with pytest.raises(ToolError, match="importance"):
+        add.run(label="X", importance=5.0)
+
+
 def test_memory_forget_prueft_nach(store):
     tools = {t.name: t for t in knowledge.build(store)}
     node = store.add(label="Vergänglich")

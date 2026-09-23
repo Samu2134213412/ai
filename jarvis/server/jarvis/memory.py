@@ -24,14 +24,17 @@ KINDS = ("regel", "projekt", "hardware", "vorliebe", "skill", "fakt", "erfahrung
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
-    id      TEXT PRIMARY KEY,
-    label   TEXT NOT NULL,
-    kind    TEXT NOT NULL DEFAULT 'fakt',
-    text    TEXT NOT NULL DEFAULT '',
-    x       REAL,
-    y       REAL,
-    created REAL NOT NULL,
-    updated REAL NOT NULL
+    id         TEXT PRIMARY KEY,
+    label      TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'fakt',
+    text       TEXT NOT NULL DEFAULT '',
+    x          REAL,
+    y          REAL,
+    importance REAL NOT NULL DEFAULT 0.5,
+    source     TEXT NOT NULL DEFAULT '',
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created    REAL NOT NULL,
+    updated    REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS links (
     a TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -40,6 +43,15 @@ CREATE TABLE IF NOT EXISTS links (
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
 """
+
+#: Spalten, die es vor dieser Version noch nicht gab -- an einer bestehenden,
+#: schon befüllten Datenbank auf der Maschine des Nutzers reicht "CREATE TABLE
+#: IF NOT EXISTS" allein nicht, die Tabelle existiert dort ja schon ohne sie.
+_NEUE_SPALTEN = (
+    ("importance", "REAL NOT NULL DEFAULT 0.5"),
+    ("source", "TEXT NOT NULL DEFAULT ''"),
+    ("confidence", "REAL NOT NULL DEFAULT 1.0"),
+)
 
 _WORD = re.compile(r"[\wäöüßÄÖÜ]{3,}", re.UNICODE)
 
@@ -59,19 +71,35 @@ def _terms(text: str) -> list[str]:
     return [w.lower() for w in _WORD.findall(text or "") if w.lower() not in _STOP]
 
 
+_COLS = "id,label,kind,text,importance,source,confidence,created,updated"
+
+
+def _aus_zeile(row: sqlite3.Row, score: float = 0.0) -> "Memory":
+    return Memory(row["id"], row["label"], row["kind"], row["text"],
+                  row["importance"], row["source"], row["confidence"],
+                  row["created"], row["updated"], score)
+
+
 @dataclass(frozen=True)
 class Memory:
     id: str
     label: str
     kind: str
     text: str
+    importance: float = 0.5
+    source: str = ""
+    confidence: float = 1.0
+    created: float = 0.0
+    updated: float = 0.0
     score: float = 0.0
 
     def as_line(self) -> str:
         return f"[{self.kind}] {self.label}: {self.text}" if self.text else f"[{self.kind}] {self.label}"
 
     def as_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "label": self.label, "cat": self.kind, "text": self.text}
+        return {"id": self.id, "label": self.label, "cat": self.kind, "text": self.text,
+                "importance": self.importance, "source": self.source,
+                "confidence": self.confidence, "created": self.created, "updated": self.updated}
 
 
 class MemoryStore:
@@ -85,28 +113,54 @@ class MemoryStore:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA foreign_keys = ON")
         self._db.executescript(_SCHEMA)
+        self._migrate()
         self._db.commit()
+
+    def _migrate(self) -> None:
+        """Fügt Spalten nach, die eine bereits bestehende, schon befüllte
+        Datenbank auf der Maschine des Nutzers noch nicht hat -- CREATE TABLE
+        IF NOT EXISTS allein greift dort nicht, die Tabelle gibt es ja
+        schon."""
+        vorhanden = {row["name"] for row in self._db.execute("PRAGMA table_info(nodes)")}
+        for spalte, definition in _NEUE_SPALTEN:
+            if spalte not in vorhanden:
+                self._db.execute(f"ALTER TABLE nodes ADD COLUMN {spalte} {definition}")
 
     def close(self) -> None:
         self._db.close()
 
+    def _row(self, node_id: str) -> Memory | None:
+        row = self._db.execute(
+            "SELECT id,label,kind,text,importance,source,confidence,created,updated "
+            "FROM nodes WHERE id=?", (node_id,)).fetchone()
+        return _aus_zeile(row) if row else None
+
     # -- schreiben ---------------------------------------------------------
     def add(self, label: str, text: str = "", kind: str = "fakt",
             node_id: str | None = None, x: float | None = None,
-            y: float | None = None) -> Memory:
+            y: float | None = None, importance: float = 0.5,
+            source: str = "", confidence: float = 1.0) -> Memory:
         label = (label or "").strip() or "Ohne Titel"
         kind = kind if kind in KINDS else "fakt"
         node_id = node_id or f"n{uuid.uuid4().hex[:10]}"
+        importance = max(0.0, min(float(importance), 1.0))
+        confidence = max(0.0, min(float(confidence), 1.0))
+        source = (source or "").strip()
         now = time.time()
         self._db.execute(
-            "INSERT INTO nodes (id,label,kind,text,x,y,created,updated) "
-            "VALUES (?,?,?,?,?,?,?,?) "
+            "INSERT INTO nodes (id,label,kind,text,x,y,importance,source,confidence,"
+            "created,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(id) DO UPDATE SET label=excluded.label, kind=excluded.kind, "
-            "text=excluded.text, x=excluded.x, y=excluded.y, updated=excluded.updated",
-            (node_id, label, kind, (text or "").strip(), x, y, now, now),
+            "text=excluded.text, x=excluded.x, y=excluded.y, "
+            "importance=excluded.importance, source=excluded.source, "
+            "confidence=excluded.confidence, updated=excluded.updated",
+            (node_id, label, kind, (text or "").strip(), x, y, importance, source,
+             confidence, now, now),
         )
         self._db.commit()
-        return Memory(node_id, label, kind, (text or "").strip())
+        # Zurückgelesen statt angenommen -- bei einem Konflikt (node_id gab es
+        # schon) bleibt "created" das ursprüngliche, nicht "now".
+        return self._row(node_id)
 
     def link(self, a: str, b: str) -> bool:
         if a == b:
@@ -132,44 +186,58 @@ class MemoryStore:
 
     # -- lesen -------------------------------------------------------------
     def get(self, node_id: str) -> Memory | None:
-        row = self._db.execute(
-            "SELECT id,label,kind,text FROM nodes WHERE id=?", (node_id,)).fetchone()
-        return Memory(row["id"], row["label"], row["kind"], row["text"]) if row else None
+        return self._row(node_id)
 
     def all(self) -> list[Memory]:
         rows = self._db.execute(
-            "SELECT id,label,kind,text FROM nodes ORDER BY updated DESC").fetchall()
-        return [Memory(r["id"], r["label"], r["kind"], r["text"]) for r in rows]
+            f"SELECT {_COLS} FROM nodes ORDER BY updated DESC").fetchall()
+        return [_aus_zeile(r) for r in rows]
 
     def graph(self) -> dict[str, Any]:
         """Die Form, die das Wissensnetz der Oberfläche erwartet."""
         rows = self._db.execute(
-            "SELECT id,label,kind,text,x,y FROM nodes ORDER BY created").fetchall()
-        nodes = [{"id": r["id"], "label": r["label"], "cat": r["kind"],
-                  "text": r["text"], **({"x": r["x"], "y": r["y"]}
-                                        if r["x"] is not None else {})} for r in rows]
+            f"SELECT {_COLS},x,y FROM nodes ORDER BY created").fetchall()
+        nodes = [{**_aus_zeile(r).as_dict(),
+                  **({"x": r["x"], "y": r["y"]} if r["x"] is not None else {})} for r in rows]
         links = [[r["a"], r["b"]] for r in
                  self._db.execute("SELECT a,b FROM links").fetchall()]
         return {"nodes": nodes, "links": links}
 
     def replace_graph(self, graph: dict[str, Any]) -> int:
-        """Übernimmt den Stand aus der Oberfläche. Ersetzt, nicht mischt."""
+        """Übernimmt den Stand aus der Oberfläche. Ersetzt, nicht mischt.
+
+        "created" bleibt dabei erhalten, wenn die Kennung schon existierte --
+        die Oberfläche schickt bei jeder Änderung (auch nur einen Knoten
+        verschieben) den ganzen Graphen neu; ohne das würde "created" bei
+        jedem Ziehen stillschweigend auf "jetzt" zurückspringen und wäre als
+        Zeitstempel wertlos.
+        """
         nodes = graph.get("nodes") or []
         links = graph.get("links") or []
         now = time.time()
+        bestehend = {r["id"]: r["created"] for r in
+                     self._db.execute("SELECT id, created FROM nodes")}
         with self._db:
             self._db.execute("DELETE FROM links")
             self._db.execute("DELETE FROM nodes")
             for n in nodes:
                 if not isinstance(n, dict) or not n.get("id"):
                     continue
+                node_id = str(n["id"])
                 kind = n.get("cat") or n.get("kind") or "fakt"
+                importance = n.get("importance")
+                importance = (max(0.0, min(float(importance), 1.0))
+                              if importance is not None else 0.5)
+                confidence = n.get("confidence")
+                confidence = (max(0.0, min(float(confidence), 1.0))
+                              if confidence is not None else 1.0)
                 self._db.execute(
-                    "INSERT OR REPLACE INTO nodes (id,label,kind,text,x,y,created,updated)"
-                    " VALUES (?,?,?,?,?,?,?,?)",
-                    (str(n["id"]), str(n.get("label") or "Ohne Titel"),
+                    "INSERT OR REPLACE INTO nodes (id,label,kind,text,x,y,importance,"
+                    "source,confidence,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (node_id, str(n.get("label") or "Ohne Titel"),
                      kind if kind in KINDS else "fakt", str(n.get("text") or ""),
-                     n.get("x"), n.get("y"), now, now))
+                     n.get("x"), n.get("y"), importance, str(n.get("source") or ""),
+                     confidence, bestehend.get(node_id, now), now))
             known = {str(n["id"]) for n in nodes if isinstance(n, dict) and n.get("id")}
             for pair in links:
                 if not isinstance(pair, (list, tuple)) or len(pair) != 2:
@@ -181,11 +249,12 @@ class MemoryStore:
         return len(known)
 
     def neighbours(self, node_id: str) -> list[Memory]:
+        cols = ",".join(f"n.{c}" for c in _COLS.split(","))
         rows = self._db.execute(
-            "SELECT n.id,n.label,n.kind,n.text FROM nodes n JOIN links l "
+            f"SELECT {cols} FROM nodes n JOIN links l "
             "ON (l.a=n.id AND l.b=?) OR (l.b=n.id AND l.a=?)",
             (node_id, node_id)).fetchall()
-        return [Memory(r["id"], r["label"], r["kind"], r["text"]) for r in rows]
+        return [_aus_zeile(r) for r in rows]
 
     # -- abrufen -----------------------------------------------------------
     def search(self, query: str, limit: int = 6) -> list[Memory]:
@@ -195,7 +264,7 @@ class MemoryStore:
         aus dem Kontext fallen, weil die Frage andere Wörter benutzt.
         """
         terms = set(_terms(query))
-        rows = self._db.execute("SELECT id,label,kind,text FROM nodes").fetchall()
+        rows = self._db.execute(f"SELECT {_COLS} FROM nodes").fetchall()
         scored: list[Memory] = []
         for r in rows:
             label_terms = set(_terms(r["label"]))
@@ -204,7 +273,11 @@ class MemoryStore:
             if r["kind"] == "regel":
                 score += 2.0
             if score > 0:
-                scored.append(Memory(r["id"], r["label"], r["kind"], r["text"], score))
+                # Wichtigkeit verschiebt nur die Rangfolge unter echten
+                # Treffern (0.5 = Vorgabe = keine Verschiebung), entscheidet
+                # aber nie allein: ohne Begriffstreffer bleibt score 0, und
+                # der Knoten fällt weiterhin ganz aus dem Ergebnis heraus.
+                scored.append(_aus_zeile(r, score * (0.5 + r["importance"])))
         scored.sort(key=lambda m: (-m.score, m.label))
         return scored[:limit]
 
@@ -220,7 +293,7 @@ class MemoryStore:
         if self._db.execute("SELECT 1 FROM nodes LIMIT 1").fetchone():
             return
         for label, kind, text in entries:
-            self.add(label=label, kind=kind, text=text)
+            self.add(label=label, kind=kind, text=text, source="seed")
 
 
 DEFAULT_SEED = [

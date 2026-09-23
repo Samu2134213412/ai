@@ -184,6 +184,15 @@ def test_gedaechtnis_lesen_und_schreiben(client):
     assert zurueck["links"] == [["a", "b"]]
 
 
+def test_gedaechtnis_metadaten_ueberleben_den_weg_ueber_die_api(client):
+    graph = {"nodes": [{"id": "a", "label": "Wichtig", "cat": "regel", "text": "nie vergessen",
+                       "importance": 0.9, "source": "modell", "confidence": 0.4}], "links": []}
+    client.put("/api/memory", json=graph)
+    knoten = client.get("/api/memory").json()["nodes"][0]
+    assert (knoten["importance"], knoten["source"], knoten["confidence"]) == (0.9, "modell", 0.4)
+    assert knoten["created"] > 0 and knoten["updated"] > 0
+
+
 def test_kanten_ins_nichts_werden_verworfen(client):
     graph = {"nodes": [{"id": "a", "label": "Allein", "cat": "fakt"}],
              "links": [["a", "gibtsnicht"]]}

@@ -28,12 +28,16 @@ def build(store: MemoryStore) -> list[Tool]:
             evidence={"suche": query, "treffer": len(hits)},
             payload="\n".join(lines) if lines else "(nichts gefunden)")
 
-    def memory_add(label: str, text: str = "", kind: str = "fakt") -> ToolResult:
+    def memory_add(label: str, text: str = "", kind: str = "fakt",
+                  importance: float = 0.5) -> ToolResult:
         if not (label or "").strip():
             raise ToolError("Eine Erinnerung braucht einen Titel.")
         if kind not in KINDS:
             raise ToolError(f"Unbekannte Art '{kind}'. Erlaubt: {', '.join(KINDS)}")
-        node = store.add(label=label, text=text, kind=kind)
+        if not 0.0 <= float(importance) <= 1.0:
+            raise ToolError(f"importance muss zwischen 0 und 1 liegen, nicht {importance!r}.")
+        node = store.add(label=label, text=text, kind=kind, importance=importance,
+                         source="modell")
         # Der Beleg wird zurückgelesen, nicht angenommen.
         stored = store.get(node.id)
         if stored is None:
@@ -82,7 +86,11 @@ def build(store: MemoryStore) -> list[Tool]:
              {"type": "object",
               "properties": {"label": {**_str, "description": "Kurzer Titel"},
                              "text": {**_str, "description": "Der Inhalt"},
-                             "kind": {**_str, "enum": list(KINDS)}},
+                             "kind": {**_str, "enum": list(KINDS)},
+                             "importance": {"type": "number",
+                                            "description": "0-1, Vorgabe 0.5 -- hebt "
+                                            "beim Abruf die Rangfolge, ersetzt keinen "
+                                            "Begriffstreffer"}},
               "required": ["label"]},
              memory_add, level=PermissionLevel.WRITE),
         Tool("memory_link", "Verbindet zwei Erinnerungen miteinander.",

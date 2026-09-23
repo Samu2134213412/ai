@@ -171,7 +171,12 @@ def _capture_memory_forget(arguments: dict, ctx: UndoContext) -> dict | None:
     node = ctx.store.get(arguments.get("id", ""))
     if node is None:
         return None
-    return {"id": node.id, "label": node.label, "kind": node.kind, "text": node.text}
+    # Alle Felder sichern, nicht nur die vier ursprünglichen -- sonst würde
+    # Rückgängigmachen die Wichtigkeit/Quelle/Sicherheit stillschweigend auf
+    # die Vorgabe zurücksetzen, statt den Knoten wirklich wiederherzustellen.
+    return {"id": node.id, "label": node.label, "kind": node.kind, "text": node.text,
+            "importance": node.importance, "source": node.source,
+            "confidence": node.confidence}
 
 
 def _revert_memory_forget(snap: dict, ctx: UndoContext) -> str:
@@ -179,7 +184,9 @@ def _revert_memory_forget(snap: dict, ctx: UndoContext) -> str:
         raise UndoError("Kein Gedächtnis verfügbar.")
     if ctx.store.get(snap["id"]) is not None:
         raise UndoError(f"Am Platz der gelöschten Erinnerung steht inzwischen etwas Neues: {snap['id']}")
-    ctx.store.add(node_id=snap["id"], label=snap["label"], kind=snap["kind"], text=snap["text"])
+    ctx.store.add(node_id=snap["id"], label=snap["label"], kind=snap["kind"], text=snap["text"],
+                  importance=snap.get("importance", 0.5), source=snap.get("source", ""),
+                  confidence=snap.get("confidence", 1.0))
     return f"Erinnerung wiederhergestellt: {snap['label']}"
 
 

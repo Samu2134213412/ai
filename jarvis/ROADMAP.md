@@ -79,11 +79,18 @@ wurde durch die Hintergrund-Ausführung unvermeidlich und ist mit
 ## Phase 2 — Memory, Model Router, Ollama-Integration, Multi-Model
 
 1. Memory-Tiers: Short-Term (laufender Chat-Verlauf, existiert bereits in
-   `Agent.history`), Session, Long-Term (existiert, `memory.py`), Project.
-   Erweiterung der bestehenden `Memory`-Zeile um `importance`, `source`,
-   `confidence`, `timestamp` (heute nur `created`/`updated` intern, nicht
-   nach außen gereicht) — Migration der bestehenden SQLite-Tabelle, kein
-   Neubau des Speichers.
+   `Agent.history`), Session, Long-Term (existiert, `memory.py`), Project
+   (existiert seit der Wissensnetz-Überarbeitung: `kind="projekt"`, vom
+   Code-Modus selbständig befüllt). **Metadatenfelder erledigt:**
+   `importance`, `source`, `confidence` sowie echte, nach außen gereichte
+   `created`/`updated`-Zeitstempel liegen jetzt auf jedem Knoten — per
+   Migration an einer bestehenden SQLite-Tabelle nachgerüstet, kein Neubau.
+   `importance` fließt in die Rangfolge beim Abruf ein (0.5 = Vorgabe = keine
+   Verschiebung), `replace_graph()` behält `created` jetzt über jeden
+   Oberflächen-Speichervorgang hinweg bei, statt es bei jedem Ziehen eines
+   Knotens stillschweigend zurückzusetzen. Offen bleibt eine echte
+   **Session**-Ebene zwischen Short-Term und Long-Term — noch ohne
+   festgelegten Mechanismus.
 2. Model Router: `task_type`/`complexity`/`privacy`/`cost`/`latency`/
    `required_tools` → Modellwahl. Ollama bleibt Standard; die
    `OllamaClient`-Abstraktion in `ollama.py` wird die erste von mehreren

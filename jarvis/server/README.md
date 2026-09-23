@@ -259,6 +259,31 @@ löschen (`GET`/`PUT /api/memory`) -- keine zweite, versteckte Ablage.
 
 Ein Auftrag ohne echte Dateiänderung legt nichts ab.
 
+### Metadaten je Erinnerung
+
+Jeder Knoten im Wissensnetz trägt neben Titel/Art/Text drei weitere Felder
+(`jarvis/memory.py`, an einer bestehenden Datenbank per Migration
+nachgerüstet, kein Neubau):
+
+* **`importance`** (0-1, Vorgabe 0.5): verschiebt beim Abruf (`search()`) nur
+  die Rangfolge unter echten Begriffstreffern nach oben oder unten -- ohne
+  Treffer bleibt der Knoten weiterhin ganz draußen. `memory_add` kann sie
+  setzen, im Wissensnetz ist sie über einen Regler direkt bearbeitbar.
+* **`source`**: wer den Eintrag angelegt hat -- `"modell"` (`memory_add`),
+  `"user"` (von Hand im Wissensnetz), `"code-modus"` (automatisches
+  Projekt-Gedächtnis, siehe oben), `"autonomy"` (Erfahrungslernen der
+  Zielverfolgung) oder `"seed"` (Grundausstattung).
+* **`confidence`** (0-1, Vorgabe 1.0): wie sicher der Eintrag ist -- angelegt
+  für eine spätere Nutzung (z. B. unsichere Vermutungen des Modells niedriger
+  gewichten), heute gespeichert und über `GET`/`PUT /api/memory`
+  round-trip-fähig, aber noch ohne Auswirkung auf den Abruf.
+
+`created`/`updated` (bisher nur intern) stehen jetzt ebenfalls im Knoten.
+`replace_graph()` -- der Weg, über den die Oberfläche *jede* Änderung
+speichert, auch nur einen verschobenen Knoten -- behält `created` dabei für
+eine schon bekannte Kennung bei, statt es bei jedem Speichervorgang auf
+"jetzt" zurückzusetzen.
+
 | Feld in `jarvis.json` | |
 |---|---|
 | `code.model` | Das Code-Modell (Vorgabe `qwen3-coder:30b`). Leer = dasselbe wie im Chat |

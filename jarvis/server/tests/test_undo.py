@@ -141,6 +141,25 @@ def test_vergessene_erinnerung_wird_wiederhergestellt(store, ctx):
     assert wiederhergestellt.kind == "vorliebe"
 
 
+def test_vergessene_erinnerung_behaelt_wichtigkeit_und_quelle_beim_wiederherstellen(store, ctx):
+    # Ohne das würde Rückgängigmachen die Wichtigkeit/Quelle/Sicherheit
+    # stillschweigend auf die Vorgabe zurücksetzen statt sie wirklich
+    # wiederherzustellen.
+    node = store.add(label="Wichtig", kind="regel", text="nie vergessen",
+                     importance=0.9, source="modell", confidence=0.4)
+    store_ = UndoStore(":memory:", context=ctx)
+
+    pre = store_.begin("memory_forget", {"id": node.id})
+    store.delete(node.id)
+    store_.finish("memory_forget", "vergessen", pre, ok("memory_forget"))
+
+    store_.undo()
+    wiederhergestellt = store.get(node.id)
+    assert wiederhergestellt.importance == 0.9
+    assert wiederhergestellt.source == "modell"
+    assert wiederhergestellt.confidence == 0.4
+
+
 # ═══════════════════════════════════════════════════════════ Rahmen
 def test_unbekanntes_werkzeug_liefert_keinen_snapshot(ctx):
     store_ = UndoStore(":memory:", context=ctx)
