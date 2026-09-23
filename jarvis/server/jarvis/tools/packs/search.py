@@ -178,17 +178,34 @@ def build(ctx: ToolContext) -> list[Tool]:
         if dry_run:
             return planned("search.apps.open", f"Würde starten: {anzeige}",
                            programm=programm, argumente=argumente or None)
+        system = current_platform()
+        pid: int | None = None
         try:
-            # Ohne Shell, feste Argumentliste (wie catalog.run_process) -- ein
-            # Programmname mit Sonderzeichen kann so nicht zu einem zweiten
-            # Befehl werden. Bewusst subprocess statt os.startfile: das gibt
-            # eine echte PID als Beleg zurück und funktioniert auf jeder
-            # Plattform gleich, nicht nur unter Windows.
-            proc = subprocess.Popen([programm, *argumente])  # noqa: S603
+            if system == "windows" and not argumente:
+                # search.apps liefert unter Windows Verknüpfungen (.lnk) --
+                # subprocess.Popen kann die nicht ausführen (keine echte
+                # PE-Datei, "%1 ist keine gültige Win32-Anwendung").
+                # os.startfile löst sie genauso auf wie ein Doppelklick im
+                # Explorer, kann dafür aber keine Argumente übergeben und
+                # liefert keinen Prozess-Handle als Beleg.
+                os.startfile(programm)  # noqa: S606 - kein Shell, Windows-eigen
+            elif system == "darwin" and programm.endswith(".app"):
+                # search.apps liefert unter macOS .app-Bündel (Ordner) --
+                # das eigentliche, ausführbare Programm darin zu finden ist
+                # Sache von "open", nicht von uns.
+                proc = subprocess.Popen(["open", programm, *argumente])  # noqa: S603
+                pid = proc.pid
+            else:
+                # Ohne Shell, feste Argumentliste (wie catalog.run_process) --
+                # ein Programmname mit Sonderzeichen kann so nicht zu einem
+                # zweiten Befehl werden.
+                proc = subprocess.Popen([programm, *argumente])  # noqa: S603
+                pid = proc.pid
         except OSError as exc:
             raise ToolError(f"Konnte {programm!r} nicht starten: {exc}") from exc
-        return ok("search.apps.open", f"{programm} gestartet (PID {proc.pid})",
-                  programm=programm, argumente=argumente or None, pid=proc.pid)
+        return ok("search.apps.open",
+                  f"{programm} gestartet" + (f" (PID {pid})" if pid else ""),
+                  programm=programm, argumente=argumente or None, pid=pid)
 
     def search_web(query: str, limit: int = 5) -> ToolResult:
         muster = (query or "").strip()

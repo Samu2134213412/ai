@@ -178,6 +178,62 @@ def test_apps_open_unbekanntes_programm_meldet_ehrlichen_fehler(tools):
     fehler(tools("search.apps.open", path="dieses-programm-gibt-es-ganz-sicher-nicht"))
 
 
+def test_apps_open_nutzt_startfile_fuer_windows_verknuepfung(tools, monkeypatch):
+    # search.apps liefert unter Windows .lnk-Dateien -- subprocess.Popen kann
+    # die nicht ausfuehren, nur os.startfile loest sie wie ein Doppelklick im
+    # Explorer auf. Ohne echtes Windows hier ueber ein Fake geprueft, das
+    # genau den Aufruf festhaelt, den apps_open absetzt.
+    import jarvis.tools.packs.search as search_pack
+
+    aufrufe = []
+    monkeypatch.setattr(search_pack, "current_platform", lambda: "windows")
+    monkeypatch.setattr(search_pack.os, "startfile", lambda pfad: aufrufe.append(pfad),
+                        raising=False)
+
+    res = erfolg(tools("search.apps.open", path=r"C:\Users\x\Start Menu\Rechner.lnk"))
+    assert aufrufe == [r"C:\Users\x\Start Menu\Rechner.lnk"]
+    # os.startfile liefert keinen Prozess-Handle -- pid bleibt unbelegt (ok()
+    # lässt None-Belege ganz weg, statt einen leeren Platzhalter einzutragen).
+    assert "pid" not in res.evidence
+
+
+def test_apps_open_nutzt_open_fuer_macos_app_buendel(tools, monkeypatch):
+    # search.apps liefert unter macOS .app-Buendel (Ordner) -- das
+    # ausfuehrbare Programm darin zu finden ist Sache von "open", nicht von
+    # uns. Ohne echtes macOS hier ueber ein Fake-Popen geprueft.
+    import jarvis.tools.packs.search as search_pack
+
+    class FakeProc:
+        pid = 4242
+
+    aufrufe = []
+    monkeypatch.setattr(search_pack, "current_platform", lambda: "darwin")
+    monkeypatch.setattr(search_pack.subprocess, "Popen",
+                        lambda cmd: (aufrufe.append(cmd), FakeProc())[1])
+
+    res = erfolg(tools("search.apps.open", path="/Applications/Beispiel.app"))
+    assert aufrufe == [["open", "/Applications/Beispiel.app"]]
+    assert res.evidence["pid"] == 4242
+
+
+def test_apps_open_mit_argumenten_unter_windows_startet_direkt(tools, monkeypatch):
+    # Mit Argumenten kann os.startfile nicht umgehen -- dann bleibt es beim
+    # gewoehnlichen Popen, genau wie auf Linux.
+    import jarvis.tools.packs.search as search_pack
+
+    class FakeProc:
+        pid = 99
+
+    aufrufe = []
+    monkeypatch.setattr(search_pack, "current_platform", lambda: "windows")
+    monkeypatch.setattr(search_pack.subprocess, "Popen",
+                        lambda cmd: (aufrufe.append(cmd), FakeProc())[1])
+
+    res = erfolg(tools("search.apps.open", path="rechner.exe", arguments=["--foo"]))
+    assert aufrufe == [["rechner.exe", "--foo"]]
+    assert res.evidence["pid"] == 99
+
+
 # ══════════════════════════════════════════════════════════════ search.web
 def freier_port() -> int:
     with socket.socket() as s:

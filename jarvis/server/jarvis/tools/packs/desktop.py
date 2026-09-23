@@ -74,6 +74,19 @@ def _koordinate(automation, x: int, y: int) -> tuple[int, int]:
     return x, y
 
 
+def _tasten_kombination(keys: str) -> list[str]:
+    """Zerlegt "ctrl+shift+p" in ["ctrl","shift","p"] -- mit einem
+    Sonderfall für das Plus-Zeichen selbst: "ctrl++" (Strg+Plus, ein
+    verbreitetes Zoom-Kürzel) endet nach dem Zerlegen auf ein leeres
+    letztes Element ("ctrl++".split("+") == ["ctrl","",""]), das ein
+    einfacher Leerstring-Filter verschlucken würde -- die gemeinte letzte
+    Taste ("+") verschwände dann spurlos statt gedrückt zu werden."""
+    rohe = (keys or "").split("+")
+    if rohe and rohe[-1] == "":
+        rohe = rohe[:-1] + ["+"]
+    return [k.strip() for k in rohe if k.strip()]
+
+
 def build(ctx: ToolContext) -> list[Tool]:
     ws = ctx.workspace
 
@@ -117,7 +130,12 @@ def build(ctx: ToolContext) -> list[Tool]:
         taste = (button or "left").strip().lower()
         if taste not in {"left", "right", "middle"}:
             raise ToolError(f"Unbekannte Maustaste: {button!r} (erlaubt: left, right, middle)")
-        anzahl = max(1, min(int(clicks or 1), 10))
+        # Kein "clicks or 1": das würde ein ausdrücklich angefordertes
+        # clicks=0 stillschweigend zu einem echten Klick machen -- etwas
+        # anderes tun als verlangt, statt es ehrlich abzulehnen.
+        if not 1 <= int(clicks) <= 10:
+            raise ToolError(f"clicks muss zwischen 1 und 10 liegen, nicht {clicks!r}.")
+        anzahl = int(clicks)
         if dry_run:
             return planned("desktop.mouse.click",
                           f"Würde {anzahl}x {taste} bei ({ziel_x}, {ziel_y}) klicken",
@@ -141,7 +159,7 @@ def build(ctx: ToolContext) -> list[Tool]:
 
     def keyboard_press(keys: str, dry_run: bool = False) -> ToolResult:
         automation = _automation()
-        kombination = [k.strip() for k in (keys or "").split("+") if k.strip()]
+        kombination = _tasten_kombination(keys)
         if not kombination:
             raise ToolError("Keine Taste angegeben, z. B. 'enter' oder 'ctrl+c'.")
         if dry_run:

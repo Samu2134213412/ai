@@ -160,6 +160,19 @@ def test_mouse_click_unbekannte_taste_wird_abgelehnt(tools, fake_automation):
     assert fake_automation.aufrufe == []
 
 
+def test_mouse_click_mit_null_klicks_wird_abgelehnt(tools, fake_automation):
+    # clicks=0 heißt "kein Klick" -- das ehrlich ablehnen statt es
+    # stillschweigend zu einem echten Klick zu machen (int(clicks or 1)
+    # würde genau das tun).
+    fehler(tools("desktop.mouse.click", x=10, y=20, clicks=0))
+    assert fake_automation.aufrufe == []
+
+
+def test_mouse_click_mit_zu_vielen_klicks_wird_abgelehnt(tools, fake_automation):
+    fehler(tools("desktop.mouse.click", x=10, y=20, clicks=11))
+    assert fake_automation.aufrufe == []
+
+
 def test_mouse_ohne_pyautogui_meldet_fehlende_abhaengigkeit(tools, monkeypatch):
     monkeypatch.setattr(desktop_pack, "pyautogui", None)
     res = fehler(tools("desktop.mouse.position"))
@@ -192,3 +205,16 @@ def test_keyboard_press_dry_run_drueckt_nichts(tools, fake_automation):
     assert res.ok
     assert res.evidence.get("probelauf") is True
     assert fake_automation.aufrufe == []
+
+
+def test_keyboard_press_strg_plus_wird_nicht_verschluckt(tools, fake_automation):
+    # "ctrl++" (Strg+Plus, verbreitetes Zoom-Kürzel) zerlegt sich naiv zu
+    # ["ctrl", "", ""] -- ein einfacher Leerstring-Filter würde die gemeinte
+    # letzte Taste ("+") spurlos verschlucken statt sie zu drücken.
+    erfolg(tools("desktop.keyboard.press", keys="ctrl++"))
+    assert fake_automation.aufrufe == [("hotkey", ("ctrl", "+"), {})]
+
+
+def test_keyboard_press_nur_plus_ist_eine_einzelne_taste(tools, fake_automation):
+    erfolg(tools("desktop.keyboard.press", keys="+"))
+    assert fake_automation.aufrufe == [("press", ("+",), {})]
