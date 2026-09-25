@@ -10,12 +10,14 @@ Verhalten eines Modells simuliert, und geprüft wird beides:
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
 from jarvis import guard
 from jarvis.agent import Agent
+from jarvis.autonomy import AutonomyLevel
 from jarvis.ollama import ChatTurn, OllamaError, ToolCall
 from jarvis.permissions import PermissionGate, PermissionPolicy
 
@@ -392,3 +394,227 @@ async def test_verlauf_bleibt_erhalten(config, store, registry, fake_ollama):
 
     rollen = [m["role"] for m in model.calls[1]]
     assert rollen.count("user") == 2      # die erste Frage ist noch dabei
+
+
+# ═══════════════════════════════════════════════════════════ Fokus-Modus
+#: Anders als ``_DURCHLAESSIG`` oben: die echte Vorgabe-Policy
+#: (confirm_write=True). Nur damit beweist ein Test, dass Fokus-Modus
+#: tatsächlich etwas bewirkt -- mit der durchlässigen Policy würde ein WRITE
+#: auch ganz ohne Fokus-Modus sofort durchlaufen.
+_STRENG = PermissionPolicy(confirm_read=False, confirm_write=True, confirm_system=True,
+                           confirmation_timeout=0.05)
+
+
+def make_strict_agent(config, store, registry, model, events=None):
+    async def emit(kind, payload):
+        if events is not None:
+            events.append((kind, payload))
+    gate = PermissionGate(policy=_STRENG, emit=emit)
+    return Agent(config, store, registry, model, emit=emit, permission_gate=gate)
+
+
+async def test_ohne_fokus_modus_wartet_write_auf_eine_bestaetigung_die_nie_kommt(
+        config, store, registry, workspace, fake_ollama):
+    """Die Gegenprobe: ohne Fokus-Modus gilt die normale, strenge Policy --
+    niemand bestätigt, also läuft die Bestätigung in die Zeitüberschreitung
+    und write_file schlägt fehl. Beweist, dass der folgende Fokus-Modus-Test
+    tatsächlich etwas Echtes umgeht, statt gegen eine ohnehin durchlässige
+    Policy zu laufen."""
+    ziel = workspace / "modul.py"
+    ziel.write_text("def f():\n    return 1\n", encoding="utf-8")
+    model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f():\n    return 42\n"})]),
+        ChatTurn(text="Rückgabewert angepasst."),
+    ])
+    agent = make_strict_agent(config, store, registry, model)
+
+    reply = await agent.handle_code("Lass f() 42 zurückgeben", focus=False)
+
+    assert reply.provenance == guard.FAIL
+    assert ziel.read_text(encoding="utf-8") == "def f():\n    return 1\n"  # unverändert
+
+
+async def test_fokus_modus_schreibt_ohne_auf_bestaetigung_zu_warten(
+        config, store, registry, workspace, fake_ollama):
+    """Der eigentliche Prüfpunkt: derselbe strenge Aufbau wie eben, aber mit
+    focus=True -- die Datei entsteht sofort, ohne permission.requested."""
+    ziel = workspace / "modul.py"
+    ziel.write_text("def f():\n    return 1\n", encoding="utf-8")
+    model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f():\n    return 42\n"})]),
+        ChatTurn(text="Rückgabewert angepasst."),
+    ])
+    events: list = []
+    agent = make_strict_agent(config, store, registry, model, events)
+
+    reply = await agent.handle_code("Lass f() 42 zurückgeben", focus=True)
+
+    assert reply.provenance == guard.TOOL
+    assert ziel.read_text(encoding="utf-8") == "def f():\n    return 42\n"
+    angefragt = [k for k, _ in events if k.startswith("permission.")]
+    assert angefragt == [], f"Fokus-Modus hätte keine Bestätigung anfragen dürfen: {angefragt}"
+
+
+async def test_focus_mode_schalter_wirkt_auch_ohne_expliziten_parameter(
+        config, store, registry, workspace, fake_ollama):
+    """set_focus_mode() ist der interaktive Schalter -- handle_code() ohne
+    focus=... folgt ihm."""
+    ziel = workspace / "modul.py"
+    ziel.write_text("def f():\n    return 1\n", encoding="utf-8")
+    model = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f():\n    return 42\n"})]),
+        ChatTurn(text="Rückgabewert angepasst."),
+    ])
+    agent = make_strict_agent(config, store, registry, model)
+
+    an = await agent.set_focus_mode(True)
+    assert an is True
+    reply = await agent.handle_code("Lass f() 42 zurückgeben")
+
+    assert reply.provenance == guard.TOOL
+    assert ziel.read_text(encoding="utf-8") == "def f():\n    return 42\n"
+
+
+async def test_set_focus_mode_meldet_den_zustand_als_ereignis(config, store, registry):
+    events: list = []
+    agent = make_strict_agent(config, store, registry, model=None, events=events)
+
+    await agent.set_focus_mode(True)
+    await agent.set_focus_mode(False)
+
+    fokus_ereignisse = [p for k, p in events if k == "focus_mode"]
+    assert fokus_ereignisse == [{"an": True}, {"an": False}]
+
+
+# ═════════════════════════════════════════════════════ Erweiterungsmodus
+async def test_erweiterungsmodus_braucht_autonomiestufe_3(config, store, registry, fake_ollama):
+    """Vorgabe ist Stufe 2 (LOCAL_ACTIONS) -- eine unbeaufsichtigte,
+    bestätigungsfreie Dauerschleife braucht mindestens dieselbe Stufe wie
+    eigenständige Zielverfolgung."""
+    model = fake_ollama([])
+    agent = make_agent(config, store, registry, model)
+
+    reply = await agent.start_extension_mode()
+
+    assert "Stufe 3" in reply.text
+    assert agent.extension_status is None
+
+
+async def test_erweiterungsmodus_plant_und_erledigt_eine_echte_aufgabe(
+        config, store, registry, workspace, fake_ollama, monkeypatch):
+    import jarvis.agent as agent_module
+    monkeypatch.setattr(agent_module, "_EXTENSION_PAUSE_SECONDS", 30.0)
+    config.autonomy_level = int(AutonomyLevel.GOAL_PURSUIT)
+    ziel = workspace / "modul.py"
+    ziel.write_text("def f():\n    return 1\n", encoding="utf-8")
+
+    planer = fake_ollama([ChatTurn(text="Lass f() in modul.py 42 zurückgeben.")])
+    coder_modell = fake_ollama([
+        ChatTurn(tool_calls=[ToolCall("write_file", {
+            "path": str(ziel), "content": "def f():\n    return 42\n"})]),
+        ChatTurn(text="Rückgabewert angepasst."),
+    ])
+    events: list = []
+    agent = make_agent(config, store, registry, planer, events)
+    agent.code_client = coder_modell
+
+    reply = await agent.start_extension_mode()
+    assert "gestartet" in reply.text
+    assert agent.extension_status is not None
+    runner = next(iter(agent._runners))
+
+    for _ in range(300):
+        if any(k == "message" for k, _ in events):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("keine Runde des Erweiterungsmodus beobachtet")
+
+    agent.stop_extension_mode()
+    await asyncio.wait_for(runner, timeout=2)
+
+    assert ziel.read_text(encoding="utf-8") == "def f():\n    return 42\n"
+    nachrichten = [p for k, p in events if k == "message"]
+    assert nachrichten[0]["provenance"] == guard.TOOL
+    aufgaben = [p for k, p in events if k == "extension.task"]
+    assert aufgaben and "42" in aufgaben[0]["auftrag"]
+    assert agent.extension_status is None
+
+
+async def test_erweiterungsmodus_stoppt_nach_wiederholten_fehlschlaegen(
+        config, store, registry, fake_ollama, monkeypatch):
+    import jarvis.agent as agent_module
+    monkeypatch.setattr(agent_module, "_EXTENSION_PAUSE_SECONDS", 0.0)
+    config.autonomy_level = int(AutonomyLevel.GOAL_PURSUIT)
+    # Immer "keine Aufgabe" -- nie echter Fortschritt, muss also nach
+    # _EXTENSION_FAILURE_LIMIT Runden von selbst anhalten.
+    planer = fake_ollama([ChatTurn(text="KEINE AUFGABE")] * 10)
+    events: list = []
+    agent = make_agent(config, store, registry, planer, events)
+
+    await agent.start_extension_mode()
+    runner = next(iter(agent._runners))
+    await asyncio.wait_for(runner, timeout=5)
+
+    gestoppt = [p for k, p in events if k == "extension.stopped"]
+    assert gestoppt
+    assert str(agent_module._EXTENSION_FAILURE_LIMIT) in gestoppt[0]["grund"]
+    assert agent.extension_status is None
+
+
+async def test_stop_extension_mode_unterbricht_die_wartezeit_statt_sie_abzusitzen(
+        config, store, registry, fake_ollama, monkeypatch):
+    import jarvis.agent as agent_module
+    # Absichtlich lang -- ohne einen echten, unterbrechbaren Abbruch würde
+    # dieser Test entsprechend lange brauchen, statt in Millisekunden fertig
+    # zu sein.
+    monkeypatch.setattr(agent_module, "_EXTENSION_PAUSE_SECONDS", 30.0)
+    config.autonomy_level = int(AutonomyLevel.GOAL_PURSUIT)
+    planer = fake_ollama([ChatTurn(text="KEINE AUFGABE")])
+    agent = make_agent(config, store, registry, planer)
+
+    await agent.start_extension_mode()
+    runner = next(iter(agent._runners))
+    await asyncio.sleep(0.05)  # eine Runde durchlaufen lassen, jetzt in der Pause
+    assert agent.extension_status is not None
+
+    assert agent.stop_extension_mode() is True
+    await asyncio.wait_for(runner, timeout=2)  # nicht erst nach 30s
+
+    assert agent.extension_status is None
+
+
+async def test_start_extension_mode_lehnt_doppelten_start_ab(
+        config, store, registry, fake_ollama, monkeypatch):
+    import jarvis.agent as agent_module
+    monkeypatch.setattr(agent_module, "_EXTENSION_PAUSE_SECONDS", 30.0)
+    config.autonomy_level = int(AutonomyLevel.GOAL_PURSUIT)
+    planer = fake_ollama([ChatTurn(text="KEINE AUFGABE")])
+    agent = make_agent(config, store, registry, planer)
+
+    await agent.start_extension_mode()
+    laeuft_schon = len(agent._runners)
+    zweite = await agent.start_extension_mode()
+
+    assert "läuft schon" in zweite.text
+    assert len(agent._runners) == laeuft_schon  # kein zweiter Runner entstanden
+
+    agent.stop_extension_mode()
+    await asyncio.wait_for(next(iter(agent._runners)), timeout=2)
+
+
+async def test_plan_extension_task_erkennt_keine_aufgabe(config, store, registry, fake_ollama):
+    planer = fake_ollama([ChatTurn(text="KEINE AUFGABE")])
+    agent = make_agent(config, store, registry, planer)
+
+    assert await agent._plan_extension_task() == ""
+
+
+async def test_plan_extension_task_gibt_den_vorschlag_zurueck(config, store, registry, fake_ollama):
+    planer = fake_ollama([ChatTurn(text="  Schreibe einen Test für die Pfadprüfung.  ")])
+    agent = make_agent(config, store, registry, planer)
+
+    assert await agent._plan_extension_task() == "Schreibe einen Test für die Pfadprüfung."

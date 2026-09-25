@@ -173,6 +173,8 @@ main[hidden]{display:none!important}
 .whisperForm input:focus{outline:none;border-color:var(--edge-lit)}
 #whisperRt.ok{color:var(--green)}
 #whisperRt.off{color:var(--mute)}
+#extRt.ok{color:var(--green)}
+#extRt.off{color:var(--mute)}
 #mic.rec{color:var(--red);border-color:#5d1f26;background:rgba(48,10,14,.6);
   animation:micpulse 1.1s ease-in-out infinite}
 @keyframes micpulse{0%,100%{opacity:1}50%{opacity:.5}}
@@ -447,6 +449,21 @@ button.dg:hover{background:var(--red);color:var(--void)}
         <h2>Auslastung</h2>
         <div class="wave" id="wave"></div>
       </section>
+      <section class="fr pan" style="flex:none">
+        <h2>Erweiterungsmodus<span class="rt off" id="extRt">aus</span></h2>
+        <div class="in">
+          <p class="hint" id="extStatus">Läuft nicht.</p>
+          <div class="btnrow">
+            <button class="gh" id="extStart" type="button">Starten</button>
+            <button class="gh" id="extPause" type="button" hidden>Pause</button>
+            <button class="gh" id="extResume" type="button" hidden>Weiter</button>
+            <button class="dg" id="extStop" type="button" hidden>Stopp</button>
+          </div>
+          <p class="hint">Sucht sich selbst Programmieraufgaben und arbeitet sie ab, ohne bei
+          jeder Änderung nachzufragen -- für unbeaufsichtigten Betrieb, z. B. über Nacht.
+          Braucht Autonomiestufe 3.</p>
+        </div>
+      </section>
       <section class="fr pan">
         <h2>Werkzeuge</h2>
         <div class="in">
@@ -500,6 +517,8 @@ button.dg:hover{background:var(--red);color:var(--void)}
 
   <div class="dock">
     <button class="gh" id="modeToggle" type="button" aria-pressed="false">Code-Modus</button>
+    <button class="gh" id="focusToggle" type="button" aria-pressed="false"
+            title="Im Code-Modus schreiben/ausführen, ohne jedes Mal nachzufragen">Fokus-Modus</button>
     <button class="gh" id="mic" type="button" aria-pressed="false" title="Sprechen statt tippen">🎙 Sprechen</button>
     <form id="bar" autocomplete="off">
       <input id="cmd" name="cmd" type="text" placeholder="Befehl oder Frage an Jarvis …"
@@ -1413,6 +1432,61 @@ function authHeaders(extra){
   if(TOKEN) h["Authorization"]="Bearer "+TOKEN;
   return h;
 }
+async function postJson(pfad, body){
+  const res=await fetch(pfad,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),
+    body:JSON.stringify(body||{})});
+  if(!res.ok) throw new Error("Server antwortete mit Status "+res.status);
+  return res.json();
+}
+
+/* ── Fokus-Modus ───────────────────────────────────────────── */
+$("focusToggle").addEventListener("click",async ()=>{
+  const an=$("focusToggle").getAttribute("aria-pressed")!=="true";
+  try{
+    const body=await postJson("/api/focus-mode",{an});
+    JARVIS.focusStatus(body.fokus_modus);
+  }catch(e){
+    say({who:"jarvis",prov:"fail",text:"Fokus-Modus konnte nicht umgeschaltet werden.",
+      evidence:esc(String((e&&e.message)||e)),fail:true});
+  }
+});
+
+/* ── Erweiterungsmodus ─────────────────────────────────────── */
+function extRender(status){
+  // status.laeuft kann schon false sein, während das Objekt selbst noch
+  // kurz weiterlebt (die Antwort auf "stop" trifft genau in diesem
+  // Übergang ein) -- deshalb zählt das Feld, nicht nur "gibt es das Objekt".
+  const rt=$("extRt"), text=$("extStatus"), laeuft=!!(status && status.laeuft!==false);
+  rt.textContent=laeuft?(status.pausiert?"pausiert":"läuft"):"aus";
+  rt.className="rt "+(laeuft?"ok":"off");
+  text.textContent=laeuft
+    ? `Runde ${status.runden} · ${status.fehlschlaege_in_folge} Fehlschläge in Folge`
+      +(status.letzter_auftrag?` · zuletzt: ${esc(status.letzter_auftrag)}`:"")
+    : "Läuft nicht.";
+  $("extStart").hidden=laeuft;
+  $("extPause").hidden=!laeuft||status.pausiert;
+  $("extResume").hidden=!laeuft||!status.pausiert;
+  $("extStop").hidden=!laeuft;
+}
+async function refreshExtensionStatus(){
+  try{
+    const res=await fetch("/api/extension-mode",{headers:authHeaders()});
+    if(res.ok) extRender((await res.json()).status);
+  }catch(e){}
+}
+async function extAction(action){
+  try{
+    const body=await postJson(`/api/extension-mode/${action}`);
+    if(body && "status" in body) extRender(body.status);
+  }catch(e){
+    say({who:"jarvis",prov:"fail",text:"Erweiterungsmodus: Aktion fehlgeschlagen.",
+      evidence:esc(String((e&&e.message)||e)),fail:true});
+  }
+}
+$("extStart").addEventListener("click",()=>extAction("start"));
+$("extPause").addEventListener("click",()=>extAction("pause"));
+$("extResume").addEventListener("click",()=>extAction("resume"));
+$("extStop").addEventListener("click",()=>extAction("stop"));
 $("whisperForm").addEventListener("submit",async (e)=>{
   e.preventDefault();
   const key=$("whisperKey").value.trim();
@@ -1890,6 +1964,10 @@ window.JARVIS={
     rt.textContent=configured?"eingerichtet":"kein Schlüssel";
     rt.className="rt "+(configured?"ok":"off");
   },
+  focusStatus(an){
+    $("focusToggle").setAttribute("aria-pressed",String(!!an));
+  },
+  extensionStatus(status){ extRender(status||null); },
   tools(list){ renderTools(list.map((t)=>[t.name,t.status])); },
   memory(next){ if(next&&Array.isArray(next.nodes)){ MEM=next; seedPositions(); renderLegend(); paint(); } },
   get memoryState(){ return clone({nodes:MEM.nodes,links:MEM.links}); }
@@ -1944,6 +2022,8 @@ function applyHello(m){
   if(Array.isArray(m.werkzeuge)) JARVIS.tools(m.werkzeuge);
   if(m.telemetrie) JARVIS.telemetry(m.telemetrie);
   if(typeof m.whisper_configured==="boolean") JARVIS.whisperStatus(m.whisper_configured);
+  if(typeof m.fokus_modus==="boolean") JARVIS.focusStatus(m.fokus_modus);
+  JARVIS.extensionStatus(m.erweiterungsmodus);
   loadVerlauf();
   if(m.gedaechtnis && Array.isArray(m.gedaechtnis.nodes)){
     // Der Server führt das Gedächtnis. Seine Fassung gewinnt.
@@ -2009,6 +2089,17 @@ function onFrame(m){
       break;
     case "decision.made": sayDecision(m); break;
     case "proactive.suggested": sayProposal(m); break;
+    case "focus_mode": JARVIS.focusStatus(m.an); break;
+    case "extension.task":
+    case "extension.idle":
+      // Beide Ereignisse tragen nur einen Ausschnitt (Runde + Auftrag/Hinweis)
+      // -- den vollen Stand (pausiert/Fehlschläge/...) hat nur die API.
+      refreshExtensionStatus();
+      break;
+    case "extension.stopped":
+      extRender(null);
+      Notify.fire("Erweiterungsmodus angehalten", m.grund||"", "ext-stopped");
+      break;
     case "event":
       // Punkt 21: nicht jedes Ereignis ist eine Meldung wert. Routine bleibt
       // still, Warnungen und Fehler nicht.

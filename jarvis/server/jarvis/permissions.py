@@ -18,6 +18,17 @@ CodePilots ``ApprovalBroker`` (``server/codepilot/bridge/approvals.py``) --
 dort abgeschaut, hier eigenständig gebaut. Die beiden Projekte liegen zwar im
 selben Repo, sind aber getrennte Pakete: Jarvis importiert aus CodePilot
 nichts und hängt von ihm nicht ab.
+
+``check()`` akzeptiert seit dem Fokus-Modus (``agent.py``) optional eine
+andere ``policy`` für einen einzelnen Aufruf. Das ist ausdrücklich KEINE
+Umgehung dieser Methode: ``check()`` läuft für jeden Aufruf unverändert
+durch, prüft immer eine echte ``PermissionPolicy``, und CRITICAL verlangt
+in jeder denkbaren Policy immer eine Bestätigung (siehe
+``requires_confirmation`` -- dieses Feld gibt es dort absichtlich nicht).
+Was sich ändert, ist nur, WELCHE vom Nutzer selbst gewählte Policy für
+WRITE/SYSTEM gilt -- derselbe Hebel, den ``confirm_write`` in
+``jarvis.json`` schon immer war, nur zur Laufzeit umschaltbar statt nur
+beim Editieren der Datei.
 """
 
 from __future__ import annotations
@@ -143,7 +154,8 @@ class PermissionGate:
 
     async def check(self, tool: str, level: PermissionLevel,
                     arguments: dict[str, Any] | None = None, detail: str = "",
-                    force_confirm: bool = False) -> None:
+                    force_confirm: bool = False,
+                    policy: PermissionPolicy | None = None) -> None:
         """Kehrt zurück, wenn die Aktion laufen darf. Wirft ``PermissionDenied`` sonst.
 
         SAFE und nicht-konfigurierte Stufen laufen ohne Umweg durch. Alles
@@ -155,8 +167,18 @@ class PermissionGate:
         selbst wenn die Policy sie erlauben würde. Es kann also nur
         *strenger* werden als die Policy, nie lockerer -- eine niedrige
         Autonomiestufe darf keine Bestätigungspflicht aufheben.
+
+        ``policy`` ersetzt für DIESEN einen Aufruf ``self.policy`` -- benutzt
+        vom Fokus-Modus (``agent.py``), damit Code-Modus mit einer ausdrücklich
+        vom Nutzer eingeschalteten, eigenen Policy laufen kann, ohne die
+        Vorgabe-Policy für Chat/Agent-Modus anzufassen. Das ist kein Umgehen
+        dieser Methode -- ``check()`` läuft für jeden Aufruf unverändert
+        durch, prüft weiterhin eine echte ``PermissionPolicy``, und CRITICAL
+        verlangt in JEDER Policy immer eine Bestätigung
+        (``requires_confirmation``, nicht konfigurierbar).
         """
-        if not (force_confirm or self.policy.requires_confirmation(level)):
+        aktive_policy = policy or self.policy
+        if not (force_confirm or aktive_policy.requires_confirmation(level)):
             return
         request = PermissionRequest(id=uuid.uuid4().hex[:12], tool=tool, level=level,
                                     arguments=dict(arguments or {}), detail=detail)
@@ -165,7 +187,7 @@ class PermissionGate:
         self._pending[request.id] = future
         await self.emit("permission.requested", request.as_event())
         try:
-            approved = await asyncio.wait_for(future, timeout=self.policy.confirmation_timeout)
+            approved = await asyncio.wait_for(future, timeout=aktive_policy.confirmation_timeout)
         except asyncio.TimeoutError:
             approved = False
             await self.emit("permission.timeout", {"request_id": request.id, "tool": tool})

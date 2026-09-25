@@ -68,6 +68,16 @@ class WhisperKeyIn(BaseModel):
     api_key: str = Field(default="", max_length=200)
 
 
+class FocusModeIn(BaseModel):
+    an: bool
+
+
+#: Was sich am laufenden Erweiterungsmodus von außen steuern lässt --
+#: "start" separat behandelt (siehe control_extension_mode), weil es als
+#: einziges auch ohne laufende Schleife sinnvoll ist.
+ExtensionAction = Literal["start", "pause", "resume", "stop"]
+
+
 class PermissionResolveIn(BaseModel):
     request_id: str = Field(..., min_length=1)
     approved: bool = False
@@ -323,6 +333,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             "probleme": config.validate(),
             "geraete": hub.count,
             "whisper_configured": whisper.configured,
+            "fokus_modus": agent.focus_mode,
+            "erweiterungsmodus": agent.extension_status,
             "berechtigungen": {
                 "read": permission_gate.policy.requires_confirmation(PermissionLevel.READ),
                 "write": permission_gate.policy.requires_confirmation(PermissionLevel.WRITE),
@@ -464,6 +476,16 @@ def create_app(config: Config | None = None) -> FastAPI:
         found = permission_gate.resolve(body.request_id, body.approved)
         return {"gefunden": found}
 
+    # ------------------------------------------------------- Fokus-Modus
+    @app.post("/api/focus-mode", dependencies=Guarded)
+    async def set_focus_mode(body: FocusModeIn) -> dict:
+        """Schaltet den Fokus-Modus um (siehe ``agent.py``): solange er läuft,
+        laufen WRITE/SYSTEM-Werkzeuge im Code-Modus ohne Bestätigung.
+        CRITICAL bleibt davon unberührt -- das ist in ``permissions.py`` fest
+        verdrahtet, kein Konfigurationswert."""
+        an = await agent.set_focus_mode(body.an)
+        return {"fokus_modus": an}
+
     @app.get("/api/tasks", dependencies=Guarded)
     async def list_tasks(limit: int = 20) -> dict:
         """Task History (Agent Mode) -- Grundlage der späteren Task-Queue-
@@ -522,6 +544,30 @@ def create_app(config: Config | None = None) -> FastAPI:
                 detail=(f"Ziel {goal_id} läuft gerade nicht -- es lässt sich weder "
                         "pausieren noch abbrechen."))
         return {"angefordert": action, "ziel": goal_id}
+
+    # ------------------------------------------------------ Erweiterungsmodus
+    @app.get("/api/extension-mode", dependencies=Guarded)
+    async def get_extension_mode() -> dict:
+        """``status`` ist ``null``, solange nichts läuft."""
+        return {"status": agent.extension_status}
+
+    @app.post("/api/extension-mode/{action}", dependencies=Guarded)
+    async def control_extension_mode(action: ExtensionAction) -> dict:
+        """Start/Pause/Fortsetzen/Stopp der Erweiterungsmodus-Schleife
+        (siehe ``agent.py``, ``Agent.start_extension_mode``). "start" läuft
+        auch, wenn gerade nichts läuft -- das ist der Sinn dieses einen
+        Zweigs; die anderen drei brauchen eine bereits laufende Schleife."""
+        if action == "start":
+            reply = await agent.start_extension_mode()
+            await hub.send("message", {"who": "jarvis", **reply.as_event()})
+            return {"angefordert": action, "status": agent.extension_status}
+        handler = {"pause": agent.pause_extension_mode, "resume": agent.resume_extension_mode,
+                   "stop": agent.stop_extension_mode}[action]
+        touched = handler()
+        if not touched:
+            raise HTTPException(status_code=409,
+                                detail="Der Erweiterungsmodus läuft gerade nicht.")
+        return {"angefordert": action, "status": agent.extension_status}
 
     # -------------------------------------------------------- Ereignisse
     @app.post("/api/events", dependencies=Guarded)

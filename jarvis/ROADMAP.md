@@ -76,6 +76,13 @@ noch ohne Wirkung). **Nicht** mehr zurückgestellt: Parallelität (Punkt 17)
 wurde durch die Hintergrund-Ausführung unvermeidlich und ist mit
 `_mutation_lock` und Locks auf den SQLite-Ablagen umgesetzt — siehe §8.5.
 
+**Seither ergänzt, auf derselben Grundlage (Permission-System +
+Hintergrund-Ausführung):** Fokus-Modus (Code-Modus ohne Bestätigung für
+WRITE/SYSTEM, per Schalter, CRITICAL bleibt unberührt) und Erweiterungsmodus
+(eine unbeaufsichtigte, budgetlose Schleife aus selbst gestellten
+Programmieraufgaben, für Betrieb z. B. über Nacht, mit Selbstabschaltung
+nach wiederholten Fehlschlägen) — siehe `server/README.md`.
+
 ## Phase 2 — Memory, Model Router, Ollama-Integration, Multi-Model
 
 1. Memory-Tiers: Short-Term (laufender Chat-Verlauf, existiert bereits in

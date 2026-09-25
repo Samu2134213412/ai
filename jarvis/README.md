@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (854 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (871 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 406 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -148,6 +148,16 @@ Fertig und getestet (854 Tests, siehe `ROADMAP.md` für die Phasen):
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf
 * Code-Modus: das Code-Modell direkt über Ollama, mit denselben Werkzeugen, demselben Permission-System und derselben Undo-Historie wie alles andere — und einer Syntaxprüfung nach jeder Änderung
+* **Fokus-Modus:** im Code-Modus schreiben/ausführen, ohne bei jeder
+  einzelnen Änderung nachzufragen (`POST /api/focus-mode`) — eine vom
+  Nutzer selbst eingeschaltete, andere Bestätigungs-Policy statt eines
+  Umgehens des Permission-Systems; CRITICAL bleibt immer bestätigungspflichtig
+* **Erweiterungsmodus:** sucht sich selbst Programmieraufgaben (über das
+  Chat-Modell, ausgehend vom Gedächtnis) und arbeitet sie ab — für
+  unbeaufsichtigten Betrieb z. B. über Nacht, mit Pause/Fortsetzen/Stopp und
+  einer Selbstabschaltung nach wiederholten Fehlschlägen in Folge
+  (`POST /api/extension-mode/{start|pause|resume|stop}`, Autonomiestufe 3)
+  — siehe `server/README.md`
 * WebSocket an alle Geräte gleichzeitig
 * Speech-to-Text über Whisper (eigener API-Schlüssel)
 * **Phase 1 (Agent Mode):** Planner/Executor mit Error Recovery, Task History,

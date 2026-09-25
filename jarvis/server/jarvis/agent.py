@@ -34,7 +34,7 @@ from .goals import Goal, GoalBudget, GoalManager, GoalStatus
 from .macros import MacroEngine, MacroError, MacroStore
 from .memory import MemoryStore
 from .ollama import ChatTurn, OllamaClient, OllamaError
-from .permissions import PermissionDenied, PermissionGate, PermissionLevel
+from .permissions import PermissionDenied, PermissionGate, PermissionLevel, PermissionPolicy
 from .tasks import StepStatus, Task, TaskManager, TaskStatus
 from .tools import Registry, ToolDiscovery, ToolHistory, ToolMissing, ToolResult
 from .undo import UndoStore
@@ -84,6 +84,38 @@ _ALTERNATIVE = re.compile(
 #: Ereignis gemeldet wird (siehe ``Agent._note_reliability``).
 _FAILURE_STREAK = 3
 
+#: Die Policy des Fokus-Modus (siehe ``handle_code``): WRITE/SYSTEM laufen
+#: ohne Bestätigung, solange er eingeschaltet ist. CRITICAL bleibt davon
+#: unberührt -- ``requires_confirmation`` verlangt sie in jeder Policy immer,
+#: das Feld gibt es hier absichtlich nicht (siehe ``permissions.py``). Das
+#: ist keine Umgehung des Permission-Systems, sondern eine zweite, vom
+#: Nutzer selbst per Schalter aktivierte Policy -- derselbe Hebel, den
+#: ``confirm_write`` in ``jarvis.json`` schon immer war, nur zur Laufzeit
+#: umschaltbar und ausdrücklich auf den Code-Modus begrenzt.
+_FOCUS_POLICY = PermissionPolicy(confirm_read=False, confirm_write=False, confirm_system=False)
+
+#: Erweiterungsmodus (siehe ``start_extension_mode``): Pause zwischen zwei
+#: Runden -- ohne sie würde die Schleife den lokalen Ollama-Server (und
+#: damit die GPU) ohne Unterbrechung dauerbelasten, auch wenn der Nutzer
+#: gerade selbst mit Jarvis spricht.
+_EXTENSION_PAUSE_SECONDS = 60.0
+#: Wie viele Runden in Folge ohne echten Fortschritt (keine Aufgabe erkannt,
+#: oder ein Werkzeug ist gescheitert), bevor die Schleife sich selbst
+#: anhält, statt unbeaufsichtigt gegen dieselbe Wand zu laufen.
+_EXTENSION_FAILURE_LIMIT = 5
+
+_EXTENSION_PLANNING_PROMPT = """\
+Du hilfst dabei, ein Softwareprojekt eigenständig weiterzuentwickeln, ohne \
+dass jemand zusieht. Unten steht, was über das Projekt bekannt ist -- vor \
+allem, was zuletzt daran gearbeitet wurde.
+
+Nenne GENAU EINE konkrete, klein geschnittene Programmieraufgabe, die als \
+Nächstes sinnvoll ist -- ein bis zwei Sätze, keine Erklärung drumherum, kein \
+Code. Erfinde nichts: wenn sich aus dem, was du über das Projekt weißt, \
+keine sinnvolle nächste Aufgabe ergibt, antworte ausschließlich mit den \
+Worten "KEINE AUFGABE".
+"""
+
 
 def _tool_names(schemas: list[dict]) -> str:
     """Die aktuell angebotene Werkzeugauswahl als Text -- für die Meldung an
@@ -115,6 +147,34 @@ class _GoalControl:
 
     def __post_init__(self) -> None:
         self.run_event.set()  # läuft, bis jemand pausiert
+
+
+@dataclass
+class _ExtensionControl:
+    """Der Griff des Erweiterungsmodus -- dasselbe Pause/Fortsetzen/Abbruch-
+    Muster wie ``_GoalControl``, aber für eine offene Folge kleiner
+    Code-Aufträge statt für ein einzelnes Ziel: es gibt hier keinen
+    ``Goal``, an dem sich Fortschritt/Budget aufhängen ließe, jeder Auftrag
+    läuft für sich über ``handle_code``, das schon seine eigene
+    Rundenbegrenzung mitbringt.
+    """
+
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    run_event: asyncio.Event = field(default_factory=asyncio.Event)
+    reason: str = ""
+    started_at: float = field(default_factory=time.time)
+    rounds: int = 0
+    failures: int = 0
+    last_task: str = ""
+
+    def __post_init__(self) -> None:
+        self.run_event.set()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"laeuft": not self.cancel_event.is_set(),
+                "pausiert": not self.run_event.is_set(),
+                "runden": self.rounds, "fehlschlaege_in_folge": self.failures,
+                "letzter_auftrag": self.last_task, "gestartet": self.started_at}
 
 
 class Agent:
@@ -207,6 +267,16 @@ class Agent:
         self.bus: Any = None
         #: Fehlschläge in Folge, je Werkzeug (siehe ``_note_reliability``).
         self._failure_streak: dict[str, int] = {}
+        #: Fokus-Modus (siehe ``handle_code``/``set_focus_mode``): explizit
+        #: vom Nutzer eingeschaltet, gilt nur für den Code-Modus, lebt nur im
+        #: Arbeitsspeicher -- ein Serverneustart schaltet ihn wieder aus,
+        #: genau wie eine Sitzung es nahelegt.
+        self.focus_mode: bool = False
+        #: Die laufende Erweiterungsmodus-Schleife, falls eine läuft (siehe
+        #: ``start_extension_mode``). Nur eine gleichzeitig -- zwei Schleifen,
+        #: die sich gegenseitig die Werkzeuge streitig machen, wären
+        #: schwerer nachzuvollziehen als nützlich.
+        self._extension: _ExtensionControl | None = None
 
     @staticmethod
     async def _silent(_kind: str, _payload: dict) -> None:
@@ -215,8 +285,18 @@ class Agent:
     async def _state(self, mode: str, detail: str = "") -> None:
         await self.emit("state", {"mode": mode, "detail": detail})
 
+    async def set_focus_mode(self, on: bool) -> bool:
+        """Schaltet den Fokus-Modus um (siehe ``_FOCUS_POLICY``) und meldet
+        das als Ereignis, damit jedes verbundene Gerät den Zustand sieht --
+        eine Policy, die niemand sieht, wäre keine bewusste Entscheidung des
+        Nutzers mehr, sondern ein stiller Zustand."""
+        self.focus_mode = bool(on)
+        await self.emit("focus_mode", {"an": self.focus_mode})
+        return self.focus_mode
+
     async def _run_tool(self, name: str, arguments: dict, request_text: str = "",
-                        goal_id: str | None = None) -> ToolResult:
+                        goal_id: str | None = None,
+                        policy: PermissionPolicy | None = None) -> ToolResult:
         """Der eine Durchlauf für jeden Werkzeugaufruf -- Router-Direkttreffer,
         Chat-Loop und Code-Modus rufen alle diese eine Methode auf. Genau
         deshalb sitzen Permission-Check, Undo-Snapshot und Audit-Eintrag hier
@@ -269,7 +349,7 @@ class Agent:
 
         try:
             await self.permission_gate.check(name, tool.level, arguments, detail=detail,
-                                             force_confirm=force_confirm)
+                                             force_confirm=force_confirm, policy=policy)
         except PermissionDenied as exc:
             result = ToolResult(tool=name, ok=False, summary=str(exc),
                                 evidence={"stufe": tool.level.label, "verweigert": True})
@@ -331,7 +411,7 @@ class Agent:
         return result
 
     # ---------------------------------------------------------- Code-Modus
-    async def handle_code(self, message: str) -> guard.Reply:
+    async def handle_code(self, message: str, *, focus: bool | None = None) -> guard.Reply:
         """Ein Zug im Code-Modus: das Code-Modell arbeitet direkt an den
         Dateien, mit Jarvis' eigenen Werkzeugen.
 
@@ -345,7 +425,16 @@ class Agent:
         unterscheiden: nach den Änderungen wird **nachgeprüft**, und die
         Antwort entsteht aus den geänderten Dateien plus dem Prüfergebnis --
         nicht aus dem Satz des Modells, es sei fertig.
+
+        ``focus``: läuft dieser eine Aufruf mit der Fokus-Modus-Policy
+        (``_FOCUS_POLICY``, WRITE/SYSTEM ohne Bestätigung, CRITICAL bleibt
+        unberührt)? Ohne Angabe gilt der interaktive Schalter
+        (``self.focus_mode``, siehe ``set_focus_mode``). Der Erweiterungsmodus
+        (``start_extension_mode``) setzt ihn immer ausdrücklich auf ``True``
+        -- er läuft unbeaufsichtigt, da kann niemand eine Bestätigung geben.
         """
+        aktiver_fokus = self.focus_mode if focus is None else focus
+        policy = _FOCUS_POLICY if aktiver_fokus else None
         task = (message or "").strip()
         if not task:
             return guard.Reply(text="", provenance=guard.TALK)
@@ -379,7 +468,7 @@ class Agent:
                 self._code_instruction(task), request_text=task,
                 client=self.code_client, tool_names=verfuegbar,
                 system_prompt=coder.CODE_SYSTEM_PROMPT,
-                max_rounds=self.config.code.max_rounds)
+                max_rounds=self.config.code.max_rounds, policy=policy)
         except OllamaError as exc:
             await self._state("failed", str(exc))
             reply = guard.Reply(
@@ -1033,6 +1122,133 @@ class Agent:
             return [control] if control else []
         return list(self._controls.values())
 
+    # ------------------------------------------------------ Erweiterungsmodus
+    @property
+    def extension_status(self) -> dict[str, Any] | None:
+        """``None`` heißt: läuft gerade nicht -- für ``GET /api/extension-mode``."""
+        return self._extension.as_dict() if self._extension is not None else None
+
+    async def start_extension_mode(self) -> guard.Reply:
+        """Erweiterungsmodus (siehe Modul-Docstring-Konstanten oben): fragt
+        in einer Schleife das Chat-Modell, welche Aufgabe als Nächstes
+        sinnvoll ist, und lässt sie über ``handle_code`` erledigen -- mit der
+        Fokus-Modus-Policy, weil niemand zusieht, der eine Bestätigung geben
+        könnte. Läuft, bis der Nutzer stoppt oder zu viele Runden in Folge
+        nichts Echtes zustande bringen (``_EXTENSION_FAILURE_LIMIT``).
+
+        Dieselbe Autonomiestufe wie eigenständige Zielverfolgung (Stufe 3) --
+        eine Schleife, die unbeaufsichtigt und ohne Bestätigung Dateien
+        ändert, ist mindestens so viel Eigeninitiative wie ein einzelnes Ziel.
+        """
+        if self.config.autonomy < AutonomyLevel.GOAL_PURSUIT:
+            return self._refuse_autonomy()
+        if self._extension is not None:
+            return guard.Reply(text="Der Erweiterungsmodus läuft schon.",
+                               provenance=guard.TALK)
+
+        control = _ExtensionControl()
+        self._extension = control
+        runner = asyncio.create_task(self._run_extension_mode(control))
+        self._runners.add(runner)
+        runner.add_done_callback(self._runners.discard)
+        return guard.Reply(
+            text=("Erweiterungsmodus gestartet: ich suche mir jetzt selbst "
+                  "Programmieraufgaben und arbeite sie ab, ohne bei jeder "
+                  "einzelnen Änderung nachzufragen. \"Stopp\" oder \"Pause\" "
+                  "gelten jederzeit."),
+            provenance=guard.TALK)
+
+    def pause_extension_mode(self) -> bool:
+        if self._extension is None:
+            return False
+        self._extension.run_event.clear()
+        return True
+
+    def resume_extension_mode(self) -> bool:
+        if self._extension is None:
+            return False
+        self._extension.run_event.set()
+        return True
+
+    def stop_extension_mode(self, reason: str = "") -> bool:
+        if self._extension is None:
+            return False
+        self._extension.reason = reason or "Vom Nutzer gestoppt."
+        self._extension.cancel_event.set()
+        self._extension.run_event.set()  # aus einer Pause heraus stoppen können
+        return True
+
+    async def _run_extension_mode(self, control: _ExtensionControl) -> None:
+        try:
+            while not control.cancel_event.is_set():
+                await control.run_event.wait()
+                if control.cancel_event.is_set():
+                    break
+
+                control.rounds += 1
+                task = await self._plan_extension_task()
+                if not task:
+                    control.failures += 1
+                    await self.emit("extension.idle", {
+                        "runde": control.rounds,
+                        "hinweis": "Keine sinnvolle nächste Aufgabe erkannt."})
+                else:
+                    control.last_task = task
+                    await self.emit("extension.task", {"runde": control.rounds, "auftrag": task})
+                    try:
+                        reply = await self.handle_code(task, focus=True)
+                    except Exception as exc:  # noqa: BLE001 - eine Hintergrundschleife,
+                        # die lautlos stirbt, wäre das Gegenteil von nachvollziehbar
+                        # (dasselbe Muster wie ``_run_goal_in_background``).
+                        reply = guard.Reply(text=f"Intern ist ein Fehler aufgetreten: {exc}",
+                                            provenance=guard.FAIL)
+                    await self.emit("message", {"who": "jarvis", **reply.as_event()})
+                    control.failures = 0 if reply.provenance == guard.TOOL else control.failures + 1
+
+                if control.failures >= _EXTENSION_FAILURE_LIMIT:
+                    control.reason = (f"{_EXTENSION_FAILURE_LIMIT}x in Folge ohne echten "
+                                      "Fortschritt -- angehalten, statt unbeaufsichtigt "
+                                      "gegen dieselbe Wand weiterzulaufen.")
+                    break
+
+                await self._extension_sleep(control)
+        finally:
+            grund = control.reason or "beendet"
+            self._extension = None
+            await self.emit("extension.stopped", {"grund": grund, **control.as_dict()})
+
+    async def _extension_sleep(self, control: _ExtensionControl) -> None:
+        """Pause zwischen zwei Runden -- unterbrechbar, damit ein Stopp nicht
+        erst nach voller Wartezeit greift."""
+        try:
+            await asyncio.wait_for(control.cancel_event.wait(),
+                                   timeout=_EXTENSION_PAUSE_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+
+    async def _plan_extension_task(self) -> str:
+        """Fragt das Chat-Modell (nicht das Code-Modell -- das ist hier eine
+        reine Planungsfrage ohne Werkzeugaufruf) nach der nächsten sinnvollen
+        Aufgabe, ausgehend von dem, was im Gedächtnis über das Projekt steht
+        (vor allem die ``projekt``-Einträge, die ``handle_code`` nach jeder
+        echten Änderung selbst anlegt -- siehe ``_remember_code_work``)."""
+        kontext = await asyncio.to_thread(
+            self.store.context_for, "Projekt Aufgabe ROADMAP TODO offen coden", 10)
+        messages = [
+            {"role": "system", "content": _EXTENSION_PLANNING_PROMPT},
+            {"role": "user", "content": ("Was über das Projekt bekannt ist:\n" + kontext)
+                                        if kontext else
+                                        "Über das Projekt ist noch nichts im Gedächtnis."},
+        ]
+        try:
+            turn = await self.client.chat(messages)
+        except OllamaError:
+            return ""
+        vorschlag = (turn.text or "").strip()
+        if not vorschlag or vorschlag.upper().startswith("KEINE AUFGABE"):
+            return ""
+        return vorschlag
+
     async def interrupt(self, text: str) -> guard.Reply | None:
         """Punkt 22: "Stopp." / "Pause." / "Mach weiter." / "Nein, versuch
         Methode B." -- jederzeit, auch mitten in einem laufenden Ziel.
@@ -1070,7 +1286,8 @@ class Agent:
                              client: OllamaClient | None = None,
                              tool_names: list[str] | None = None,
                              system_prompt: str | None = None,
-                             max_rounds: int | None = None
+                             max_rounds: int | None = None,
+                             policy: PermissionPolicy | None = None
                              ) -> tuple[str, list[ToolResult]]:
         """Eine eigenständige Werkzeugaufruf-Runde für einen einzelnen
         Ausführungsschritt (Agent Mode).
@@ -1127,7 +1344,8 @@ class Agent:
                 await self._checkpoint(control)
                 # ── EXECUTE ───────────────────────────────────────────────
                 result = await self._run_tool(call.name, call.arguments,
-                                              request_text=request_text, goal_id=goal_id)
+                                              request_text=request_text, goal_id=goal_id,
+                                              policy=policy)
                 results.append(result)
                 messages.append({"role": "tool", "name": call.name,
                                  "content": result.for_model()})
@@ -1144,7 +1362,7 @@ class Agent:
                     call.name, call.arguments, result,
                     lambda name, args: self._run_tool(name, args,
                                                       request_text=request_text,
-                                                      goal_id=goal_id))
+                                                      goal_id=goal_id, policy=policy))
                 if check is not None and not check.ok:
                     results.append(check)
                     messages.append({

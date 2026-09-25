@@ -116,6 +116,51 @@ async def test_force_confirm_erzwingt_bestaetigung_trotz_laxer_policy():
     await task
 
 
+async def test_policy_override_laesst_write_ohne_bestaetigung_laufen():
+    """Fokus-Modus (agent.py): eine andere, ausdrücklich eingeschaltete
+    Policy für einen einzelnen Aufruf -- die Vorgabe-Policy des Gates
+    bleibt dabei unangetastet (nächster Aufruf ohne policy=... prüft
+    wieder ganz normal)."""
+    events: list[tuple[str, dict]] = []
+
+    async def emit(kind, payload):
+        events.append((kind, payload))
+
+    gate = PermissionGate(emit=emit)  # Vorgabe: confirm_write=True
+    fokus = PermissionPolicy(confirm_read=False, confirm_write=False, confirm_system=False)
+
+    await gate.check("write_file", PermissionLevel.WRITE, {"path": "a.txt"}, policy=fokus)
+    assert events == []  # kein permission.requested -- lief ohne Umweg durch
+
+    # ohne policy=... gilt wieder die normale, strengere Vorgabe-Policy
+    task = asyncio.ensure_future(
+        gate.check("write_file", PermissionLevel.WRITE, {"path": "b.txt"}))
+    await asyncio.sleep(0)
+    assert len(gate.pending) == 1
+    gate.resolve(gate.pending[0], True)
+    await task
+
+
+async def test_policy_override_hebt_critical_trotzdem_nicht_auf():
+    """Der eigentliche Prüfpunkt: selbst die laxeste denkbare Policy darf
+    CRITICAL nicht von der Bestätigung befreien -- das ist in
+    requires_confirmation() fest verdrahtet, nicht Teil der Policy-Felder."""
+    events: list[tuple[str, dict]] = []
+
+    async def emit(kind, payload):
+        events.append((kind, payload))
+
+    gate = PermissionGate(emit=emit)
+    fokus = PermissionPolicy(confirm_read=False, confirm_write=False, confirm_system=False)
+
+    task = asyncio.ensure_future(
+        gate.check("memory_forget", PermissionLevel.CRITICAL, {"id": "n1"}, policy=fokus))
+    await asyncio.sleep(0)
+    assert len(gate.pending) == 1  # trotz "laxer" Policy wurde gefragt
+    gate.resolve(gate.pending[0], True)
+    await task
+
+
 async def test_abgelehnte_aktion_wirft_permissiondenied():
     gate = PermissionGate()
     task = asyncio.ensure_future(

@@ -174,6 +174,22 @@ ausdrücklich `allowInInput` (wie F3 selbst oder Esc). Remaps landen über
 Palette-Aktionen ("Tastenkürzel anzeigen/exportieren/importieren"), Export
 geht in die Zwischenablage, Import über einen Textprompt.
 
+## Fokus-Modus und Erweiterungsmodus
+
+Neben dem Moduswahl-Knopf (Chat/Code/Agent) sitzt **Fokus-Modus**: an-
+geschaltet läuft der Code-Modus, ohne bei jeder einzelnen Datei-Änderung
+eine Bestätigung abzuwarten (`POST /api/focus-mode`). Keine Umgehung des
+Permission-Systems -- eine zweite, vom Nutzer selbst eingeschaltete Policy,
+nur für den Code-Modus, CRITICAL bleibt immer bestätigungspflichtig. Siehe
+`server/README.md`, Abschnitt „Fokus-Modus" für die Begründung.
+
+Im Bereich „Modelle" (rechte Spalte) zeigt die Karte **Erweiterungsmodus**
+den Zustand der unbeaufsichtigten Arbeitsschleife: aus/läuft/pausiert,
+aktuelle Runde, Fehlschläge in Folge und die zuletzt gestellte Aufgabe.
+**Starten** braucht Autonomiestufe 3; **Pause**/**Weiter**/**Stopp**
+erscheinen erst, während sie läuft. Ein Stopp greift sofort, nicht erst
+nach der bis zu einminütigen Pause zwischen zwei Runden.
+
 ## Verlauf: Audit Log + Rückgängig, direkt in der Oberfläche
 
 Im Bereich „Modelle" (rechte Spalte) zeigt die Karte **Verlauf** die letzten

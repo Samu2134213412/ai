@@ -543,3 +543,67 @@ def test_websocket_ohne_token_wird_geschlossen(config):
         with pytest.raises(Exception):
             with unauth.websocket_connect("/ws") as ws:
                 ws.receive_json()
+
+
+# ═══════════════════════════════════════════════════════════ Fokus-Modus
+def test_fokus_modus_umschalten(client):
+    an = client.post("/api/focus-mode", json={"an": True}).json()
+    assert an == {"fokus_modus": True}
+    assert client.get("/api/health").json()["fokus_modus"] is True
+
+    aus = client.post("/api/focus-mode", json={"an": False}).json()
+    assert aus == {"fokus_modus": False}
+    assert client.get("/api/health").json()["fokus_modus"] is False
+
+
+# ═════════════════════════════════════════════════════ Erweiterungsmodus
+def test_erweiterungsmodus_ohne_autonomiestufe_3_wird_abgelehnt(client):
+    """Vorgabe-Autonomiestufe der ``config``-Fixture ist 2 -- zu niedrig, also
+    bleibt "status" leer statt eine Schleife zu starten. Die eigentliche
+    Ablehnungsbegründung geht als Chat-Nachricht heraus (siehe
+    test_erweiterungsmodus_braucht_autonomiestufe_3 in test_agent.py), nicht
+    im HTTP-Antwortkörper -- derselbe Aufbau wie beim Agent-Modus."""
+    body = client.post("/api/extension-mode/start").json()
+    assert body == {"angefordert": "start", "status": None}
+    assert client.get("/api/extension-mode").json()["status"] is None
+
+
+def test_steuerung_eines_nicht_laufenden_erweiterungsmodus_gibt_409(client):
+    assert client.get("/api/extension-mode").json() == {"status": None}
+    assert client.post("/api/extension-mode/pause").status_code == 409
+    assert client.post("/api/extension-mode/stop").status_code == 409
+
+
+def test_erweiterungsmodus_start_pause_stop_ueber_http(config, fake_ollama, monkeypatch):
+    import jarvis.agent as agent_module
+    monkeypatch.setattr(agent_module, "_EXTENSION_PAUSE_SECONDS", 30.0)
+    config.autonomy_level = 3
+    app = create_app(config)
+    app.state.permission_gate.policy = PermissionPolicy(
+        confirm_read=False, confirm_write=False, confirm_system=False)
+    app.state.agent.client = fake_ollama([ChatTurn(text="KEINE AUFGABE")] * 5)
+
+    with TestClient(app) as test_client:
+        start = test_client.post("/api/extension-mode/start").json()
+        assert start["angefordert"] == "start"
+        assert start["status"] is not None
+
+        for _ in range(200):
+            if test_client.get("/api/extension-mode").json()["status"]["runden"] >= 1:
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("keine Runde des Erweiterungsmodus beobachtet")
+
+        pause = test_client.post("/api/extension-mode/pause").json()
+        assert pause["status"]["pausiert"] is True
+
+        stop = test_client.post("/api/extension-mode/stop").json()
+        assert stop["angefordert"] == "stop"
+
+        for _ in range(200):
+            if test_client.get("/api/extension-mode").json()["status"] is None:
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("Erweiterungsmodus hat nicht gestoppt")
