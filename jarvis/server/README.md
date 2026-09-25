@@ -339,6 +339,38 @@ speichert, auch nur einen verschobenen Knoten -- behält `created` dabei für
 eine schon bekannte Kennung bei, statt es bei jedem Speichervorgang auf
 "jetzt" zurückzusetzen.
 
+### Session-Ebene (`kind="sitzung"`)
+
+Die in `ROADMAP.md` offen gelassene Stufe zwischen Kurzzeit (`Agent.history`,
+lebt nur im Arbeitsspeicher dieses Prozesses) und Langzeitgedächtnis
+(`fakt`/`projekt`/…, dauerhaft): ein sechstes Feld, `expires` (an derselben
+Stelle wie `importance`/`source`/`confidence` per Migration nachgerüstet),
+das nur bei `kind="sitzung"` gesetzt ist. Ab diesem Zeitpunkt taucht der
+Knoten in keinem Abruf mehr auf (`search()`/`context_for()`/`graph()`/
+`all()`/`neighbours()` blenden ihn aus) und wird beim nächsten Start
+endgültig gelöscht (`purge_expired()`) -- kein eigener Hintergrundtimer
+nötig, ein Neustart auf einem Heimrechner ist die Regel, kein Sonderfall.
+`None` (die Vorgabe für jede andere Art) heißt weiterhin dauerhaft.
+
+Zwei Wege, wie eine Sitzungs-Erinnerung entsteht:
+
+* **Automatisch:** `Agent._remember()` hält den laufenden Chat-Verlauf
+  (`self.history`) klein; was aus diesem Fenster fällt (die ältesten
+  Züge, sobald `history_turns` überschritten ist), landet nicht mehr
+  spurlos im Nichts, sondern als `kind="sitzung"` im Wissensnetz --
+  48 Stunden gültig (`_SESSION_TTL_HOURS` in `agent.py`), lange genug, um
+  am nächsten Tag noch gefunden zu werden, kurz genug, dass es sich wirklich
+  wie "vergessen" statt wie "gemerkt" anfühlt.
+* **Auf Wunsch:** `memory_add` kennt jetzt `ttl_hours` -- "merk dir das nur
+  für die nächsten 24 Stunden" legt genau denselben `expires`-Zeitstempel
+  an, nur ausdrücklich vom Modell/Nutzer verlangt statt aus einer
+  Verdrängung heraus.
+
+`memory_forget`/`undo_last_action` funktionieren unverändert: `get()`
+(gezielter Zugriff über eine bekannte Kennung, z. B. durch Undo) findet eine
+abgelaufene, noch nicht aufgeräumte Erinnerung bewusst weiterhin -- `expires`
+steuert, was beim Stöbern/Abrufen auftaucht, nicht, was existiert.
+
 | Feld in `jarvis.json` | |
 |---|---|
 | `code.model` | Das Code-Modell (Vorgabe `qwen3-coder:30b`). Leer = dasselbe wie im Chat |
@@ -398,7 +430,7 @@ Watchdog aus Autonomy V1.
 
 ## Tool Discovery
 
-Bei 408 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
+Bei 410 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
 Modellanfrage -- grob 60.000 Token, mehr als das Kontextfenster. Nicht
 langsam, sondern kaputt. Deshalb bekommt das Modell nie mehr den ganzen
 Katalog: ``discovery.py`` sucht vorher lokal und deterministisch (kein
@@ -638,6 +670,19 @@ mehreren hundert Werkzeugen ist das ehrlicher als ein einzelner
 (git, ffmpeg, docker, psutil, …), ob sie auf diesem Rechner vorhanden ist,
 und wenn nicht, wie man sie installiert. Kein Rätselraten mehr, warum ein
 Werkzeug `MISSING_DEPENDENCY` meldet.
+
+**Fehlende Abhängigkeit installieren** (Punkt 55): `dependency_report()`
+sagte bisher nur, was fehlt -- "installiert wird hier nichts" stand
+ausdrücklich als Grenze da. Für ein reines Python-Paket ist das jetzt keine
+Grenze mehr: `jarvis.tools.dependencies` (Werkzeug, READ) zeigt die Liste,
+`jarvis.tools.install_dependency` (Werkzeug, **SYSTEM**, `dry_run`
+unterstützt) installiert einen fehlenden Schlüssel mit `pip` in Jarvis'
+eigener Laufzeitumgebung -- z. B. `pyautogui`, damit `desktop.mouse.*`
+danach wirklich läuft. Nach der Installation wird echt nachgeprüft, ob sich
+das Paket jetzt importieren lässt, statt pip's Exit-Code zu glauben (Punkt
+40: kein Erfolg ohne Beleg). Externe Programme (ffmpeg, Tesseract, nginx,
+7-Zip, …) lehnt es bewusst ab -- die brauchen weiterhin einen Installer oder
+den Paketmanager des Betriebssystems, von Hand.
 
 **Doku-Generator** (Punkt 49): `python -m jarvis --generate-docs` schreibt
 `../docs/WERKZEUGE.md` neu -- eine vollständige Werkzeugreferenz direkt aus

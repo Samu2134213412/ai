@@ -183,3 +183,123 @@ def test_datei_ueberlebt_den_neustart(tmp_path):
     zweite = MemoryStore(pfad)
     assert [m.label for m in zweite.all()] == ["Bleibt"]
     zweite.close()
+
+
+# ═══════════════════════════════════════ Session-Ebene (Phase 2, "sitzung")
+def test_sitzung_ist_eine_gueltige_art(store):
+    assert store.add(label="X", kind="sitzung").kind == "sitzung"
+
+
+def test_ohne_expires_ist_eine_erinnerung_dauerhaft(store):
+    node = store.add(label="Dauerhaft")
+    assert node.expires is None
+
+
+def test_expires_wird_gespeichert_und_zurueckgelesen(store):
+    ablauf = time.time() + 3600
+    node = store.add(label="Sitzung", kind="sitzung", expires=ablauf)
+    assert node.expires == ablauf
+    assert store.get(node.id).expires == ablauf
+
+
+def test_abgelaufene_erinnerung_faellt_aus_der_suche(store):
+    store.add(label="Vorbei", kind="sitzung", text="laengst passe",
+             expires=time.time() - 1)
+    assert store.search("passe") == []
+    assert store.context_for("passe") == ""
+
+
+def test_abgelaufene_erinnerung_faellt_aus_all_und_graph(store):
+    store.add(label="Noch da", node_id="frisch")
+    store.add(label="Vorbei", node_id="alt", kind="sitzung", expires=time.time() - 1)
+    assert [m.id for m in store.all()] == ["frisch"]
+    assert [n["id"] for n in store.graph()["nodes"]] == ["frisch"]
+
+
+def test_abgelaufene_erinnerung_faellt_als_nachbar_und_kante_weg(store):
+    store.add(label="Bleibt", node_id="a")
+    store.add(label="Verblasst", node_id="b", kind="sitzung", expires=time.time() - 1)
+    store.link("a", "b")
+    assert store.neighbours("a") == []
+    assert store.graph()["links"] == []
+
+
+def test_get_findet_eine_abgelaufene_erinnerung_noch_vor_dem_aufraeumen(store):
+    """expires steuert, was beim Abrufen/Stöbern auftaucht -- ein gezielter
+    Zugriff über die bekannte id (z. B. durch memory_forget oder undo) soll
+    trotzdem noch funktionieren, solange purge_expired sie nicht schon
+    endgültig entfernt hat."""
+    node = store.add(label="Verblasst", kind="sitzung", expires=time.time() - 1)
+    assert store.get(node.id) is not None
+
+
+def test_purge_expired_entfernt_abgelaufene_endgueltig(store):
+    store.add(label="Bleibt", node_id="a")
+    store.add(label="Verblasst", node_id="b", kind="sitzung", expires=time.time() - 1)
+    store.link("a", "b")
+
+    entfernt = store.purge_expired()
+
+    assert entfernt == 1
+    assert store.get("a") is not None
+    assert store.get("b") is None
+
+
+def test_purge_expired_laesst_dauerhaftes_und_zukuenftiges_in_ruhe(store):
+    store.add(label="Dauerhaft", node_id="a")
+    store.add(label="Läuft noch", node_id="b", kind="sitzung", expires=time.time() + 3600)
+    assert store.purge_expired() == 0
+    assert store.get("a") is not None
+    assert store.get("b") is not None
+
+
+def test_neue_instanz_raeumt_abgelaufenes_beim_start_weg(tmp_path):
+    pfad = tmp_path / "gedaechtnis.sqlite3"
+    erste = MemoryStore(pfad)
+    erste.add(label="Verblasst", node_id="b", kind="sitzung", expires=time.time() - 1)
+    erste.close()
+
+    zweite = MemoryStore(pfad)
+    assert zweite.get("b") is None
+    zweite.close()
+
+
+def test_replace_graph_behaelt_expires_bei(store):
+    store.add(label="Sitzung", node_id="s", kind="sitzung", expires=time.time() + 3600)
+    graph = store.graph()
+
+    zweiter = MemoryStore(":memory:")
+    zweiter.replace_graph(graph)
+    assert zweiter.get("s").expires == graph["nodes"][0]["expires"]
+    zweiter.close()
+
+
+def test_alte_datenbank_ohne_expires_spalte_wird_nachgeruestet(tmp_path):
+    """Wie test_alte_datenbank_ohne_metadatenspalten_wird_nachgeruestet, nur
+    für die Session-Ebene: eine Datenbank von vor dieser Version hat noch
+    keine expires-Spalte. Die Migration muss sie nachrüsten, ohne die
+    bestehende Erinnerung als "abgelaufen" zu behandeln (NULL, nicht 0)."""
+    pfad = tmp_path / "ohne_expires.sqlite3"
+    roh = sqlite3.connect(str(pfad))
+    roh.executescript("""
+        CREATE TABLE nodes (
+            id TEXT PRIMARY KEY, label TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'fakt',
+            text TEXT NOT NULL DEFAULT '', x REAL, y REAL,
+            importance REAL NOT NULL DEFAULT 0.5, source TEXT NOT NULL DEFAULT '',
+            confidence REAL NOT NULL DEFAULT 1.0,
+            created REAL NOT NULL, updated REAL NOT NULL
+        );
+        CREATE TABLE links (
+            a TEXT NOT NULL, b TEXT NOT NULL, PRIMARY KEY (a, b)
+        );
+    """)
+    jetzt = time.time()
+    roh.execute("INSERT INTO nodes (id,label,kind,text,created,updated) VALUES "
+               "('n1','Alt','fakt','von vorher',?,?)", (jetzt, jetzt))
+    roh.commit()
+    roh.close()
+
+    geoeffnet = MemoryStore(pfad)
+    alte = geoeffnet.get("n1")
+    assert alte.expires is None
+    geoeffnet.close()

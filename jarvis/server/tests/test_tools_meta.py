@@ -194,3 +194,94 @@ def test_shell_disable_ohne_vorheriges_enable_ist_ehrlicher_fehlschlag(tools):
 def test_shell_enable_wird_ueber_die_suche_gefunden(tools):
     res = erfolg(tools("jarvis.tools.search", query="befehl ausführen aktivieren"))
     assert "jarvis.shell.enable" in res.payload
+
+
+# ═══════════════ jarvis.tools.dependencies/install_dependency (Punkt 55) ═══
+# "Installiert wird hier nichts" (catalog.dependency_report) galt für ein
+# reines Python-Paket nicht mehr als nötige Grenze -- solange der Erfolg
+# danach echt nachgeprüft wird. Ein echter Netzwerk-pip-install gehört nicht
+# in die Testsuite (dieselbe Zurückhaltung wie bei python.package.install in
+# test_tools_dev.py); die Erfolgs-/Fehlschlagspfade werden deshalb über
+# run_process/probe nachgebildet, nicht über einen echten Download.
+
+def test_dependencies_listet_bekannte_schluessel(tools):
+    res = erfolg(tools("jarvis.tools.dependencies"))
+    assert "psutil" in res.payload
+    assert res.evidence["gesamt"] > 0
+
+
+def test_install_dependency_unbekannter_schluessel_ist_ehrlicher_fehlschlag(tools):
+    fehler(tools("jarvis.tools.install_dependency", key="das-gibt-es-nicht"))
+
+
+def test_install_dependency_meldet_bereits_vorhandenes_paket(tools):
+    """psutil ist eine harte Abhängigkeit dieses Projekts -- in jeder
+    Umgebung, in der die Tests überhaupt laufen, ist es schon da."""
+    res = erfolg(tools("jarvis.tools.install_dependency", key="psutil"))
+    assert "schon vorhanden" in res.summary.lower()
+
+
+def test_install_dependency_lehnt_externe_programme_ab(tools, monkeypatch):
+    """ffmpeg ist kein Python-Paket -- das Werkzeug darf so etwas nicht mit
+    pip installieren wollen. Der "schon vorhanden"-Ausweg wird hier
+    ausdrücklich ausgeschlossen (echt geprüft, nicht angenommen), sonst
+    testete das versehentlich nur den falschen, früheren Pfad."""
+    from jarvis.tools.packs import meta
+    monkeypatch.setattr(meta, "probe", lambda key: (False, ""))
+    res = fehler(tools("jarvis.tools.install_dependency", key="ffmpeg"))
+    assert "kein python-paket" in res.summary.lower()
+
+
+def test_install_dependency_dry_run_macht_nichts_und_fuehrt_nichts_aus(tools, monkeypatch):
+    from jarvis.tools.packs import meta
+
+    def darf_nicht_laufen(*_a, **_k):
+        raise AssertionError("dry_run hätte run_process nicht aufrufen dürfen")
+    monkeypatch.setattr(meta, "run_process", darf_nicht_laufen)
+
+    res = erfolg(tools("jarvis.tools.install_dependency", key="pyautogui", dry_run=True))
+    assert res.evidence["probelauf"] is True
+    assert "pip install" in res.evidence["befehl"]
+
+
+def test_install_dependency_installiert_ein_fehlendes_modul(tools, monkeypatch):
+    import subprocess as sp
+    from jarvis.tools.packs import meta
+
+    zustand = {"da": False}
+    monkeypatch.setattr(meta, "probe", lambda key: (zustand["da"], "1.0" if zustand["da"] else ""))
+    monkeypatch.setattr(meta, "reset_probes", lambda: zustand.__setitem__("da", True))
+    monkeypatch.setattr(meta, "run_process", lambda *a, **k: sp.CompletedProcess(
+        args=a[0] if a else [], returncode=0, stdout="Successfully installed PyAutoGUI", stderr=""))
+
+    res = erfolg(tools("jarvis.tools.install_dependency", key="pyautogui"))
+    assert "installiert" in res.summary.lower()
+    assert res.evidence["schluessel"] == "pyautogui"
+
+
+def test_install_dependency_pip_fehlschlag_wird_nicht_als_erfolg_gemeldet(tools, monkeypatch):
+    import subprocess as sp
+    from jarvis.tools.packs import meta
+
+    monkeypatch.setattr(meta, "probe", lambda key: (False, ""))
+    monkeypatch.setattr(meta, "run_process", lambda *a, **k: sp.CompletedProcess(
+        args=a[0] if a else [], returncode=1, stdout="", stderr="error: build failed"))
+
+    res = fehler(tools("jarvis.tools.install_dependency", key="pyautogui"))
+    assert "build failed" in res.summary
+
+
+def test_install_dependency_traut_pip_nicht_blind_ohne_erneute_pruefung(tools, monkeypatch):
+    """pip meldet Exit-Code 0, aber das Paket lässt sich danach immer noch
+    nicht importieren (z. B. weil pip in einen anderen Interpreter
+    installiert hat) -- das darf nicht als Erfolg durchgehen."""
+    import subprocess as sp
+    from jarvis.tools.packs import meta
+
+    monkeypatch.setattr(meta, "probe", lambda key: (False, ""))
+    monkeypatch.setattr(meta, "reset_probes", lambda: None)
+    monkeypatch.setattr(meta, "run_process", lambda *a, **k: sp.CompletedProcess(
+        args=a[0] if a else [], returncode=0, stdout="Successfully installed", stderr=""))
+
+    res = fehler(tools("jarvis.tools.install_dependency", key="pyautogui"))
+    assert "immer noch" in res.summary.lower()

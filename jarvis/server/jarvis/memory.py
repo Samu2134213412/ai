@@ -18,9 +18,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 # "erfahrung" ist die Art, unter der die Zielverfolgung ihre Lehren ablegt
-# (Punkt 15, Experience Learning). Ohne sie würde ``add()`` solche Einträge
-# stillschweigend zu "fakt" herabstufen und der Abruf fände sie nie wieder.
-KINDS = ("regel", "projekt", "hardware", "vorliebe", "skill", "fakt", "erfahrung")
+# (Punkt 15, Experience Learning). "sitzung" ist die Session-Ebene zwischen
+# Kurz- und Langzeitgedächtnis (ROADMAP Phase 2): läuft, anders als jede
+# andere Art, von selbst über ``expires`` ab. Ohne einen eigenen Eintrag
+# würde ``add()`` unbekannte Arten stillschweigend zu "fakt" herabstufen und
+# der Abruf fände sie nie wieder.
+KINDS = ("regel", "projekt", "hardware", "vorliebe", "skill", "fakt", "erfahrung", "sitzung")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
@@ -34,7 +37,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     source     TEXT NOT NULL DEFAULT '',
     confidence REAL NOT NULL DEFAULT 1.0,
     created    REAL NOT NULL,
-    updated    REAL NOT NULL
+    updated    REAL NOT NULL,
+    expires    REAL
 );
 CREATE TABLE IF NOT EXISTS links (
     a TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -51,6 +55,7 @@ _NEUE_SPALTEN = (
     ("importance", "REAL NOT NULL DEFAULT 0.5"),
     ("source", "TEXT NOT NULL DEFAULT ''"),
     ("confidence", "REAL NOT NULL DEFAULT 1.0"),
+    ("expires", "REAL"),
 )
 
 _WORD = re.compile(r"[\wäöüßÄÖÜ]{3,}", re.UNICODE)
@@ -71,13 +76,13 @@ def _terms(text: str) -> list[str]:
     return [w.lower() for w in _WORD.findall(text or "") if w.lower() not in _STOP]
 
 
-_COLS = "id,label,kind,text,importance,source,confidence,created,updated"
+_COLS = "id,label,kind,text,importance,source,confidence,created,updated,expires"
 
 
 def _aus_zeile(row: sqlite3.Row, score: float = 0.0) -> "Memory":
     return Memory(row["id"], row["label"], row["kind"], row["text"],
                   row["importance"], row["source"], row["confidence"],
-                  row["created"], row["updated"], score)
+                  row["created"], row["updated"], row["expires"], score)
 
 
 @dataclass(frozen=True)
@@ -91,6 +96,10 @@ class Memory:
     confidence: float = 1.0
     created: float = 0.0
     updated: float = 0.0
+    #: Nur bei der Session-Ebene gesetzt (``kind="sitzung"``) -- ab diesem
+    #: Zeitpunkt taucht der Knoten in keinem Abruf mehr auf. ``None`` heißt
+    #: dauerhaft, wie jede andere Erinnerungsart.
+    expires: float | None = None
     score: float = 0.0
 
     def as_line(self) -> str:
@@ -99,7 +108,8 @@ class Memory:
     def as_dict(self) -> dict[str, Any]:
         return {"id": self.id, "label": self.label, "cat": self.kind, "text": self.text,
                 "importance": self.importance, "source": self.source,
-                "confidence": self.confidence, "created": self.created, "updated": self.updated}
+                "confidence": self.confidence, "created": self.created, "updated": self.updated,
+                "expires": self.expires}
 
 
 class MemoryStore:
@@ -115,6 +125,11 @@ class MemoryStore:
         self._db.executescript(_SCHEMA)
         self._migrate()
         self._db.commit()
+        # Bei jedem Start, nicht per eigenem Hintergrundtimer: eine
+        # abgelaufene Sitzungs-Erinnerung ist ab ``expires`` ohnehin in jedem
+        # Abruf schon unsichtbar (siehe search()/context_for()/graph()) --
+        # das hier räumt nur noch die Platte auf.
+        self.purge_expired()
 
     def _migrate(self) -> None:
         """Fügt Spalten nach, die eine bereits bestehende, schon befüllte
@@ -131,15 +146,15 @@ class MemoryStore:
 
     def _row(self, node_id: str) -> Memory | None:
         row = self._db.execute(
-            "SELECT id,label,kind,text,importance,source,confidence,created,updated "
-            "FROM nodes WHERE id=?", (node_id,)).fetchone()
+            f"SELECT {_COLS} FROM nodes WHERE id=?", (node_id,)).fetchone()
         return _aus_zeile(row) if row else None
 
     # -- schreiben ---------------------------------------------------------
     def add(self, label: str, text: str = "", kind: str = "fakt",
             node_id: str | None = None, x: float | None = None,
             y: float | None = None, importance: float = 0.5,
-            source: str = "", confidence: float = 1.0) -> Memory:
+            source: str = "", confidence: float = 1.0,
+            expires: float | None = None) -> Memory:
         label = (label or "").strip() or "Ohne Titel"
         kind = kind if kind in KINDS else "fakt"
         node_id = node_id or f"n{uuid.uuid4().hex[:10]}"
@@ -149,13 +164,14 @@ class MemoryStore:
         now = time.time()
         self._db.execute(
             "INSERT INTO nodes (id,label,kind,text,x,y,importance,source,confidence,"
-            "created,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+            "created,updated,expires) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(id) DO UPDATE SET label=excluded.label, kind=excluded.kind, "
             "text=excluded.text, x=excluded.x, y=excluded.y, "
             "importance=excluded.importance, source=excluded.source, "
-            "confidence=excluded.confidence, updated=excluded.updated",
+            "confidence=excluded.confidence, updated=excluded.updated, "
+            "expires=excluded.expires",
             (node_id, label, kind, (text or "").strip(), x, y, importance, source,
-             confidence, now, now),
+             confidence, now, now, expires),
         )
         self._db.commit()
         # Zurückgelesen statt angenommen -- bei einem Konflikt (node_id gab es
@@ -190,17 +206,26 @@ class MemoryStore:
 
     def all(self) -> list[Memory]:
         rows = self._db.execute(
-            f"SELECT {_COLS} FROM nodes ORDER BY updated DESC").fetchall()
+            f"SELECT {_COLS} FROM nodes WHERE expires IS NULL OR expires > ? "
+            "ORDER BY updated DESC", (time.time(),)).fetchall()
         return [_aus_zeile(r) for r in rows]
 
     def graph(self) -> dict[str, Any]:
-        """Die Form, die das Wissensnetz der Oberfläche erwartet."""
+        """Die Form, die das Wissensnetz der Oberfläche erwartet.
+
+        Eine abgelaufene Sitzungs-Erinnerung taucht hier nicht mehr auf --
+        physisch gelöscht ist sie deshalb noch nicht (siehe ``purge_expired``),
+        aber sichtbar ist sie nirgends mehr.
+        """
         rows = self._db.execute(
-            f"SELECT {_COLS},x,y FROM nodes ORDER BY created").fetchall()
+            f"SELECT {_COLS},x,y FROM nodes WHERE expires IS NULL OR expires > ? "
+            "ORDER BY created", (time.time(),)).fetchall()
         nodes = [{**_aus_zeile(r).as_dict(),
                   **({"x": r["x"], "y": r["y"]} if r["x"] is not None else {})} for r in rows]
+        sichtbar = {r["id"] for r in rows}
         links = [[r["a"], r["b"]] for r in
-                 self._db.execute("SELECT a,b FROM links").fetchall()]
+                 self._db.execute("SELECT a,b FROM links").fetchall()
+                 if r["a"] in sichtbar and r["b"] in sichtbar]
         return {"nodes": nodes, "links": links}
 
     def replace_graph(self, graph: dict[str, Any]) -> int:
@@ -231,13 +256,16 @@ class MemoryStore:
                 confidence = n.get("confidence")
                 confidence = (max(0.0, min(float(confidence), 1.0))
                               if confidence is not None else 1.0)
+                expires = n.get("expires")
                 self._db.execute(
                     "INSERT OR REPLACE INTO nodes (id,label,kind,text,x,y,importance,"
-                    "source,confidence,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "source,confidence,created,updated,expires) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (node_id, str(n.get("label") or "Ohne Titel"),
                      kind if kind in KINDS else "fakt", str(n.get("text") or ""),
                      n.get("x"), n.get("y"), importance, str(n.get("source") or ""),
-                     confidence, bestehend.get(node_id, now), now))
+                     confidence, bestehend.get(node_id, now), now,
+                     float(expires) if expires is not None else None))
             known = {str(n["id"]) for n in nodes if isinstance(n, dict) and n.get("id")}
             for pair in links:
                 if not isinstance(pair, (list, tuple)) or len(pair) != 2:
@@ -252,8 +280,9 @@ class MemoryStore:
         cols = ",".join(f"n.{c}" for c in _COLS.split(","))
         rows = self._db.execute(
             f"SELECT {cols} FROM nodes n JOIN links l "
-            "ON (l.a=n.id AND l.b=?) OR (l.b=n.id AND l.a=?)",
-            (node_id, node_id)).fetchall()
+            "ON (l.a=n.id AND l.b=?) OR (l.b=n.id AND l.a=?) "
+            "WHERE n.expires IS NULL OR n.expires > ?",
+            (node_id, node_id, time.time())).fetchall()
         return [_aus_zeile(r) for r in rows]
 
     # -- abrufen -----------------------------------------------------------
@@ -261,10 +290,15 @@ class MemoryStore:
         """Gewichtete Begriffssuche. Titeltreffer zählen dreifach.
 
         Regeln werden angehoben: was Jarvis nie tun darf, soll nicht deshalb
-        aus dem Kontext fallen, weil die Frage andere Wörter benutzt.
+        aus dem Kontext fallen, weil die Frage andere Wörter benutzt. Eine
+        abgelaufene Sitzungs-Erinnerung (``expires`` in der Vergangenheit)
+        wird gar nicht erst bewertet -- die Session-Ebene soll von selbst
+        verblassen, nicht nur schlechter ranken.
         """
         terms = set(_terms(query))
-        rows = self._db.execute(f"SELECT {_COLS} FROM nodes").fetchall()
+        rows = self._db.execute(
+            f"SELECT {_COLS} FROM nodes WHERE expires IS NULL OR expires > ?",
+            (time.time(),)).fetchall()
         scored: list[Memory] = []
         for r in rows:
             label_terms = set(_terms(r["label"]))
@@ -294,6 +328,27 @@ class MemoryStore:
             return
         for label, kind, text in entries:
             self.add(label=label, kind=kind, text=text, source="seed")
+
+    def purge_expired(self) -> int:
+        """Löscht abgelaufene Erinnerungen endgültig von der Platte.
+
+        Sichtbar sind sie schon vorher nirgends mehr -- jeder Abruf
+        (``search``/``context_for``/``graph``/``all``/``neighbours``)
+        filtert selbst nach ``expires``. Das hier ist nur das Aufräumen, das
+        sonst über Monate hinweg tote Sitzungs-Erinnerungen anhäufen würde.
+        Läuft automatisch bei jedem Start (siehe ``__init__``); kein eigener
+        Hintergrundtimer nötig, weil ein Server-Neustart auf einem
+        Heimrechner die Regel ist, kein Sonderfall.
+        """
+        now = time.time()
+        with self._db:
+            faellig = [r["id"] for r in self._db.execute(
+                "SELECT id FROM nodes WHERE expires IS NOT NULL AND expires <= ?", (now,))]
+            for node_id in faellig:
+                self._db.execute("DELETE FROM links WHERE a=? OR b=?", (node_id, node_id))
+            self._db.execute(
+                "DELETE FROM nodes WHERE expires IS NOT NULL AND expires <= ?", (now,))
+        return len(faellig)
 
 
 DEFAULT_SEED = [

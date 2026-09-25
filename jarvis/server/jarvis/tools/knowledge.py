@@ -8,6 +8,8 @@ bekommt statt eines Versprechens.
 
 from __future__ import annotations
 
+import time
+
 from ..memory import KINDS, MemoryStore
 from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
@@ -29,15 +31,20 @@ def build(store: MemoryStore) -> list[Tool]:
             payload="\n".join(lines) if lines else "(nichts gefunden)")
 
     def memory_add(label: str, text: str = "", kind: str = "fakt",
-                  importance: float = 0.5) -> ToolResult:
+                  importance: float = 0.5, ttl_hours: float = 0.0) -> ToolResult:
         if not (label or "").strip():
             raise ToolError("Eine Erinnerung braucht einen Titel.")
         if kind not in KINDS:
             raise ToolError(f"Unbekannte Art '{kind}'. Erlaubt: {', '.join(KINDS)}")
         if not 0.0 <= float(importance) <= 1.0:
             raise ToolError(f"importance muss zwischen 0 und 1 liegen, nicht {importance!r}.")
+        if float(ttl_hours) < 0:
+            raise ToolError(f"ttl_hours darf nicht negativ sein, nicht {ttl_hours!r}.")
+        # 0 (Vorgabe) heißt dauerhaft, wie jede andere Erinnerung -- nur "auf
+        # Zeit merken" verlangt ausdrücklich eine Zahl größer 0.
+        expires = time.time() + float(ttl_hours) * 3600 if ttl_hours else None
         node = store.add(label=label, text=text, kind=kind, importance=importance,
-                         source="modell")
+                         source="modell", expires=expires)
         # Der Beleg wird zurückgelesen, nicht angenommen.
         stored = store.get(node.id)
         if stored is None:
@@ -46,7 +53,8 @@ def build(store: MemoryStore) -> list[Tool]:
             tool="memory_add", ok=True,
             summary=f"Gemerkt: {stored.label}",
             evidence={"id": stored.id, "art": stored.kind,
-                      "zeichen": len(stored.text)},
+                      "zeichen": len(stored.text),
+                      "laeuft_ab": stored.expires},
             payload=stored.as_line())
 
     def memory_link(a: str, b: str) -> ToolResult:
@@ -90,7 +98,12 @@ def build(store: MemoryStore) -> list[Tool]:
                              "importance": {"type": "number",
                                             "description": "0-1, Vorgabe 0.5 -- hebt "
                                             "beim Abruf die Rangfolge, ersetzt keinen "
-                                            "Begriffstreffer"}},
+                                            "Begriffstreffer"},
+                             "ttl_hours": {"type": "number",
+                                           "description": "Nur auf Zeit merken: läuft nach "
+                                           "so vielen Stunden von selbst ab (z. B. 24 für "
+                                           "'nur für heute'). Vorgabe 0 = dauerhaft, wie "
+                                           "jede andere Erinnerung."}},
               "required": ["label"]},
              memory_add, level=PermissionLevel.WRITE),
         Tool("memory_link", "Verbindet zwei Erinnerungen miteinander.",

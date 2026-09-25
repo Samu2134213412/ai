@@ -95,9 +95,15 @@ nach wiederholten Fehlschlägen) — siehe `server/README.md`.
    `importance` fließt in die Rangfolge beim Abruf ein (0.5 = Vorgabe = keine
    Verschiebung), `replace_graph()` behält `created` jetzt über jeden
    Oberflächen-Speichervorgang hinweg bei, statt es bei jedem Ziehen eines
-   Knotens stillschweigend zurückzusetzen. Offen bleibt eine echte
-   **Session**-Ebene zwischen Short-Term und Long-Term — noch ohne
-   festgelegten Mechanismus.
+   Knotens stillschweigend zurückzusetzen. **Session-Ebene erledigt:** ein
+   sechstes Feld, `expires` (`kind="sitzung"`), per Migration ebenso
+   nachgerüstet. Zug-Paare, die aus dem kurzlebigen `Agent.history`-Fenster
+   fallen, landen jetzt statt spurlos zu verschwinden mit einer Ablaufzeit
+   (Vorgabe 48 Stunden) im Wissensnetz; `memory_add` kann über `ttl_hours`
+   auch gezielt "nur für heute" merken. Abgelaufene Knoten blendet jeder
+   Abruf sofort aus (`search()`/`context_for()`/`graph()`/…) und ein
+   Server-Neustart räumt sie endgültig weg (`purge_expired()`) — kein
+   eigener Hintergrundtimer nötig, siehe `server/README.md`.
 2. Model Router: `task_type`/`complexity`/`privacy`/`cost`/`latency`/
    `required_tools` → Modellwahl. Ollama bleibt Standard; die
    `OllamaClient`-Abstraktion in `ollama.py` wird die erste von mehreren

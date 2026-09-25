@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -187,6 +188,29 @@ def test_memory_add_lehnt_wichtigkeit_ausserhalb_0_bis_1_ab(store):
     add = {t.name: t for t in knowledge.build(store)}["memory_add"]
     with pytest.raises(ToolError, match="importance"):
         add.run(label="X", importance=5.0)
+
+
+def test_memory_add_ohne_ttl_ist_dauerhaft(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    result = add.run(label="Dauerhaft")
+    assert result.evidence["laeuft_ab"] is None
+    assert store.get(result.evidence["id"]).expires is None
+
+
+def test_memory_add_mit_ttl_setzt_eine_ablaufzeit(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    vorher = time.time()
+    result = add.run(label="Nur für heute", kind="sitzung", ttl_hours=24)
+    gespeichert = store.get(result.evidence["id"])
+    assert gespeichert.expires is not None
+    assert gespeichert.expires == pytest.approx(vorher + 24 * 3600, abs=5)
+    assert result.evidence["laeuft_ab"] == gespeichert.expires
+
+
+def test_memory_add_lehnt_negative_ttl_ab(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    with pytest.raises(ToolError, match="ttl_hours"):
+        add.run(label="X", ttl_hours=-1)
 
 
 def test_memory_forget_prueft_nach(store):

@@ -11,6 +11,7 @@ Verhalten eines Modells simuliert, und geprüft wird beides:
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -29,12 +30,12 @@ from jarvis.permissions import PermissionGate, PermissionPolicy
 _DURCHLAESSIG = PermissionPolicy(confirm_read=False, confirm_write=False, confirm_system=False)
 
 
-def make_agent(config, store, registry, model, events=None):
+def make_agent(config, store, registry, model, events=None, **kwargs):
     async def emit(kind, payload):
         if events is not None:
             events.append((kind, payload))
     gate = PermissionGate(policy=_DURCHLAESSIG, emit=emit)
-    return Agent(config, store, registry, model, emit=emit, permission_gate=gate)
+    return Agent(config, store, registry, model, emit=emit, permission_gate=gate, **kwargs)
 
 
 # ═══════════════════════════════════════════ das historische Fehlverhalten
@@ -394,6 +395,42 @@ async def test_verlauf_bleibt_erhalten(config, store, registry, fake_ollama):
 
     rollen = [m["role"] for m in model.calls[1]]
     assert rollen.count("user") == 2      # die erste Frage ist noch dabei
+
+
+# ═══════════════════════════════════ Session-Ebene (ROADMAP Phase 2, "sitzung")
+async def test_verdraengte_chatzuege_landen_als_sitzungserinnerung(
+        config, store, registry, fake_ollama):
+    """history_turns=1 (Fenster für genau einen Zug) macht den Verdrängungs-
+    Fall ohne endlos viele Runden reproduzierbar: der zweite Zug drängt den
+    ersten aus ``self.history`` -- der darf dabei nicht spurlos verschwinden."""
+    model = fake_ollama([ChatTurn(text="Hallo."), ChatTurn(text="Ja.")])
+    agent = make_agent(config, store, registry, model, history_turns=1)
+
+    vorher = time.time()
+    await agent.handle("Hi")
+    await agent.handle("Alles gut?")
+
+    sitzungen = [m for m in store.all() if m.kind == "sitzung"]
+    assert len(sitzungen) == 1
+    assert "Hi" in sitzungen[0].text
+    assert "Hallo." in sitzungen[0].text
+    assert sitzungen[0].source == "sitzung"
+    assert sitzungen[0].expires is not None and sitzungen[0].expires > vorher
+    # Das Kurzzeit-Fenster selbst bleibt trotzdem klein -- nur der zweite Zug.
+    assert len(agent.history) == 2
+    assert agent.history[0]["content"] == "Alles gut?"
+
+
+async def test_kurzer_chat_erzeugt_keine_sitzungserinnerung(config, store, registry, fake_ollama):
+    """Solange nichts aus dem Fenster fällt, gibt es auch nichts zu
+    archivieren -- ein einzelner Zug soll nicht sofort das Gedächtnis
+    befüllen."""
+    model = fake_ollama([ChatTurn(text="Hallo.")])
+    agent = make_agent(config, store, registry, model, history_turns=1)
+
+    await agent.handle("Hi")
+
+    assert [m for m in store.all() if m.kind == "sitzung"] == []
 
 
 # ═══════════════════════════════════════════════════════════ Fokus-Modus

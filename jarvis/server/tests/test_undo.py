@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,23 @@ def test_vergessene_erinnerung_behaelt_wichtigkeit_und_quelle_beim_wiederherstel
     assert wiederhergestellt.importance == 0.9
     assert wiederhergestellt.source == "modell"
     assert wiederhergestellt.confidence == 0.4
+
+
+def test_vergessene_sitzungserinnerung_behaelt_ihre_ablaufzeit_beim_wiederherstellen(store, ctx):
+    # Ohne das würde eine vergessene und zurückgeholte Sitzungs-Erinnerung
+    # (kind="sitzung") plötzlich dauerhaft, statt weiterhin von selbst
+    # abzulaufen.
+    ablauf = time.time() + 3600
+    node = store.add(label="Sitzung", kind="sitzung", source="sitzung", expires=ablauf)
+    store_ = UndoStore(":memory:", context=ctx)
+
+    pre = store_.begin("memory_forget", {"id": node.id})
+    store.delete(node.id)
+    store_.finish("memory_forget", "vergessen", pre, ok("memory_forget"))
+
+    store_.undo()
+    wiederhergestellt = store.get(node.id)
+    assert wiederhergestellt.expires == ablauf
 
 
 # ═══════════════════════════════════════════════════════════ Rahmen

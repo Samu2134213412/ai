@@ -104,6 +104,16 @@ _EXTENSION_PAUSE_SECONDS = 60.0
 #: anhält, statt unbeaufsichtigt gegen dieselbe Wand zu laufen.
 _EXTENSION_FAILURE_LIMIT = 5
 
+#: Session-Ebene zwischen Kurz- und Langzeitgedächtnis (ROADMAP Phase 2,
+#: "noch ohne festgelegten Mechanismus"): Zug-Paare, die aus dem kurzlebigen
+#: ``self.history``-Fenster fallen, landen als ``kind="sitzung"`` im
+#: Gedächtnis statt spurlos zu verschwinden -- aber mit eigener Ablaufzeit,
+#: damit sie den Wissensnetz nicht auf Dauer mit flüchtigem Chat-Kleinkram
+#: vollstopfen. Zwei Tage: länger als eine einzelne Sitzung am Rechner,
+#: kurz genug, dass es sich wirklich wie "vergessen" statt wie "gemerkt"
+#: anfühlt, wenn niemand in der Zwischenzeit darauf zurückkommt.
+_SESSION_TTL_HOURS = 48.0
+
 _EXTENSION_PLANNING_PROMPT = """\
 Du hilfst dabei, ein Softwareprojekt eigenständig weiterzuentwickeln, ohne \
 dass jemand zusieht. Unten steht, was über das Projekt bekannt ist -- vor \
@@ -1386,7 +1396,32 @@ class Agent:
         self.history.append({"role": "assistant", "content": reply.text})
         cap = self.history_turns * 2
         if len(self.history) > cap:
-            self.history = self.history[-cap:]
+            verdraengt, self.history = self.history[:-cap], self.history[-cap:]
+            self._archive_to_session(verdraengt)
+
+    def _archive_to_session(self, verdraengte_zuege: list[dict[str, Any]]) -> None:
+        """Session-Ebene zwischen Kurz- und Langzeitgedächtnis (``_SESSION_TTL_HOURS``).
+
+        Was aus dem kurzlebigen ``self.history``-Fenster fällt, ist damit
+        nicht automatisch wertlos -- es landet hier mit eigener Ablaufzeit im
+        Gedächtnis, statt spurlos zu verschwinden. Anders als eine Langzeit-
+        Erinnerung (``kind="fakt"``/``"projekt"``/…) verschwindet es von
+        selbst wieder, sobald ``_SESSION_TTL_HOURS`` um ist (``MemoryStore``
+        blendet abgelaufene Knoten in jedem Abruf aus und räumt sie beim
+        nächsten Start endgültig weg) -- niemand muss diese Sitzungsnotiz je
+        von Hand löschen.
+        """
+        text = "\n".join(f"{zug['role']}: {zug['content']}" for zug in verdraengte_zuege
+                         if (zug.get("content") or "").strip())
+        if not text.strip():
+            return
+        try:
+            self.store.add(
+                label=f"Sitzung {time.strftime('%Y-%m-%d %H:%M')}", text=text[:2000],
+                kind="sitzung", source="sitzung",
+                expires=time.time() + _SESSION_TTL_HOURS * 3600)
+        except Exception:  # noqa: BLE001 - dieselbe Vorsicht wie in _learn()
+            pass
 
     def _remember_code_work(self, task: str, outcome: coder.CodeOutcome) -> None:
         """Speichert echte Code-Fortschritte im Langzeitgedächtnis (Wissensnetz).

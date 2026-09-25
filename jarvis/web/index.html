@@ -1080,7 +1080,8 @@ const CAT={
   vorliebe:{n:"Vorliebe", c:"#34e0a1"},
   skill:   {n:"Skill",    c:"#ffb224"},
   fakt:    {n:"Fakt",     c:"#9aa8b8"},
-  erfahrung:{n:"Erfahrung",c:"#c58fff"}
+  erfahrung:{n:"Erfahrung",c:"#c58fff"},
+  sitzung: {n:"Sitzung",  c:"#6fd3c7"}
 };
 const SEED={
   nodes:[
@@ -1288,7 +1289,7 @@ function fmtDatum(sekunden){
     {day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
 }
 const QUELLE={modell:"Modell",user:"von Hand",seed:"Grundausstattung",
-  "code-modus":"Code-Modus",autonomy:"Zielverfolgung"};
+  "code-modus":"Code-Modus",autonomy:"Zielverfolgung",sitzung:"Sitzung (läuft ab)"};
 function inspect(id){
   const box=$("insIn"), n=MEM.nodes.find((x)=>x.id===id);
   $("insRt").textContent=n?(CAT[n.cat]||CAT.fakt).n:"";
@@ -1305,6 +1306,7 @@ function inspect(id){
         <button class="gh" data-un="${o.id}">trennen</button></div>`:""; }).join("");
   const imp=typeof n.importance==="number"?n.importance:0.5;
   const quelle=QUELLE[n.source]||"unbekannt";
+  const ablauf=n.expires?` · läuft ab ${fmtDatum(n.expires)}`:"";
   box.innerHTML=`
     <div class="field"><label for="fLab">Titel</label>
       <input id="fLab" value="${esc(n.label)}"></div>
@@ -1315,7 +1317,7 @@ function inspect(id){
     <div class="field"><label for="fImp">Wichtigkeit beim Abruf</label>
       <div class="range-row"><input id="fImp" type="range" min="0" max="1" step="0.1" value="${imp}">
         <span id="fImpV">${Math.round(imp*100)}%</span></div></div>
-    <p class="meta">Quelle: ${esc(quelle)} · angelegt ${fmtDatum(n.created)}</p>
+    <p class="meta">Quelle: ${esc(quelle)} · angelegt ${fmtDatum(n.created)}${ablauf}</p>
     <div class="field"><label>Verbunden mit</label>
       ${nb||'<p class="empty">noch nichts</p>'}</div>
     <div class="btnrow"><button id="fSave">Speichern</button>

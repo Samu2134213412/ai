@@ -174,9 +174,11 @@ def _capture_memory_forget(arguments: dict, ctx: UndoContext) -> dict | None:
     # Alle Felder sichern, nicht nur die vier ursprünglichen -- sonst würde
     # Rückgängigmachen die Wichtigkeit/Quelle/Sicherheit stillschweigend auf
     # die Vorgabe zurücksetzen, statt den Knoten wirklich wiederherzustellen.
+    # "expires" gehört dazu: sonst würde eine vergessene Sitzungs-Erinnerung
+    # beim Rückgängigmachen zu einer dauerhaften.
     return {"id": node.id, "label": node.label, "kind": node.kind, "text": node.text,
             "importance": node.importance, "source": node.source,
-            "confidence": node.confidence}
+            "confidence": node.confidence, "expires": node.expires}
 
 
 def _revert_memory_forget(snap: dict, ctx: UndoContext) -> str:
@@ -186,7 +188,7 @@ def _revert_memory_forget(snap: dict, ctx: UndoContext) -> str:
         raise UndoError(f"Am Platz der gelöschten Erinnerung steht inzwischen etwas Neues: {snap['id']}")
     ctx.store.add(node_id=snap["id"], label=snap["label"], kind=snap["kind"], text=snap["text"],
                   importance=snap.get("importance", 0.5), source=snap.get("source", ""),
-                  confidence=snap.get("confidence", 1.0))
+                  confidence=snap.get("confidence", 1.0), expires=snap.get("expires"))
     return f"Erinnerung wiederhergestellt: {snap['label']}"
 
 

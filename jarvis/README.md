@@ -116,10 +116,10 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (881 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (907 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
-* 408 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
+* 410 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
   Prozesse, Netzwerk sowie **Git (43 Operatoren), Python und Node.js**
   (venv, pip, ruff, pytest, npm), **Medien** (Bild über Pillow, Audio/
   Video über ffmpeg/ffprobe, 49 Operatoren), **Docker (19), nginx (8),
@@ -135,15 +135,16 @@ Fertig und getestet (881 Tests, siehe `ROADMAP.md` für die Phasen):
   `Agent._run_tool`-Pipeline wie ein einzelner Werkzeugaufruf (Permission-
   Gate, Undo, Audit), angelegt/verwaltet über `automation.macro.*`,
   ausgeführt über den eigenen Modus `mode: "macro"`
-* **Tool Discovery:** bei 408 Werkzeugen passen die vollständigen Schemata
+* **Tool Discovery:** bei 410 Werkzeugen passen die vollständigen Schemata
   nicht mehr ins Kontextfenster — vor jeder Modellanfrage sucht
   `discovery.py` lokal und deterministisch (Begriffstreffer, Tippfehler-
   toleranz, Favoriten-/Verlaufs-/Kontextbonus) die passende Handvoll
   Werkzeuge heraus, statt den ganzen Katalog zu schicken. `jarvis.tools.*`
-  (10 Meta-Werkzeuge: `search`/`info`/`list`/`favorite`/`disable`/`history`/
-  `stats`/…) macht denselben Suchindex und die Werkzeug-Historie auch dem
-  Modell selbst zugänglich, samt einer Möglichkeit, einzelne Werkzeuge
-  gezielt abzuschalten (Punkt 26) — siehe `server/README.md`
+  (14 Meta-Werkzeuge: `search`/`info`/`list`/`favorite`/`disable`/`history`/
+  `stats`/`dependencies`/`install_dependency`/…) macht denselben Suchindex
+  und die Werkzeug-Historie auch dem Modell selbst zugänglich, samt einer
+  Möglichkeit, einzelne Werkzeuge gezielt abzuschalten (Punkt 26) — siehe
+  `server/README.md`
 * **`jarvis.shell.enable`/`.disable`:** `run_command` steht per Voreinstellung
   aus (siehe Sicherheit oben) und blieb deshalb in der Werkzeug-Statuszeile
   der Oberfläche dauerhaft grau, obwohl es längst gebaut ist — diese beiden
@@ -151,6 +152,23 @@ Fertig und getestet (881 Tests, siehe `ROADMAP.md` für die Phasen):
   Hand in der `jarvis.json` zu editieren und ohne das Permission-System zu
   umgehen (jeder `run_command`-Aufruf verlangt weiterhin seine eigene
   Bestätigung) — siehe `server/README.md`
+* **`jarvis.tools.dependencies`/`.install_dependency`:** dieselbe Idee wie
+  beim Shell-Umschalter, für fehlende Python-Pakete (PyAutoGUI, qrcode, …)
+  statt für `run_command` -- installiert mit `pip` in Jarvis' eigener
+  Laufzeitumgebung, mit `dry_run` (Punkt 30) und echter Nachprüfung, ob das
+  Paket danach wirklich importierbar ist, statt pip's Exit-Code zu glauben.
+  Externe Programme (ffmpeg, Tesseract, nginx, …) bleiben bewusst außen vor —
+  die verlangen weiterhin einen Installer oder den Paketmanager des
+  Betriebssystems, von Hand
+* **Session-Gedächtnis (`kind="sitzung"`):** die in `ROADMAP.md` offen
+  gelassene Ebene zwischen Kurz- und Langzeitgedächtnis. Zug-Paare, die aus
+  dem kurzlebigen Chat-Fenster (`Agent.history`) fallen, landen jetzt mit
+  eigener Ablaufzeit im Wissensnetz (`memory.py`, Vorgabe 48 Stunden), statt
+  spurlos zu verschwinden -- aber auch, ohne das Gedächtnis auf Dauer mit
+  flüchtigem Chat-Kleinkram vollzustopfen: abgelaufene Erinnerungen tauchen
+  in keinem Abruf mehr auf und werden beim nächsten Start endgültig
+  gelöscht. `memory_add` kann jetzt ebenfalls ein `ttl_hours` setzen ("merk
+  dir das nur für heute")
 * Direct Action Router für eindeutige Befehle
 * Langzeitgedächtnis in SQLite mit selbständigem Abruf vor jeder Modellanfrage
 * Agent mit Ollama-Werkzeugaufruf
