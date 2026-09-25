@@ -398,7 +398,7 @@ Watchdog aus Autonomy V1.
 
 ## Tool Discovery
 
-Bei 406 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
+Bei 408 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
 Modellanfrage -- grob 60.000 Token, mehr als das Kontextfenster. Nicht
 langsam, sondern kaputt. Deshalb bekommt das Modell nie mehr den ganzen
 Katalog: ``discovery.py`` sucht vorher lokal und deterministisch (kein
@@ -523,7 +523,7 @@ ist der Hosenträger.
 | `memory_search` `memory_add` `memory_link` | Langzeitgedächtnis |
 | `memory_forget` | **CRITICAL** — löscht eine Erinnerung endgültig |
 | `undo_last_action` `list_undoable` | letzte(n) Änderung(en) rückgängig machen bzw. ansehen |
-| `run_command` | **aus per Voreinstellung**, Allowlist nötig |
+| `run_command` | **aus per Voreinstellung**, Allowlist nötig -- an-/abschalten über `jarvis.shell.enable`/`.disable` |
 | `desktop.screen.capture` | Bildschirmfoto -- **WRITE** (nicht READ: kann alles zeigen, was gerade auf dem Bildschirm steht), nur Windows/macOS |
 | `desktop.mouse.*` `desktop.keyboard.*` | Maus bewegen/klicken, Text tippen, Tasten drücken -- **SYSTEM**, braucht PyAutoGUI + einen echten Bildschirm |
 | `search.web` | Web-Suche über SearXNG oder Brave Search -- siehe „Web-Suche" unten, ohne eingetragenen Dienst ehrlich als nicht eingerichtet gemeldet |
@@ -541,6 +541,15 @@ ist der Hosenträger.
 
 Empfohlene Allowlist für den Anfang: `python`, `pip`, `pytest`, `git`, `node`,
 `npm`, `ollama`, `echo`, `where`, `dir`.
+
+**`run_command` einschalten, ohne von Hand in der `jarvis.json` zu editieren:**
+`jarvis.shell.enable` (Werkzeug, **SYSTEM** — verlangt dieselbe Bestätigung wie
+jeder andere SYSTEM-Aufruf) trägt genau diese Vorgabe-Allowlist ein, mit
+`dry_run: true` zum Vorab-Ansehen (Punkt 30); eine eigene Liste geht über den
+`allowlist`-Parameter. `jarvis.shell.disable` schaltet wieder ab. Beides
+schreibt in dieselbe `jarvis.json` zurück -- kein zweiter, unabhängiger
+Schalter, und **kein** Umgehen des Permission-Systems: jeder einzelne
+`run_command`-Aufruf verlangt weiterhin seine eigene Bestätigung.
 
 ## Konfiguration
 

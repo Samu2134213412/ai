@@ -43,6 +43,11 @@ def build_registry(config: Config, store: MemoryStore,
         enabled=config.shell.enabled, allowlist=config.shell.allowlist,
         cwd=config.shell.cwd or (config.roots[0] if config.roots else None),
         timeout=config.shell.timeout)
+    # Dieselbe Policy, die run_command (falls registriert) tatsächlich befragt --
+    # so früh gesetzt, dass sie schon dasteht, wenn jarvis.shell.enable/disable
+    # (meta.py) gebaut wird. Es schaltet sie zur Laufzeit um, statt einer
+    # zweiten, unabhängigen Kopie der Einstellungen (Punkt 56).
+    registry.shell_policy = policy
     undo_store = UndoStore(str(config.undo_db_path),
                           context=UndoContext(workspace=workspace, store=store))
     macro_store = MacroStore(str(config.macro_db_path))

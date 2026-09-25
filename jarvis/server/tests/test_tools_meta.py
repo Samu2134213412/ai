@@ -128,3 +128,69 @@ def test_history_und_stats_bleiben_leer_ohne_aufrufe(tools):
     assert verlauf.evidence["anzahl"] == 0
     stats = erfolg(tools("jarvis.tools.stats"))
     assert stats.evidence["anzahl"] == 0
+
+
+# ══════════════════════════════════════════════ jarvis.shell.enable/disable
+# run_command ist per Voreinstellung aus (shell.enabled=False in der
+# config-Fixture) -- diese Werkzeuge sind der einzige Weg, das ohne Neustart
+# und ohne Handbearbeitung der jarvis.json umzuschalten.
+
+def test_run_command_ist_zu_beginn_nicht_registriert(tools):
+    assert "run_command" not in tools.registry
+
+
+def test_shell_enable_dry_run_lässt_alles_unverändert(tools, config):
+    res = erfolg(tools("jarvis.shell.enable", dry_run=True))
+    assert res.evidence["probelauf"] is True
+    assert "run_command" not in tools.registry
+    assert config.shell.enabled is False
+
+
+def test_shell_enable_registriert_run_command_mit_vorgabe_allowlist(tools, config):
+    res = erfolg(tools("jarvis.shell.enable"))
+    assert "run_command" in tools.registry
+    assert config.shell.enabled is True
+    assert set(config.shell.allowlist) == set(res.evidence["erlaubt"])
+    assert "git" in res.evidence["erlaubt"]
+
+    lauf = erfolg(tools("run_command", command="git --version"))
+    assert "git" in lauf.summary
+
+
+def test_shell_enable_schreibt_die_konfiguration_weg(tools, config):
+    erfolg(tools("jarvis.shell.enable"))
+    gespeichert = config.config_path.read_text(encoding="utf-8")
+    assert '"enabled": true' in gespeichert
+
+
+def test_shell_enable_mit_eigener_allowlist(tools):
+    res = erfolg(tools("jarvis.shell.enable", allowlist=["Ollama", " git ", "git"]))
+    assert res.evidence["erlaubt"] == ["git", "ollama"]
+    fehler(tools("run_command", command="python --version"))
+    erfolg(tools("run_command", command="git --version"))
+
+
+def test_shell_enable_mit_leerer_allowlist_ist_ehrlicher_fehlschlag(tools):
+    fehler(tools("jarvis.shell.enable", allowlist=["   ", ""]))
+
+
+def test_shell_enable_zweimal_meldet_bereits_an(tools):
+    erfolg(tools("jarvis.shell.enable"))
+    res = erfolg(tools("jarvis.shell.enable"))
+    assert "war schon an" in res.summary.lower()
+
+
+def test_shell_disable_schaltet_run_command_wieder_ab(tools, config):
+    erfolg(tools("jarvis.shell.enable"))
+    erfolg(tools("jarvis.shell.disable"))
+    assert config.shell.enabled is False
+    fehler(tools("run_command", command="git --version"))
+
+
+def test_shell_disable_ohne_vorheriges_enable_ist_ehrlicher_fehlschlag(tools):
+    fehler(tools("jarvis.shell.disable"))
+
+
+def test_shell_enable_wird_ueber_die_suche_gefunden(tools):
+    res = erfolg(tools("jarvis.tools.search", query="befehl ausführen aktivieren"))
+    assert "jarvis.shell.enable" in res.payload

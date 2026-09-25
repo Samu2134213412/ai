@@ -26,9 +26,11 @@ Autonomiestufe vorbei, siehe ``permissions.py``).
 from __future__ import annotations
 
 from ...permissions import PermissionLevel as P
+from .. import shell as shell_module
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext, availability
-from ._base import NO_PARAMS, integer, ok, params, table, text
+from ..shell import SUGGESTED_ALLOWLIST
+from ._base import LIST, NO_PARAMS, flag, integer, ok, params, planned, table, text
 
 
 def build(ctx: ToolContext) -> list[Tool]:
@@ -121,6 +123,54 @@ def build(ctx: ToolContext) -> list[Tool]:
                   payload=table(zeilen, headers=["Werkzeug", "Aufrufe", "Erfolgsquote", "Ø Dauer"]),
                   anzahl=len(reihen))
 
+    # ══════════════════════════════════════════════ jarvis.shell.enable/disable
+    # run_command (tools/shell.py) ist voll gebaut, steht aber per Voreinstellung
+    # auf "aus" -- eine bewusste Sicherheitsentscheidung, kein fehlendes Stück
+    # (siehe shell.py). Genau deshalb zeigt die Oberfläche es dauerhaft als
+    # "fehlt" an, obwohl es das Werkzeug längst gibt. Diese beiden Werkzeuge
+    # sind der echte, im Permission-System selbst geführte Weg, das umzuschalten
+    # -- statt eines Bypasses läuft jeder Aufruf über dieselbe SYSTEM-Bestätigung
+    # wie run_command selbst.
+    def _bereinigte_allowlist(programme: list[str] | None) -> list[str]:
+        werte = programme or []
+        return sorted({p.strip().lower() for p in werte if isinstance(p, str) and p.strip()})
+
+    def shell_enable(allowlist: list[str] | None = None, dry_run: bool = False) -> ToolResult:
+        ziel = _bereinigte_allowlist(allowlist) if allowlist else sorted(set(SUGGESTED_ALLOWLIST))
+        if not ziel:
+            raise ToolError(
+                "Die Allowlist wäre leer -- damit liefe kein einziges Programm. "
+                f"Vorschlag: {', '.join(SUGGESTED_ALLOWLIST)}")
+        policy = registry.shell_policy
+        if policy.enabled and policy.allowlist == set(ziel):
+            return ok("jarvis.shell.enable",
+                      f"War schon an, erlaubt: {', '.join(ziel)}", erlaubt=ziel)
+        if dry_run:
+            return planned("jarvis.shell.enable",
+                          f"Würde run_command aktivieren, erlaubt: {', '.join(ziel)}",
+                          erlaubt=ziel)
+        policy.enabled = True
+        policy.allowlist = set(ziel)
+        if "run_command" not in registry:
+            for tool in shell_module.build(policy):
+                registry.add(tool)
+                discovery.index.add(tool)
+        ctx.config.shell.enabled = True
+        ctx.config.shell.allowlist = ziel
+        ctx.config.save()
+        return ok("jarvis.shell.enable", f"run_command ist jetzt an, erlaubt: {', '.join(ziel)}",
+                  erlaubt=ziel)
+
+    def shell_disable() -> ToolResult:
+        policy = registry.shell_policy
+        if not policy.enabled:
+            raise ToolError("run_command ist schon aus.")
+        policy.enabled = False
+        ctx.config.shell.enabled = False
+        ctx.config.save()
+        return ok("jarvis.shell.disable",
+                  "run_command ist jetzt aus -- jeder Aufruf wird ab sofort abgelehnt.")
+
     return [
         Tool("jarvis.tools.search", "Sucht im Werkzeugkasten nach passenden Werkzeugen "
              "(Name, Beschreibung, Tags, Beispielsätze). Nützlich, wenn kein passendes "
@@ -161,4 +211,18 @@ def build(ctx: ToolContext) -> list[Tool]:
              "mittlere Dauer.",
              params(limit=integer("Maximal so viele Werkzeuge, Vorgabe 30")),
              tools_stats, level=P.READ, tags=("jarvis", "werkzeuge")),
+        Tool("jarvis.shell.enable", "Schaltet run_command an -- das Werkzeug existiert "
+             "längst, ist aber per Voreinstellung aus (siehe tools/shell.py). Ohne "
+             "eigene Angabe eine vorsichtige Vorgabe-Allowlist (git, python, npm, "
+             "pytest, lesende Befehle wie ls/cat). Betrifft nur die Allowlist selbst, "
+             "nicht das Permission-System: jeder einzelne run_command-Aufruf verlangt "
+             "weiterhin dieselbe Bestätigung wie jedes andere SYSTEM-Werkzeug.",
+             params(allowlist=LIST, dry_run=flag("Nur zeigen, was sich ändern würde")),
+             shell_enable, level=P.SYSTEM, dry_run=True,
+             tags=("jarvis", "shell", "konfiguration"),
+             phrases=("aktiviere die shell", "schalte befehle ausführen an")),
+        Tool("jarvis.shell.disable", "Schaltet run_command wieder ab.",
+             NO_PARAMS, shell_disable, level=P.SYSTEM,
+             tags=("jarvis", "shell", "konfiguration"),
+             phrases=("deaktiviere die shell", "schalte befehle ausführen aus")),
     ]

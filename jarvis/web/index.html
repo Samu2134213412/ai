@@ -1474,6 +1474,15 @@ async function refreshExtensionStatus(){
     if(res.ok) extRender((await res.json()).status);
   }catch(e){}
 }
+async function refreshToolStatus(){
+  try{
+    const res=await fetch("/api/health",{headers:authHeaders(), cache:"no-store"});
+    if(res.ok){
+      const body=await res.json();
+      if(Array.isArray(body.werkzeuge)) JARVIS.tools(body.werkzeuge);
+    }
+  }catch(e){}
+}
 async function extAction(action){
   try{
     const body=await postJson(`/api/extension-mode/${action}`);
@@ -2056,6 +2065,11 @@ function onFrame(m){
     case "tool.finished":
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
       loadVerlaufSoon();
+      // run_command wechselt dadurch zwischen "fehlt" und "bereit" -- ohne
+      // das hier bliebe die Statuszeile bis zum nächsten Verbindungsaufbau
+      // falsch, obwohl der Wechsel längst passiert ist.
+      if(m.ok && (m.tool==="jarvis.shell.enable" || m.tool==="jarvis.shell.disable"))
+        refreshToolStatus();
       break;
     case "telemetry": JARVIS.telemetry(m); break;
     case "memory":
