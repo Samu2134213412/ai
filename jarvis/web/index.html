@@ -189,6 +189,9 @@ main[hidden]{display:none!important}
   color:var(--mute);white-space:nowrap}
 .tl[data-s="ok"] .gl,.tl[data-s="ok"] .st{color:var(--green)}
 .tl[data-s="unknown"] .gl,.tl[data-s="unknown"] .st{color:#d8973a}
+.tl[data-s="dep"] .gl,.tl[data-s="dep"] .st{color:#d8973a}
+.tl[data-s="off"] .gl,.tl[data-s="off"] .st{color:var(--red)}
+.tl[title]{cursor:help}
 .hint{font-size:11px;color:var(--mute);line-height:1.55;margin:10px 0 0;
   padding:8px 9px;border-left:2px solid var(--cyan-dim);background:rgba(40,215,255,.05)}
 
@@ -1011,10 +1014,11 @@ const TOOLS=[["write_file","unknown"],["read_file","unknown"],["run_command","un
   ["search_files","unknown"],["memory_search","none"],["files.grep","none"],
   ["desktop.screen.capture","unknown"],["search.web","unknown"],
   ["desktop.mouse.move","unknown"],["desktop.keyboard.type","unknown"]];
-const TS={ok:["✓","bereit"],unknown:["?","unbestätigt"],none:["·","fehlt"]};
+const TS={ok:["✓","bereit"],unknown:["?","unbestätigt"],none:["·","fehlt"],
+  dep:["!","nachrüsten"],os:["–","anderes OS"],off:["⊘","abgeschaltet"]};
 function renderTools(list){
-  $("tools").innerHTML=list.map(([n,s])=>{ const t=TS[s]||TS.none;
-    return `<div class="tl" data-s="${s}"><span class="gl">${t[0]}</span>
+  $("tools").innerHTML=list.map(([n,s,grund])=>{ const t=TS[s]||TS.none;
+    return `<div class="tl" data-s="${s}"${grund?` title="${esc(grund)}"`:""}><span class="gl">${t[0]}</span>
       <span class="nm">${esc(n)}</span><span class="st">${t[1]}</span></div>`; }).join("");
 }
 renderTools(TOOLS);
@@ -1476,6 +1480,8 @@ async function refreshExtensionStatus(){
     if(res.ok) extRender((await res.json()).status);
   }catch(e){}
 }
+const STATUS_WIRKSAM=new Set(["jarvis.shell.enable","jarvis.shell.disable",
+  "jarvis.tools.install_dependency","jarvis.tools.disable","jarvis.tools.enable"]);
 async function refreshToolStatus(){
   try{
     const res=await fetch("/api/health",{headers:authHeaders(), cache:"no-store"});
@@ -1843,7 +1849,9 @@ function renderPalette(){
   palRes.querySelectorAll("[data-dis]").forEach((b)=>b.addEventListener("click", async (e)=>{
     e.stopPropagation();
     const name=b.dataset.dis, on=b.getAttribute("aria-pressed")==="true";
-    if(await palToolAction(name, on?"enable":"disable")) queryPalette(palQ.value);
+    if(await palToolAction(name, on?"enable":"disable")){
+      queryPalette(palQ.value); refreshToolStatus();
+    }
   }));
   palRes.querySelector(".row.sel")?.scrollIntoView({block:"nearest"});
 }
@@ -1979,7 +1987,7 @@ window.JARVIS={
     $("focusToggle").setAttribute("aria-pressed",String(!!an));
   },
   extensionStatus(status){ extRender(status||null); },
-  tools(list){ renderTools(list.map((t)=>[t.name,t.status])); },
+  tools(list){ renderTools(list.map((t)=>[t.name,t.status,t.grund||""])); },
   memory(next){ if(next&&Array.isArray(next.nodes)){ MEM=next; seedPositions(); renderLegend(); paint(); } },
   get memoryState(){ return clone({nodes:MEM.nodes,links:MEM.links}); }
 };
@@ -2067,11 +2075,10 @@ function onFrame(m){
     case "tool.finished":
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
       loadVerlaufSoon();
-      // run_command wechselt dadurch zwischen "fehlt" und "bereit" -- ohne
-      // das hier bliebe die Statuszeile bis zum nächsten Verbindungsaufbau
-      // falsch, obwohl der Wechsel längst passiert ist.
-      if(m.ok && (m.tool==="jarvis.shell.enable" || m.tool==="jarvis.shell.disable"))
-        refreshToolStatus();
+      // Diese Werkzeuge ändern, ob andere Werkzeuge laufen -- ohne das hier
+      // bliebe die Statuszeile bis zum nächsten Verbindungsaufbau falsch,
+      // obwohl der Wechsel längst passiert ist.
+      if(m.ok && STATUS_WIRKSAM.has(m.tool)) refreshToolStatus();
       break;
     case "telemetry": JARVIS.telemetry(m); break;
     case "memory":

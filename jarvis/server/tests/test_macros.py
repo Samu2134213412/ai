@@ -151,7 +151,7 @@ async def test_if_waehlt_else_zweig():
 async def test_if_mit_evidence_feld():
     fake = FakeTools(antworten={"groesse": [ok(groesse=5000)]})
     engine = MacroEngine(fake.run_tool)
-    lauf = await engine.run([
+    await engine.run([
         {"id": "s1", "kind": "tool", "tool": "groesse"},
         {"kind": "if", "condition": {"step": "s1", "field": "evidence.groesse",
                                      "op": ">", "value": 1000},

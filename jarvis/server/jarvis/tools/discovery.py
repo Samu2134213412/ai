@@ -57,7 +57,7 @@ _STOP = {
     "was", "wer", "wann", "wo", "warum", "nicht", "kein", "keine", "noch",
     "schon", "sehr", "mal", "bitte", "dann", "du", "ich", "wir", "sie", "man",
     "des", "dem", "den", "im", "in", "an", "am", "zu", "es", "als", "auch",
-    "bitte", "jetzt", "gerade", "the", "and", "for", "with", "get", "show",
+    "jetzt", "gerade", "the", "and", "for", "with", "get", "show",
 }
 
 

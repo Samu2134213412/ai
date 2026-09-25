@@ -29,7 +29,7 @@ from pathlib import Path
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext, current_platform, run_process
-from ._base import (INT, NO_PARAMS, STR, flag, human_bytes, integer, ok,
+from ._base import (INT, NO_PARAMS, STR, human_bytes, integer, ok,
                     params, table, text)
 
 try:  # pragma: no cover

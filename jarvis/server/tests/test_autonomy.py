@@ -84,7 +84,6 @@ async def test_stufe_1_erzwingt_bestaetigung_fuer_write_trotz_laxer_policy(
     Autonomiestufe wuerde das sofort durchlaufen. Stufe 1 verlangt trotzdem
     eine Bestaetigung, die hier nie kommt, also laeuft es in den Timeout/die
     Ablehnung."""
-    import asyncio
 
     config.autonomy_level = 1
     agent = make_agent(config, store, registry, model=None)

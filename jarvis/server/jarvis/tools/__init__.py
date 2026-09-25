@@ -15,7 +15,7 @@ from ..undo import UndoContext, UndoStore
 from . import files, knowledge, shell, system
 from . import undo as undo_tool
 from .base import Registry, Tool, ToolError, ToolMissing, ToolResult
-from .catalog import Availability, ToolContext, availability, dependency_report
+from .catalog import Availability, ToolContext, availability, dependency_report, runnable
 from .discovery import ToolDiscovery, ToolIndex
 from .history import ToolHistory
 from .packs import PACKS
@@ -121,10 +121,43 @@ def build_registry(config: Config, store: MemoryStore,
     return registry
 
 
+#: Reihenfolge in der Oberfläche: was sich beheben lässt, zuerst -- bei
+#: mehreren hundert grünen Einträgen gingen die übrigen am Ende sonst unter.
+_STATUS_REIHENFOLGE = {"dep": 0, "off": 1, "none": 2, "os": 3, "ok": 4}
+
+
 def tool_status(registry: Registry, config: Config) -> list[dict[str, str]]:
-    """Was die Oberfläche in der Werkzeugliste anzeigt."""
-    rows = [{"name": name, "status": "ok"} for name in registry.names()]
+    """Was die Oberfläche in der Werkzeugliste anzeigt -- der echte Zustand
+    auf DIESEM Rechner (``catalog.availability``), nicht bloß "ist
+    registriert". Ein Werkzeug, dem ein Programm fehlt, ist nicht "bereit",
+    nur weil es gebaut ist.
+
+    ``ok`` läuft · ``dep`` fehlende Abhängigkeit · ``os`` falsches
+    Betriebssystem · ``off`` vom Nutzer abgeschaltet · ``none`` aus bzw.
+    nicht gebaut. Alles außer ``ok`` trägt einen ``grund``.
+    """
+    history = getattr(registry, "tool_history", None)
+    abgeschaltet = history.disabled() if history is not None else {}
+    rows: list[dict[str, str]] = []
+    for tool in registry:
+        zustand, grund = availability(tool)
+        if tool.name in abgeschaltet:
+            status = "off"
+            grund = ("Von dir abgeschaltet"
+                     + (f" ({abgeschaltet[tool.name]})" if abgeschaltet[tool.name] else "")
+                     + " -- jarvis.tools.enable schaltet es wieder an.")
+        elif runnable(tool):
+            status, grund = "ok", ""
+        elif zustand is Availability.MISSING_DEPENDENCY:
+            status = "dep"
+        elif zustand is Availability.UNSUPPORTED_PLATFORM:
+            status = "os"
+        else:
+            status = "none"
+        rows.append({"name": tool.name, "status": status, **({"grund": grund} if grund else {})})
     if not config.shell.enabled:
-        rows.append({"name": "run_command", "status": "none"})
-    rows.extend({"name": name, "status": "none"} for name in PLANNED)
-    return sorted(rows, key=lambda r: (r["status"] != "ok", r["name"]))
+        rows.append({"name": "run_command", "status": "none",
+                     "grund": "Aus per Voreinstellung -- jarvis.shell.enable schaltet es an."})
+    rows.extend({"name": name, "status": "none", "grund": "Noch nicht gebaut."}
+                for name in PLANNED)
+    return sorted(rows, key=lambda r: (_STATUS_REIHENFOLGE[r["status"]], r["name"]))

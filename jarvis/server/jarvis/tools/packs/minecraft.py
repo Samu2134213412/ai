@@ -22,18 +22,16 @@ ist ein paar Dutzend Zeilen, ein Paket dafür wäre mehr Fläche als Nutzen.
 
 from __future__ import annotations
 
-import json
 import re
 import socket
 import struct
 import time
 from pathlib import Path
-from typing import Any
 
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext
-from ._base import flag, integer, ok, params, planned, table, text
+from ._base import integer, ok, params, table, text
 
 MAX_OUTPUT = 8_000
 _IDENT = re.compile(r"^[A-Za-z0-9_]{1,32}$")  # Minecraft-Spielernamen

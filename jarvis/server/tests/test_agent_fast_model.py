@@ -11,7 +11,6 @@ kleinen Modells vom Wächter genauso abgefangen wird wie eine des großen.
 
 from __future__ import annotations
 
-import pytest
 
 from jarvis import guard
 from jarvis.agent import Agent

@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (907 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (913 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 410 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -145,6 +145,12 @@ Fertig und getestet (907 Tests, siehe `ROADMAP.md` für die Phasen):
   und die Werkzeug-Historie auch dem Modell selbst zugänglich, samt einer
   Möglichkeit, einzelne Werkzeuge gezielt abzuschalten (Punkt 26) — siehe
   `server/README.md`
+* **Ehrliche Werkzeug-Statusliste:** die Liste in der Oberfläche zeigt den
+  echten Zustand auf DIESEM Rechner statt "registriert = bereit" — `bereit`,
+  `nachrüsten` (Abhängigkeit fehlt), `anderes OS`, `abgeschaltet` oder
+  `fehlt`, jeweils mit Grund als Tooltip, das Behebbare zuerst. Nach
+  `jarvis.shell.enable`, `jarvis.tools.install_dependency` oder dem
+  Ab-/Anschalten im Explorer aktualisiert sie sich sofort
 * **`jarvis.shell.enable`/`.disable`:** `run_command` steht per Voreinstellung
   aus (siehe Sicherheit oben) und blieb deshalb in der Werkzeug-Statuszeile
   der Oberfläche dauerhaft grau, obwohl es längst gebaut ist — diese beiden

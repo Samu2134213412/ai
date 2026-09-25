@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from jarvis.goals import Goal, GoalBudget, GoalManager, GoalStatus
+from jarvis.goals import GoalBudget, GoalManager, GoalStatus
 
 
 @pytest.fixture

@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 from jarvis.app import create_app
-from jarvis.config import Config
 from jarvis.ollama import ChatTurn, ToolCall
 from jarvis.permissions import PermissionPolicy
-from jarvis.tools.base import Tool, ToolResult
 
 
 @pytest.fixture
@@ -119,12 +116,46 @@ def test_frueher_geplante_werkzeuge_sind_jetzt_gebaut(client):
     PLANNED und damit als "fehlt" in der Oberfläche -- jetzt sind sie echte,
     registrierte Werkzeuge (desktop.screen.capture, search.web,
     desktop.mouse.*/desktop.keyboard.*, search.apps.open)."""
-    werkzeuge = {w["name"]: w["status"] for w in client.get("/api/health").json()["werkzeuge"]}
-    assert werkzeuge["desktop.screen.capture"] == "ok"
-    assert werkzeuge["search.web"] == "ok"
-    assert werkzeuge["desktop.mouse.move"] == "ok"
-    assert werkzeuge["search.apps.open"] == "ok"
-    assert werkzeuge["run_command"] == "none"      # shell ist aus, unabhängig davon
+    werkzeuge = {w["name"]: w for w in client.get("/api/health").json()["werkzeuge"]}
+    # Gebaut heißt: nie mehr "none" (das bleibt dem Ungebauten/Ausgeschalteten
+    # vorbehalten). Ob es HIER auch läuft, hängt vom Rechner ab -- ein
+    # Bildschirmfoto gibt es unter Linux nicht, PyAutoGUI fehlt vielleicht.
+    for name in ("desktop.screen.capture", "search.web", "desktop.mouse.move",
+                 "search.apps.open"):
+        assert werkzeuge[name]["status"] in {"ok", "dep", "os"}, name
+        if werkzeuge[name]["status"] != "ok":
+            assert werkzeuge[name]["grund"], f"{name} nicht bereit, aber ohne Grund"
+    assert werkzeuge["run_command"]["status"] == "none"   # shell ist aus, unabhängig davon
+    assert "jarvis.shell.enable" in werkzeuge["run_command"]["grund"]
+
+
+def test_werkzeugstatus_meldet_fehlende_abhaengigkeit_statt_bereit(client, monkeypatch):
+    """Ein gebautes Werkzeug, dem hier ein Programm fehlt, ist nicht "bereit"
+    -- vorher stand in der Oberfläche jedes registrierte Werkzeug auf grün."""
+    from jarvis.tools import catalog
+    monkeypatch.setattr(catalog, "probe", lambda key: (key != "git", ""))
+
+    werkzeuge = {w["name"]: w for w in client.get("/api/health").json()["werkzeuge"]}
+    assert werkzeuge["git.status"]["status"] == "dep"
+    assert "Git" in werkzeuge["git.status"]["grund"]
+    assert werkzeuge["write_file"]["status"] == "ok"
+    assert "grund" not in werkzeuge["write_file"]
+
+
+def test_werkzeugstatus_zeigt_nachruestbares_zuerst(client, monkeypatch):
+    from jarvis.tools import catalog
+    monkeypatch.setattr(catalog, "probe", lambda key: (key != "git", ""))
+
+    status = [w["status"] for w in client.get("/api/health").json()["werkzeuge"]]
+    assert status[0] == "dep"
+    assert status.index("ok") > max(i for i, s in enumerate(status) if s == "dep")
+
+
+def test_werkzeugstatus_zeigt_abgeschaltete_werkzeuge(client):
+    assert client.post("/api/tools/write_file/disable", json={}).status_code == 200
+    werkzeuge = {w["name"]: w for w in client.get("/api/health").json()["werkzeuge"]}
+    assert werkzeuge["write_file"]["status"] == "off"
+    assert "jarvis.tools.enable" in werkzeuge["write_file"]["grund"]
 
 
 def test_oberflaeche_wird_ausgeliefert(client):

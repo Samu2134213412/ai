@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 
 from jarvis.audit import AuditLog
-from jarvis.decision import Candidate, DecisionEngine, DecisionLog, _parse_candidates
+from jarvis.decision import DecisionEngine, DecisionLog, _parse_candidates
 from jarvis.permissions import PermissionLevel
 
 

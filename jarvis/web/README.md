@@ -72,10 +72,15 @@ Worker daneben, den der Jarvis-Server unter `/manifest.webmanifest`,
   Start ohne Safari-Chrome (`display: standalone`).
 
 Danach startet Jarvis wie eine eigene App, ohne Adressleiste. Der Service
-Worker cached ausschließlich die statische Hülle (HTML/Manifest/Icons) für
-einen schnellen Kaltstart — **niemals** `/api/*` oder die WebSocket-Verbindung.
-Ohne Server bleibt die Oberfläche also ehrlich bei „Kein Server" stehen,
-statt veraltete Antworten aus dem Cache zu zeigen.
+Worker cached ausschließlich die statische Hülle (HTML/Manifest/Icons) —
+**niemals** `/api/*` oder die WebSocket-Verbindung. Ohne Server bleibt die
+Oberfläche also ehrlich bei „Kein Server" stehen, statt veraltete Antworten
+aus dem Cache zu zeigen.
+
+Die Seite selbst holt er **zuerst aus dem Netz** und nimmt die gespeicherte
+Fassung nur, wenn der Server nicht erreichbar ist. Vorher war es umgekehrt:
+nach jedem Update öffnete die installierte App beim ersten Start noch die
+alte Oberfläche, neue Funktionen tauchten erst beim zweiten Öffnen auf.
 
 **Das Token übersteht die Installation.** `manifest.webmanifest`s
 `start_url` zeigte früher auf `./index.html` — eine Adresse, die der

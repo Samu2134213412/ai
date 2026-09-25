@@ -3,7 +3,6 @@ läuft deshalb vollständig echt, kein Mock nötig."""
 
 from __future__ import annotations
 
-import shutil
 
 import pytest
 

@@ -16,13 +16,14 @@ Zielpfad (nicht in-place) und verweigert ein bereits bestehendes Ziel ohne
 from __future__ import annotations
 
 import json as jsonlib
+import time
 from pathlib import Path
 from typing import Any
 
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext, run_process
-from ._base import flag, integer, number, ok, params, table, text
+from ._base import flag, integer, number, ok, params, text
 
 try:  # pragma: no cover
     from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageStat
@@ -623,8 +624,14 @@ def build(ctx: ToolContext) -> list[Tool]:
         ordner.mkdir(parents=True, exist_ok=True)
         muster = str(ordner / "frame_%05d.png")
         args = ["-i", str(quelle(path)), "-vf", f"fps={float(fps)}", muster]
-        ergebnis = ffmpeg_lauf(args, "video.frames.extract", "", pfad=str(ordner))
-        anzahl = len(list(ordner.glob("frame_*.png")))
+        # Bei overwrite=true können Bilder eines früheren Laufs im Ordner
+        # liegen -- gezählt wird nur, was dieser Lauf geschrieben hat.
+        beginn = time.time() - 1
+        ffmpeg_lauf(args, "video.frames.extract", "", pfad=str(ordner))
+        anzahl = sum(1 for f in ordner.glob("frame_*.png") if f.stat().st_mtime >= beginn)
+        if anzahl == 0:
+            raise ToolError(f"ffmpeg lief durch, hat aber kein einziges Bild nach "
+                            f"{ordner.name} geschrieben (fps={fps} zu niedrig für die Länge?).")
         return ok("video.frames.extract", f"{anzahl} Bild(er) extrahiert nach {ordner.name}",
                   pfad=str(ordner), anzahl=anzahl)
 

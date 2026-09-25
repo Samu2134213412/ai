@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from jarvis.tasks import StepStatus, Task, TaskManager, TaskStatus
+from jarvis.tasks import StepStatus, TaskManager, TaskStatus
 
 
 @pytest.fixture

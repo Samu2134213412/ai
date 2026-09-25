@@ -13,7 +13,6 @@ import shutil
 import socket
 from pathlib import Path
 
-from ..permissions import PermissionLevel
 from .base import Tool, ToolError, ToolResult
 
 try:  # pragma: no cover - hängt von der Installation ab

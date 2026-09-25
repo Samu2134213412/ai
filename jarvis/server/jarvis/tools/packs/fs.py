@@ -35,7 +35,7 @@ from typing import Any, Iterator
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext
-from ._base import (BOOL, DRY, INT, NO_PARAMS, STR, flag, human_bytes, integer,
+from ._base import (DRY, INT, STR, flag, human_bytes, integer,
                     ok, params, planned, table, text)
 
 #: Obergrenze für Operationen, die viele Dateien anfassen. Ein Werkzeug, das

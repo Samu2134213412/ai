@@ -25,7 +25,6 @@ wie überall sonst -- Maus bewegen, klicken, Text tippen, eine Taste drücken
 
 from __future__ import annotations
 
-import subprocess
 
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult

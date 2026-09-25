@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 import platform
-import re
 import shutil
 import socket
 import sys
@@ -34,7 +33,7 @@ from pathlib import Path
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext, current_platform, run_process
-from ._base import (BOOL, INT, NO_PARAMS, STR, flag, human_bytes, integer, ok,
+from ._base import (INT, NO_PARAMS, STR, flag, human_bytes, integer, ok,
                     params, table, text)
 
 try:  # pragma: no cover - hängt von der Installation ab
@@ -464,15 +463,28 @@ def build(ctx: ToolContext) -> list[Tool]:
     def process_priority(pid: int, level: str = "normal") -> ToolResult:
         p = _psutil()
         proc = _proc(pid)
-        stufen = {"niedrig": 10, "unter_normal": 5, "normal": 0,
-                  "ueber_normal": -5, "hoch": -10}
+        # Windows kennt keine nice-Werte, sondern Prioritätsklassen -- eine
+        # Unix-Zahl wie -10 lehnt SetPriorityClass dort schlicht ab.
+        if hasattr(p, "NORMAL_PRIORITY_CLASS"):
+            stufen = {"niedrig": p.IDLE_PRIORITY_CLASS,
+                      "unter_normal": p.BELOW_NORMAL_PRIORITY_CLASS,
+                      "normal": p.NORMAL_PRIORITY_CLASS,
+                      "ueber_normal": p.ABOVE_NORMAL_PRIORITY_CLASS,
+                      "hoch": p.HIGH_PRIORITY_CLASS}
+        else:
+            stufen = {"niedrig": 10, "unter_normal": 5, "normal": 0,
+                      "ueber_normal": -5, "hoch": -10}
         if level not in stufen:
             raise ToolError(f"level ist eines von: {', '.join(stufen)}")
         vorher = proc.nice()
         _guard(lambda: proc.nice(stufen[level]), what="das Ändern der Priorität")
+        nachher = proc.nice()
+        if nachher != stufen[level]:
+            raise ToolError(f"{proc.name()} (PID {pid}) steht nach dem Ändern auf "
+                            f"{nachher}, nicht auf {level}.")
         return ok("system.process.priority",
                   f"{proc.name()}: Priorität {level}", pid=int(pid),
-                  vorher=str(vorher), nachher=str(proc.nice()))
+                  vorher=str(vorher), nachher=str(nachher))
 
     def process_open_files(pid: int, limit: int = 30) -> ToolResult:
         proc = _proc(pid)
@@ -698,7 +710,7 @@ def build(ctx: ToolContext) -> list[Tool]:
         if res.returncode:
             raise ToolError(f"PowerShell endete mit Code {res.returncode}: "
                             f"{(res.stderr or res.stdout).strip()[:300]}")
-        return ok("system.windows.powershell", f"Befehl ausgeführt (Code 0)",
+        return ok("system.windows.powershell", "Befehl ausgeführt (Code 0)",
                   payload=res.stdout[:8000], exit_code=res.returncode)
 
     def startup_programs() -> ToolResult:

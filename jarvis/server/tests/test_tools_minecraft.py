@@ -7,11 +7,9 @@ laufen gegen echte, synthetisch angelegte Dateien.
 
 from __future__ import annotations
 
-import os
 import socket
 import struct
 import threading
-import time
 
 import pytest
 

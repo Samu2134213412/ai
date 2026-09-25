@@ -5,7 +5,6 @@ mit einem der bekannten Werkzeuge, laufen die markierten Tests live mit."""
 
 from __future__ import annotations
 
-import shutil
 
 import pytest
 

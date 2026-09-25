@@ -38,7 +38,7 @@ from html.parser import HTMLParser
 from ...permissions import PermissionLevel as P
 from ..base import Tool, ToolError, ToolResult
 from ..catalog import ToolContext
-from ._base import INT, NO_PARAMS, STR, flag, integer, ok, params, table, text
+from ._base import INT, STR, flag, integer, ok, params, table, text
 
 try:  # pragma: no cover - hängt von der Installation ab
     import yaml
@@ -328,14 +328,25 @@ def build(ctx: ToolContext) -> list[Tool]:
         zeilen = list(reader)
         if not zeilen:
             raise ToolError("Die CSV-Daten sind leer.")
+        ungleich = 0
         if header:
             kopf, rest = zeilen[0], zeilen[1:]
-            data = [dict(zip(kopf, row)) for row in rest]
+            data = []
+            for row in rest:
+                # Ein bloßes zip() würde überzählige Werte stillschweigend
+                # abschneiden -- lieber aufbewahren und die Zeile melden.
+                eintrag = {k: (row[i] if i < len(row) else "") for i, k in enumerate(kopf)}
+                if len(row) > len(kopf):
+                    eintrag["_weitere"] = row[len(kopf):]
+                if len(row) != len(kopf):
+                    ungleich += 1
+                data.append(eintrag)
         else:
             data = zeilen
         out = json.dumps(data, ensure_ascii=False, indent=2)
-        return ok("text.csv.to_json", f"{len(data)} Datensätze", payload=out,
-                  trenner=sep, datensaetze=len(data))
+        hinweis = f" ({ungleich} mit abweichender Spaltenzahl)" if ungleich else ""
+        return ok("text.csv.to_json", f"{len(data)} Datensätze{hinweis}", payload=out,
+                  trenner=sep, datensaetze=len(data), abweichende_zeilen=ungleich)
 
     def json_to_csv(text: str, delimiter: str = ",") -> ToolResult:
         try:

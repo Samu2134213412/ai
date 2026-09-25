@@ -26,7 +26,12 @@
 // beim install-Ereignis unten). Genau dieselbe falsche Adresse stand bis
 // eben auch als "start_url" im Manifest: eine als Startbildschirm-App
 // installierte Seite wäre beim Öffnen auf einen 404 gelaufen.
-const CACHE = "jarvis-shell-v3";
+// v4: die Seite selbst ("/") kam bisher "Cache zuerst" -- nach jedem Update
+// öffnete die installierte App beim ersten Start also noch die ALTE
+// Oberfläche, die neue erst beim zweiten Mal. Außerdem traf "/?token=…"
+// den Cache-Schlüssel "/" nie. Jetzt: Seite "Netzwerk zuerst", der Cache
+// ist nur noch der Offline-Ersatz; Icons/Manifest bleiben wie gehabt.
+const CACHE = "jarvis-shell-v4";
 const SHELL = [
   "./",
   "./manifest.webmanifest",
@@ -65,8 +70,23 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   // Nur die Hülle bedienen — niemals /api/*, niemals sonst etwas Dynamisches.
   // Exakter Pfadvergleich, kein Suffix-Test (siehe Begründung bei SHELL_PATHS).
-  const isShellPath = url.pathname === "/" || SHELL_PATHS.has(url.pathname);
-  if (!isShellPath) return;
+  if (url.pathname === "/") {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            // Ohne Query gespeichert: ein Token in der Adresse gehört nicht
+            // in den Cache-Schlüssel, und so trifft der Offline-Ersatz auch.
+            const copy = res.clone();
+            caches.open(CACHE).then((cache) => cache.put("./", copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match("./").then((cached) => cached || Response.error()))
+    );
+    return;
+  }
+  if (!SHELL_PATHS.has(url.pathname)) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

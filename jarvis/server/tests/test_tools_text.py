@@ -158,6 +158,18 @@ def test_csv_und_json_hin_und_zurueck(tools):
     assert tools("text.json.to_csv", text='{"a":1}').ok is False
 
 
+def test_csv_zu_json_verliert_keine_ueberzaehligen_werte(tools):
+    """Eine Zeile mit mehr Werten als der Kopf Spalten hat: vorher schnitt
+    zip() den Rest stillschweigend ab."""
+    csv_text = "name;menge\nSchraube;12;rostfrei\nMutter"
+    als_json = erfolg(tools("text.csv.to_json", text=csv_text, delimiter=";"))
+    daten = json.loads(als_json.payload)
+    assert daten[0] == {"name": "Schraube", "menge": "12", "_weitere": ["rostfrei"]}
+    assert daten[1] == {"name": "Mutter", "menge": ""}
+    assert als_json.evidence["abweichende_zeilen"] == 2
+    assert "abweichender Spaltenzahl" in als_json.summary
+
+
 # ═══════════════════════════════════════════════════════════ Umformungen
 @pytest.mark.parametrize("stil,erwartet", [
     ("upper", "HALLO WELT DU"), ("lower", "hallo welt du"),

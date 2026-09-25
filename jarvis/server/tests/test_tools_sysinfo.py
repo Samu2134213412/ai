@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 
 import pytest
 
@@ -188,6 +187,56 @@ def test_offene_dateien_des_eigenen_prozesses(tools, workspace):
         assert result.evidence["anzahl"] >= 0
     else:
         assert "Berechtigung" in result.summary
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="nice-Werte gibt es nur unter Unix")
+def test_prozess_prioritaet_senken_an_einem_echten_kindprozess(tools):
+    import subprocess
+    kind = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        # Senken darf jeder Nutzer, anheben braucht Rechte -- "niedrig" läuft
+        # deshalb überall, wo die Tests laufen.
+        result = erfolg(tools("system.process.priority", pid=kind.pid, level="niedrig"))
+        assert psutil.Process(kind.pid).nice() == 10
+        assert result.evidence["nachher"] == "10"
+    finally:
+        kind.kill()
+        kind.wait()
+
+
+def test_prozess_prioritaet_nutzt_unter_windows_prioritaetsklassen(tools, monkeypatch):
+    """Unter Windows lehnt SetPriorityClass eine Unix-Zahl wie 10 ab -- das
+    Werkzeug muss dort die echten Prioritätsklassen setzen."""
+    from types import SimpleNamespace
+
+    from jarvis.tools.packs import sysinfo
+
+    gesetzt = []
+
+    class FakeProcess:
+        def __init__(self, pid):
+            self.wert = 32
+
+        def nice(self, value=None):
+            if value is None:
+                return self.wert
+            gesetzt.append(value)
+            self.wert = value
+
+        def name(self):
+            return "fake.exe"
+
+    fake = SimpleNamespace(
+        Process=FakeProcess, NoSuchProcess=psutil.NoSuchProcess,
+        AccessDenied=psutil.AccessDenied,
+        IDLE_PRIORITY_CLASS=64, BELOW_NORMAL_PRIORITY_CLASS=16384,
+        NORMAL_PRIORITY_CLASS=32, ABOVE_NORMAL_PRIORITY_CLASS=32768,
+        HIGH_PRIORITY_CLASS=128)
+    monkeypatch.setattr(sysinfo, "psutil", fake)
+
+    result = erfolg(tools("system.process.priority", pid=4242, level="niedrig"))
+    assert gesetzt == [64]
+    assert result.evidence["nachher"] == "64"
 
 
 def test_prozess_anhalten_und_fortsetzen_an_einem_echten_kindprozess(tools):

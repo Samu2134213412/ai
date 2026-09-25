@@ -15,7 +15,6 @@ CRITICAL -- mit echtem Probelauf bei ``docker.prune``.
 from __future__ import annotations
 
 import json as jsonlib
-from pathlib import Path
 from typing import Any
 
 from ...permissions import PermissionLevel as P

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import json
 from pathlib import Path
 
@@ -281,7 +282,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                     "Der Server ist aus dem Netz erreichbar, aber es ist kein "
                     "Token gesetzt. Das ist abgelehnt, nicht offen."))
             return
-        if supplied != config.token:
+        # Zeitkonstant statt "!=": ein gewöhnlicher Vergleich bricht beim
+        # ersten falschen Zeichen ab, und die Antwortzeit verrät dann über
+        # das Netz, wie viele Anfangszeichen schon stimmen.
+        if not hmac.compare_digest((supplied or "").encode("utf-8"),
+                                   config.token.encode("utf-8")):
             raise HTTPException(status_code=401, detail="Ungültiges Token")
 
     async def require_token(authorization: str | None = Header(default=None),
