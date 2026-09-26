@@ -7,10 +7,13 @@ Jarvis spricht direkt mit Ollama, für das Chat-Modell wie für das Code-Modell
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+
+from . import textcalls
 
 
 class OllamaError(Exception):
@@ -105,10 +108,15 @@ class OllamaClient:
                 continue
             args = fn.get("arguments")
             if isinstance(args, str):
-                import json
                 try:
                     args = json.loads(args)
                 except ValueError:
                     args = {}
             calls.append(ToolCall(name=name, arguments=args if isinstance(args, dict) else {}))
-        return ChatTurn(text=(message.get("content") or "").strip(), tool_calls=calls)
+        text = (message.get("content") or "").strip()
+        if not calls:
+            # Aufruf als Text geschrieben statt über die Schnittstelle? Dann
+            # ist das kein Schlusswort, sondern ein Aufruf -- siehe textcalls.py.
+            text, gelesen = textcalls.extract(text, tools)
+            calls = [ToolCall(name=name, arguments=args) for name, args in gelesen]
+        return ChatTurn(text=text, tool_calls=calls)

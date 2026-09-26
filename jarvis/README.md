@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (930 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (940 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 416 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -166,6 +166,12 @@ Fertig und getestet (930 Tests, siehe `ROADMAP.md` für die Phasen):
   Externe Programme (ffmpeg, Tesseract, nginx, …) bleiben bewusst außen vor —
   die verlangen weiterhin einen Installer oder den Paketmanager des
   Betriebssystems, von Hand
+* **Werkzeugaufrufe als Text (`textcalls.py`):** Schreibt ein Modell seinen
+  Aufruf als Text statt über Ollamas Schnittstelle (Qwen3-Coder lässt z. B.
+  das öffnende `<tool_call>` weg), hielt Jarvis das früher für die fertige
+  Antwort und machte nichts mehr. Jetzt werden Qwen-XML, Hermes-JSON und
+  reines JSON gelesen und als normaler Aufruf ausgeführt — durch dasselbe
+  Permission-Gate. Nur wenn Werkzeuge angeboten waren, nie aus Code-Zäunen
 * **Guardian-Anbindung (`guardian.*`):** der Virenschutz aus `../guardian`
   ist per Chat bedienbar — Status, Datei/Ordner prüfen (`guardian.check`,
   mit echtem Probelauf), Quarantäne ansehen, Ereignisse, Regeln. Jarvis ruft
