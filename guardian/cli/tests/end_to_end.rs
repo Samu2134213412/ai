@@ -203,6 +203,113 @@ fn full_scan_walks_the_configured_scan_root() {
     );
 }
 
+fn json_of(output: &std::process::Output) -> serde_json::Value {
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
+        panic!(
+            "stdout ist kein JSON ({e}): {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+#[test]
+fn json_scan_reports_the_real_verdict_and_quarantine_id() {
+    let home = TestHome::new();
+    std::fs::write(home.eicar_path(), EICAR).unwrap();
+
+    let out = home
+        .guardian()
+        .args(["--json", "scan"])
+        .arg(home.eicar_path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "Bedrohung gefunden -> Exit 1");
+    let doc = json_of(&out);
+    assert_eq!(doc["worst"], "quarantine");
+    assert_eq!(doc["report_only"], false);
+    let result = &doc["results"][0];
+    assert_eq!(result["sha256"], EICAR_SHA256);
+    assert_eq!(result["score"], 100);
+    assert_eq!(result["action"], "quarantined");
+    let id = result["quarantine_id"].as_str().expect("quarantine_id fehlt");
+    assert!(!home.eicar_path().exists());
+
+    let list = json_of(
+        &home
+            .guardian()
+            .args(["--json", "quarantine", "list"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(list["entries"][0]["id"], id);
+
+    let restored = home
+        .guardian()
+        .args(["--json", "quarantine", "restore", id])
+        .output()
+        .unwrap();
+    assert!(restored.status.success());
+    assert_eq!(
+        json_of(&restored)["restored"],
+        home.eicar_path().to_string_lossy().as_ref()
+    );
+    assert!(home.eicar_path().exists());
+
+    let again = home
+        .guardian()
+        .args(["--json", "quarantine", "restore", id])
+        .output()
+        .unwrap();
+    assert!(!again.status.success());
+    assert!(json_of(&again)["error"].is_string());
+}
+
+#[test]
+fn no_quarantine_scans_for_real_but_moves_and_logs_nothing() {
+    let home = TestHome::new();
+    std::fs::write(home.eicar_path(), EICAR).unwrap();
+
+    let out = home
+        .guardian()
+        .args(["--json", "scan", "--no-quarantine"])
+        .arg(home.eicar_path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let doc = json_of(&out);
+    assert_eq!(doc["report_only"], true);
+    assert_eq!(doc["results"][0]["action"], "would_quarantine");
+    assert!(doc["results"][0]["quarantine_id"].is_null());
+
+    assert!(home.eicar_path().exists(), "ein Probelauf darf nichts verschieben");
+    let events = json_of(&home.guardian().args(["--json", "events"]).output().unwrap());
+    assert_eq!(
+        events["events"].as_array().unwrap().len(),
+        0,
+        "ein Probelauf darf nichts protokollieren"
+    );
+}
+
+#[test]
+fn json_status_and_errors_are_machine_readable() {
+    let home = TestHome::new();
+    let status = json_of(&home.guardian().args(["--json", "status"]).output().unwrap());
+    assert_eq!(status["rule_files"], 1);
+    assert_eq!(status["quarantine_entries"], 0);
+    assert_eq!(
+        status["config"],
+        home.config_path().to_string_lossy().as_ref()
+    );
+
+    let bad = home
+        .guardian()
+        .args(["--json", "scan"])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(json_of(&bad)["error"].is_string());
+}
+
 #[test]
 fn rules_update_recompiles_and_reports_the_version() {
     let home = TestHome::new();

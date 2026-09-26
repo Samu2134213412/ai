@@ -18,8 +18,9 @@ test result: ok. 4 passed   (guardian-intelligence)
 test result: ok. 13 passed  (guardian-scanners)
 test result: ok. 7 passed   (guardian-response)
 test result: ok. 3 passed   (guardian-storage)
-test result: ok. 6 passed   (guardian-cli, end-to-end gegen die echte Binary)
-→ 42/42 grün
+test result: ok. 9 passed   (guardian-cli, end-to-end gegen die echte Binary,
+                             inkl. --json und scan --no-quarantine)
+→ 45/45 grün
 
 $ cargo clippy --workspace --all-targets
 → keine Warnungen

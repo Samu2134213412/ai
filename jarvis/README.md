@@ -116,10 +116,10 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (913 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (928 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
-* 410 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
+* 416 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
   Prozesse, Netzwerk sowie **Git (43 Operatoren), Python und Node.js**
   (venv, pip, ruff, pytest, npm), **Medien** (Bild über Pillow, Audio/
   Video über ffmpeg/ffprobe, 49 Operatoren), **Docker (19), nginx (8),
@@ -135,7 +135,7 @@ Fertig und getestet (913 Tests, siehe `ROADMAP.md` für die Phasen):
   `Agent._run_tool`-Pipeline wie ein einzelner Werkzeugaufruf (Permission-
   Gate, Undo, Audit), angelegt/verwaltet über `automation.macro.*`,
   ausgeführt über den eigenen Modus `mode: "macro"`
-* **Tool Discovery:** bei 410 Werkzeugen passen die vollständigen Schemata
+* **Tool Discovery:** bei 416 Werkzeugen passen die vollständigen Schemata
   nicht mehr ins Kontextfenster — vor jeder Modellanfrage sucht
   `discovery.py` lokal und deterministisch (Begriffstreffer, Tippfehler-
   toleranz, Favoriten-/Verlaufs-/Kontextbonus) die passende Handvoll
@@ -166,6 +166,13 @@ Fertig und getestet (913 Tests, siehe `ROADMAP.md` für die Phasen):
   Externe Programme (ffmpeg, Tesseract, nginx, …) bleiben bewusst außen vor —
   die verlangen weiterhin einen Installer oder den Paketmanager des
   Betriebssystems, von Hand
+* **Guardian-Anbindung (`guardian.*`):** der Virenschutz aus `../guardian`
+  ist per Chat bedienbar — Status, Datei/Ordner prüfen (`guardian.check`,
+  mit echtem Probelauf), Quarantäne ansehen, Ereignisse, Regeln. Jarvis ruft
+  Guardians Programm mit `--json` auf, prüft jede gemeldete Quarantäne bzw.
+  Wiederherstellung auf der Platte nach, und das Zurückholen einer als
+  Bedrohung eingestuften Datei ist CRITICAL: immer mit Bestätigung — siehe
+  `server/README.md`
 * **Session-Gedächtnis (`kind="sitzung"`):** die in `ROADMAP.md` offen
   gelassene Ebene zwischen Kurz- und Langzeitgedächtnis. Zug-Paare, die aus
   dem kurzlebigen Chat-Fenster (`Agent.history`) fallen, landen jetzt mit

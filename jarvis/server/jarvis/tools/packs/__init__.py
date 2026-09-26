@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import (clipboard, db, desktop, dev, docker, fs, git, media, minecraft,
+from . import (clipboard, db, desktop, dev, docker, fs, git, guardian, media, minecraft,
               net, nginx, productivity, search, sysinfo, text)
 
 #: Reihenfolge = Ladereihenfolge. Sie ist ohne Bedeutung für das Ergebnis
@@ -42,6 +42,7 @@ PACKS: tuple[tuple[str, Callable], ...] = (
     ("productivity", productivity.build),
     ("search", search.build),
     ("desktop", desktop.build),
+    ("guardian", guardian.build),
 )
 
 __all__ = ["PACKS"]

@@ -12,6 +12,7 @@ Tools darf die Frage „läuft das hier?" nicht jedes Mal einen Prozess starten.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import platform
 import shutil
@@ -50,8 +51,15 @@ class Probe:
     kind: str
     target: str
     install_hint: str = ""
+    #: Eigene Suche für ein Programm, das normalerweise NICHT im PATH liegt
+    #: (z. B. Guardian im Build-Ordner des Repos). Gibt den gefundenen Pfad
+    #: zurück oder "". Gesetzt über ``set_probe_finder``, nicht hier.
+    finder: Callable[[], str] | None = None
 
     def check(self) -> tuple[bool, str]:
+        if self.finder is not None:
+            found = self.finder()
+            return (bool(found), found or "")
         if self.kind == "binary":
             found = shutil.which(self.target)
             return (bool(found), found or "")
@@ -84,6 +92,9 @@ PROBES: dict[str, Probe] = {p.key: p for p in (
     Probe("java", "Java", "binary", "java", "https://adoptium.net"),
     Probe("qrcode", "qrcode", "module", "qrcode", "pip install qrcode"),
     Probe("pyautogui", "PyAutoGUI", "module", "pyautogui", "pip install pyautogui"),
+    Probe("guardian", "Guardian", "binary", "guardian",
+          "im Ordner guardian/: cargo build --release (Rust: https://rustup.rs), "
+          "oder guardian.binary in der jarvis.json"),
 )}
 
 #: Ergebnis-Zwischenspeicher, damit dieselbe Frage keinen zweiten Prozess kostet.
@@ -104,6 +115,15 @@ def probe(key: str) -> tuple[bool, str]:
 def reset_probes() -> None:
     """Nach einer Installation neu messen (und für Tests)."""
     _probe_cache.clear()
+
+
+def set_probe_finder(key: str, finder: Callable[[], str]) -> None:
+    """Hängt einer bekannten Abhängigkeit eine eigene Suche an -- für ein
+    Pack, dessen Programm an einer konfigurierbaren Stelle liegt statt im
+    PATH. Die Suche läuft bei Bedarf (und nach ``reset_probes`` neu), nicht
+    schon beim Anhängen."""
+    PROBES[key] = dataclasses.replace(PROBES[key], finder=finder)
+    _probe_cache.pop(key, None)
 
 
 def missing_dependencies(tool: Tool) -> list[str]:

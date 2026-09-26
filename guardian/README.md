@@ -5,7 +5,7 @@ modular für eine spätere Linux-Unterstützung. Ausschließlich defensiv:
 kein Code hier greift an, umgeht fremde Sicherheitssoftware oder baut
 Malware/Persistenztechniken nach.
 
-**Stand:** Phase 1 abgeschlossen und getestet (42/42 Tests grün). Siehe
+**Stand:** Phase 1 abgeschlossen und getestet (45/45 Tests grün). Siehe
 `STATUS.md` für den vollständigen Nachweis und `ROADMAP.md` für die
 restlichen Phasen. `ARCHITECTURE.md` erklärt Aufbau und Entscheidungen.
 
@@ -21,6 +21,14 @@ cargo test --workspace
 ./target/debug/guardian rules update
 ./target/debug/guardian events
 ```
+
+**Für Programme statt Menschen:** `--json` (bei jedem Befehl) gibt genau ein
+JSON-Dokument auf stdout aus statt Text -- Exit-Codes bleiben gleich,
+Warnungen gehen weiterhin auf stderr und stehen zusätzlich im JSON.
+`scan --no-quarantine` ist ein echter Probelauf: jede Datei wird wirklich
+bewertet, aber nichts verschoben und nichts protokolliert. Beides nutzt
+**Jarvis** (`../jarvis`, Werkzeuge `guardian.*`), um Guardian per Chat zu
+bedienen, ohne Textausgabe raten zu müssen.
 
 Ohne `--config <pfad>` benutzt Guardian `%PROGRAMDATA%\Guardian\config.toml`
 unter Windows (bzw. `~/.guardian/config.toml` in einer Entwicklungsumgebung

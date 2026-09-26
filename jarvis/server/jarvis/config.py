@@ -98,6 +98,22 @@ class SearchConfig:
 
 
 @dataclass
+class GuardianConfig:
+    """Der Virenschutz Guardian (``../guardian``, eigenes Rust-Projekt) --
+    Jarvis ruft sein Programm auf, statt einen zweiten Scanner nachzubauen
+    (siehe ``tools/packs/guardian.py``)."""
+    #: Pfad zur ``guardian``-Datei. Leer heißt: erst im PATH suchen, dann im
+    #: gebauten Repo-Ordner (``guardian/target/release`` bzw. ``debug``).
+    binary: str = ""
+    #: Guardians eigene config.toml. Leer heißt: Guardians Vorgabe
+    #: (``%PROGRAMDATA%\\Guardian\\config.toml`` bzw. ``~/.guardian``).
+    config: str = ""
+    #: Sekunden, die ein Scan höchstens dauern darf -- ein ganzer Ordner mit
+    #: vielen Dateien braucht deutlich länger als die übrigen Befehle.
+    scan_timeout: int = 900
+
+
+@dataclass
 class Config:
     # -- Netz ---------------------------------------------------------------
     host: str = "127.0.0.1"
@@ -129,6 +145,7 @@ class Config:
     code: CodeConfig = field(default_factory=CodeConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
+    guardian: GuardianConfig = field(default_factory=GuardianConfig)
     permissions: PermissionConfig = field(default_factory=PermissionConfig)
     #: Wie viel Eigeninitiative Jarvis nehmen darf (siehe autonomy.py).
     #: 2 ist "ein sinnvoller mittlerer Level", wie gefordert: normale
@@ -223,6 +240,10 @@ class Config:
             data["search"] = SearchConfig(**{
                 k: v for k, v in data["search"].items()
                 if k in {f.name for f in fields(SearchConfig)}})
+        if isinstance(data.get("guardian"), dict):
+            data["guardian"] = GuardianConfig(**{
+                k: v for k, v in data["guardian"].items()
+                if k in {f.name for f in fields(GuardianConfig)}})
         if isinstance(data.get("permissions"), dict):
             data["permissions"] = PermissionConfig(**{
                 k: v for k, v in data["permissions"].items()

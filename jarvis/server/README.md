@@ -430,7 +430,7 @@ Watchdog aus Autonomy V1.
 
 ## Tool Discovery
 
-Bei 410 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
+Bei 416 Werkzeugen passen die vollständigen Schemata nicht mehr in eine
 Modellanfrage -- grob 60.000 Token, mehr als das Kontextfenster. Nicht
 langsam, sondern kaputt. Deshalb bekommt das Modell nie mehr den ganzen
 Katalog: ``discovery.py`` sucht vorher lokal und deterministisch (kein
@@ -560,6 +560,41 @@ ist der Hosenträger.
 | `desktop.mouse.*` `desktop.keyboard.*` | Maus bewegen/klicken, Text tippen, Tasten drücken -- **SYSTEM**, braucht PyAutoGUI + einen echten Bildschirm |
 | `search.web` | Web-Suche über SearXNG oder Brave Search -- siehe „Web-Suche" unten, ohne eingetragenen Dienst ehrlich als nicht eingerichtet gemeldet |
 | `search.apps.open` | startet ein von `search.apps` gefundenes Programm -- **SYSTEM**, kein Shell-Aufruf |
+| `guardian.*` | der Virenschutz Guardian (`../guardian`) -- siehe „Guardian" unten |
+
+### Guardian (Virenschutz)
+
+Jarvis scannt nicht selbst: das Rust-Projekt Guardian im selben Repo
+(Hash-/YARA-Erkennung, Punktwert 0-100, umkehrbare Quarantäne) ist bereits
+gebaut und getestet. `tools/packs/guardian.py` ruft dessen Programm mit
+`--json` auf und wertet nur die JSON-Antwort aus, nie Fließtext.
+
+| Werkzeug | Stufe | |
+|---|---|---|
+| `guardian.status` | READ | Regeln, bekannte Hashes, Quarantäne, Protokollort |
+| `guardian.check` | **WRITE** | Datei/Ordner prüfen; ab dem Quarantäne-Schwellwert wird die Datei verschoben. `dry_run` = echter Scan mit `--no-quarantine`: bewertet alles, verschiebt und protokolliert nichts |
+| `guardian.quarantine.list` | READ | was in Quarantäne liegt, mit ID, Punktwert und Grund |
+| `guardian.quarantine.restore` | **CRITICAL** | holt eine als Bedrohung eingestufte Datei zurück -- *immer* mit Bestätigung, auch wenn die Policy sonst lockerer ist |
+| `guardian.events` | READ | Guardians Ereignisprotokoll |
+| `guardian.rules.update` | READ | lokale YARA-Regeln prüfen und neu laden |
+
+* **Nicht blind glauben.** Meldet Guardian „in Quarantäne verschoben", prüft
+  Jarvis, dass die Datei an ihrem alten Ort wirklich weg ist; meldet es
+  „wiederhergestellt", dass sie wirklich wieder da ist.
+* **Dieselbe Pfadgrenze** wie jedes Dateiwerkzeug: `guardian.check` mit Pfad
+  nimmt nur Ziele innerhalb von `roots`. `full: true` prüft Guardians eigene,
+  in dessen `config.toml` eingetragene Scan-Ordner.
+* **Heißt `check`, nicht `scan`** -- der Schutztest gegen offensive Werkzeuge
+  (Punkt 8, `test_es_gibt_keinen_portscanner`) verbietet „scan" in
+  Werkzeugnamen, und das bleibt so streng, statt für Guardian aufgeweicht zu
+  werden.
+* **Wo liegt Guardian?** `guardian.binary` in der `jarvis.json`; leer heißt:
+  PATH, dann `guardian/target/release`, dann `guardian/target/debug`. Ein
+  eingetragener, aber fehlender Pfad gilt als „nicht gefunden", statt
+  stillschweigend eine andere Guardian-Datei zu nehmen. Solange Guardian
+  nicht gebaut ist, stehen die Werkzeuge in der Statusliste auf
+  `nachrüsten` mit dem Bauhinweis (`cargo build --release` im Ordner
+  `guardian/`).
 
 ### Sicherheit
 
@@ -597,6 +632,7 @@ Schalter, und **kein** Umgehen des Permission-Systems: jeder einzelne
   "code": {"model": "qwen3-coder:30b", "max_rounds": 14, "auto_check": true},
   "whisper": {"api_key": "", "model": "whisper-1", "timeout": 30},
   "search": {"searxng_url": "", "brave_api_key": "", "timeout": 15},
+  "guardian": {"binary": "", "config": "", "scan_timeout": 900},
   "permissions": {"confirm_read": false, "confirm_write": true,
                   "confirm_system": true, "confirmation_timeout": 300.0}
 }
