@@ -35,7 +35,7 @@ def b64(data: bytes) -> str:
 
 def main() -> None:
     installer = (SRC / "install.ps1").read_text(encoding="utf-8")
-    for name in ("server.ps1", "admin.html", "uninstall.ps1", "start.html"):
+    for name in ("server.ps1", "host.ps1", "uninstall.ps1", "admin.html", "login.html", "start.html"):
         placeholder = f"__B64_{name}__"
         assert placeholder in installer, placeholder
         installer = installer.replace(placeholder, b64((SRC / name).read_bytes()))

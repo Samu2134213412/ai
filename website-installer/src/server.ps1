@@ -1,28 +1,42 @@
-# Lokaler Webserver fuer "Meine Website".
+# Webserver fuer "Meine Website".
 # Liefert den Ordner "website" aus und stellt unter /_admin/ eine
 # Bearbeiten-Seite bereit (Design hochladen, Dateien bearbeiten).
-# Laeuft nur auf diesem PC (http://localhost), braucht keine Admin-Rechte
-# und nichts ausser dem PowerShell, das in Windows schon drin ist.
+# Lauscht nur auf diesem PC (http://localhost), braucht keine Admin-Rechte
+# und nichts ausser dem PowerShell, das in Windows schon drin ist. Im
+# Online-Modus leitet ein Cloudflare Tunnel die Besucher deiner Domain
+# hierher weiter; dann ist die Bearbeiten-Seite mit einem Passwort geschuetzt.
 param(
     [switch]$Admin,      # nach dem Start die Bearbeiten-Seite oeffnen
-    [switch]$NoBrowser   # keinen Browser oeffnen
+    [switch]$NoBrowser,  # keinen Browser oeffnen
+    [switch]$Service     # laeuft unsichtbar im Hintergrund (Online-Modus)
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if ($Service) { $NoBrowser = $true }
 
 $AppDir    = $PSScriptRoot
 $BaseDir   = Split-Path $AppDir -Parent
 $SiteDir   = Join-Path $BaseDir 'website'
 $BackupDir = Join-Path $BaseDir 'backups'
 $AdminFile = Join-Path $AppDir 'admin.html'
+$LoginFile = Join-Path $AppDir 'login.html'
 $Marker    = 'meine-website-server'
 $MaxBackups = 15
 
 $SiteName = 'Meine Website'
+$Config = $null
 $configFile = Join-Path $AppDir 'config.json'
 if (Test-Path $configFile) {
-    try { $SiteName = (Get-Content $configFile -Raw -Encoding UTF8 | ConvertFrom-Json).name } catch {}
+    try { $Config = Get-Content $configFile -Raw -Encoding UTF8 | ConvertFrom-Json; $SiteName = $Config.name } catch {}
+}
+$PasswordHash = $null
+$FixedPort = 0
+$Domain = $null
+if ($Config) {
+    if ($Config.password) { $PasswordHash = [string]$Config.password }
+    if ($Config.port) { $FixedPort = [int]$Config.port }
+    if ($Config.domain) { $Domain = [string]$Config.domain }
 }
 foreach ($d in @($SiteDir, $BackupDir)) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d | Out-Null }
@@ -185,6 +199,78 @@ function Expand-Upload([byte[]]$zipBytes, [bool]$replace) {
     }
 }
 
+# ------------------------------------------------------------- Anmeldung
+# Nur aktiv, wenn beim Installieren ein Passwort gesetzt wurde (Online-Modus).
+$CookieName   = 'mw_session'
+$SessionDays  = 30
+$MaxFailures  = 5
+$LockMinutes  = 15
+$Sessions = @{}   # Token -> Ablaufzeit
+$Failures = @{}   # IP -> @{ count; until }
+
+function Test-Password([string]$password) {
+    # Format: pbkdf2-sha256$<Runden>$<Salz base64>$<Hash base64>
+    $parts = $PasswordHash.Split('$')
+    if ($parts.Count -ne 4) { return $false }
+    $salt = [Convert]::FromBase64String($parts[2])
+    $expected = [Convert]::FromBase64String($parts[3])
+    $kdf = New-Object Security.Cryptography.Rfc2898DeriveBytes($password, $salt, [int]$parts[1], [Security.Cryptography.HashAlgorithmName]::SHA256)
+    $actual = $kdf.GetBytes($expected.Length)
+    $diff = 0
+    for ($i = 0; $i -lt $expected.Length; $i++) { $diff = $diff -bor ($expected[$i] -bxor $actual[$i]) }
+    return $diff -eq 0
+}
+
+function Get-ClientIp($req) {
+    $cf = $req.Headers['CF-Connecting-IP']   # vom Cloudflare Tunnel gesetzt
+    if ($cf) { return $cf }
+    return $req.RemoteEndPoint.Address.ToString()
+}
+
+function Test-LoggedIn($req) {
+    if (-not $PasswordHash) { return $true }
+    $c = $req.Cookies[$CookieName]
+    if (-not $c -or -not $Sessions.ContainsKey($c.Value)) { return $false }
+    if ($Sessions[$c.Value] -lt (Get-Date)) { $Sessions.Remove($c.Value); return $false }
+    $Sessions[$c.Value] = (Get-Date).AddDays($SessionDays)
+    return $true
+}
+
+function Set-SessionCookie($ctx, [string]$value, [int]$maxAge) {
+    $cookie = "$CookieName=$value; Path=/; HttpOnly; SameSite=Lax; Max-Age=$maxAge"
+    if ($ctx.Request.Headers['X-Forwarded-Proto'] -eq 'https') { $cookie += '; Secure' }
+    $ctx.Response.AppendHeader('Set-Cookie', $cookie)
+}
+
+function Invoke-Login($ctx) {
+    $req = $ctx.Request
+    $ip = Get-ClientIp $req
+    $now = Get-Date
+    $f = $Failures[$ip]
+    if ($f -and $f.until -gt $now) {
+        $min = [Math]::Ceiling(($f.until - $now).TotalMinutes)
+        Send-Error $ctx 429 "Zu viele falsche Versuche. Bitte in $min Minuten nochmal probieren."
+        return
+    }
+    $password = [Text.Encoding]::UTF8.GetString((Read-Body $req))
+    if ($PasswordHash -and (Test-Password $password)) {
+        $Failures.Remove($ip)
+        foreach ($k in @($Sessions.Keys)) { if ($Sessions[$k] -lt $now) { $Sessions.Remove($k) } }
+        $bytes = New-Object byte[] 32
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $token = [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+        $Sessions[$token] = $now.AddDays($SessionDays)
+        Set-SessionCookie $ctx $token ($SessionDays * 86400)
+        Send-Json $ctx @{ ok = $true }
+        return
+    }
+    if (-not $f) { $f = @{ count = 0; until = $now }; $Failures[$ip] = $f }
+    $f.count++
+    if ($f.count -ge $MaxFailures) { $f.count = 0; $f.until = $now.AddMinutes($LockMinutes) }
+    Write-Host "Falsches Passwort von $ip" -ForegroundColor Yellow
+    Send-Error $ctx 401 'Falsches Passwort.'
+}
+
 # ------------------------------------------------------------------- API
 function Invoke-Api($ctx, [string]$action) {
     $req = $ctx.Request
@@ -196,9 +282,19 @@ function Invoke-Api($ctx, [string]$action) {
     # Webseiten im Browser koennen diesen Header nicht mitschicken.
     if ($req.Headers['X-Meine-Website'] -ne '1') { Send-Error $ctx 403 'Nicht erlaubt.'; return }
 
+    if ("$method $action" -eq 'POST login') { Invoke-Login $ctx; return }
+    if (-not (Test-LoggedIn $req)) { Send-Error $ctx 401 'Nicht angemeldet.'; return }
+
     switch ("$method $action") {
+        'POST logout' {
+            $c = $req.Cookies[$CookieName]
+            if ($c) { $Sessions.Remove($c.Value) }
+            Set-SessionCookie $ctx 'x' 0
+            Send-Json $ctx @{ ok = $true }
+        }
         'GET info' {
-            Send-Json $ctx @{ name = $SiteName; folder = $BaseDir; site = $SiteDir; url = "http://localhost:$Port/" }
+            Send-Json $ctx @{ name = $SiteName; folder = $BaseDir; site = $SiteDir; url = "http://localhost:$Port/"
+                              domain = $Domain; service = [bool]$Service; login = [bool]$PasswordHash }
         }
         'GET files' {
             $list = @(Get-ChildItem -LiteralPath $SiteDir -Recurse -File -Force | Sort-Object FullName | ForEach-Object {
@@ -243,6 +339,7 @@ function Invoke-Api($ctx, [string]$action) {
             Send-Json $ctx @{ redirect = (Ensure-Index) }
         }
         'POST open-folder' {
+            if ($Service) { Send-Error $ctx 400 'Ordner lassen sich nur direkt am PC oeffnen.'; return }
             $which = $req.QueryString['which']
             $target = $SiteDir
             if ($which -eq 'backups') { $target = $BackupDir }
@@ -261,7 +358,11 @@ function Invoke-Request($ctx) {
 
     if ($path -eq '/_admin') { Send-Redirect $ctx '/_admin/'; return }
     if ($path -eq '/_admin/') {
-        Send-Bytes $ctx 200 'text/html; charset=utf-8' ([IO.File]::ReadAllBytes($AdminFile))
+        $file = $AdminFile
+        if (-not (Test-LoggedIn $req)) { $file = $LoginFile }
+        $ctx.Response.Headers['X-Frame-Options'] = 'DENY'
+        $ctx.Response.Headers['Referrer-Policy'] = 'no-referrer'
+        Send-Bytes $ctx 200 'text/html; charset=utf-8' ([IO.File]::ReadAllBytes($file))
         return
     }
     if ($path.StartsWith('/_api/')) {
@@ -283,13 +384,16 @@ function Invoke-Request($ctx) {
     }
 
     $safe = [Net.WebUtility]::HtmlEncode($path)
+    # Oeffentliche Besucher sollen keinen Link zur Bearbeiten-Seite sehen.
+    $adminLink = ''
+    if (-not $Domain) { $adminLink = ' &nbsp;&middot;&nbsp; <a href="/_admin/">Website bearbeiten</a>' }
     $page = @"
 <!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Nicht gefunden</title>
 <body style="font-family:system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 20px;color:#222">
 <h1 style="font-size:28px">Seite nicht gefunden</h1>
-<p>Die Datei <code>$safe</code> gibt es auf deiner Website (noch) nicht.</p>
-<p><a href="/">Zur Startseite</a> &nbsp;&middot;&nbsp; <a href="/_admin/">Website bearbeiten</a></p>
+<p>Die Seite <code>$safe</code> gibt es hier nicht.</p>
+<p><a href="/">Zur Startseite</a>$adminLink</p>
 </body></html>
 "@
     Send-Text $ctx 404 $page 'text/html; charset=utf-8'
@@ -304,7 +408,9 @@ function Open-Browser([string]$url) {
 try { $Host.UI.RawUI.WindowTitle = "$SiteName - Webserver" } catch {}
 $listener = $null
 $Port = 0
-foreach ($p in 8080..8099) {
+$ports = 8080..8099
+if ($FixedPort) { $ports = @($FixedPort) }   # Online-Modus: der Tunnel erwartet genau diesen Port
+foreach ($p in $ports) {
     # Laeuft die Website schon? Dann nur den Browser oeffnen.
     try {
         $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri "http://localhost:$p/_api/ping"
@@ -321,8 +427,8 @@ foreach ($p in 8080..8099) {
     try { $l.Start(); $listener = $l; $Port = $p; break } catch { $l.Close() }
 }
 if (-not $listener) {
-    Write-Host 'Es wurde kein freier Port (8080-8099) gefunden. Bitte den PC neu starten und es erneut versuchen.' -ForegroundColor Red
-    Read-Host 'Enter zum Schliessen'
+    Write-Host "Kein freier Port gefunden ($($ports[0])-$($ports[-1])). Bitte den PC neu starten und es erneut versuchen." -ForegroundColor Red
+    if (-not $Service) { Read-Host 'Enter zum Schliessen' }
     exit 1
 }
 
@@ -333,10 +439,13 @@ Write-Host ''
 Write-Host "  Website ansehen:     $url"
 Write-Host "  Website bearbeiten:  ${url}_admin/"
 Write-Host "  Dateien liegen in:   $SiteDir"
+if ($Domain) { Write-Host "  Im Internet:         https://$Domain/" }
 Write-Host ''
-Write-Host '  Dieses Fenster offen lassen (minimieren ist ok).' -ForegroundColor Yellow
-Write-Host '  Fenster schliessen = Website ausschalten.' -ForegroundColor Yellow
-Write-Host ''
+if (-not $Service) {
+    Write-Host '  Dieses Fenster offen lassen (minimieren ist ok).' -ForegroundColor Yellow
+    Write-Host '  Fenster schliessen = Website ausschalten.' -ForegroundColor Yellow
+    Write-Host ''
+}
 
 if ($Admin) { Open-Browser "${url}_admin/" } else { Open-Browser $url }
 

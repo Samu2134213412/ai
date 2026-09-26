@@ -81,6 +81,7 @@
   <a class="btn primary" href="/" target="_blank">Website ansehen &#8599;</a>
   <button id="openFolder" title="Den Ordner mit deinen Website-Dateien im Explorer oeffnen">Ordner &ouml;ffnen</button>
   <button id="openBackups" title="Automatische Sicherungen ansehen">Sicherungen</button>
+  <button id="logout" hidden>Abmelden</button>
 </header>
 
 <main>
@@ -148,6 +149,7 @@ async function api(action, { method = 'GET', params = {}, body } = {}) {
   const res = await fetch('/_api/' + action + (qs ? '?' + qs : ''), {
     method, body, headers: { 'X-Meine-Website': '1' }
   });
+  if (res.status === 401) { location.reload(); throw new Error('Bitte neu anmelden.'); }
   if (!res.ok) {
     let msg = res.status + ' ' + res.statusText;
     try { msg = (await res.json()).error || msg; } catch {}
@@ -416,7 +418,16 @@ api('info').then(r => r.json()).then(info => {
   document.title = info.name + ' bearbeiten';
   $('siteName').innerHTML = '';
   $('siteName').append(info.name, Object.assign(document.createElement('small'), { textContent: 'bearbeiten' }));
+  // Laeuft als Hintergrunddienst: Explorer-Fenster koennen nicht geoeffnet werden.
+  if (info.service) { $('openFolder').hidden = true; $('openBackups').hidden = true; }
+  if (info.login) $('logout').hidden = false;
 }).catch(() => {});
+$('logout').onclick = async () => {
+  if (isDirty() && !confirm('Ungespeicherte Änderungen gehen verloren. Trotzdem abmelden?')) return;
+  original = $('editor').value;   // keine zweite Nachfrage beim Neuladen
+  try { await api('logout', { method: 'POST' }); } catch {}
+  location.reload();
+};
 loadFiles();
 </script>
 </body>
