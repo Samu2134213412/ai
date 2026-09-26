@@ -1,0 +1,29 @@
+# Webserver-Konfiguration fuer WordPress (angelegt vom Website-Installer).
+# Caddy liefert die Dateien aus und reicht PHP an mehrere php-cgi-Prozesse
+# weiter. Er lauscht nur auf diesem PC; von aussen kommen Besucher ueber den
+# Cloudflare Tunnel.
+{
+	admin off
+	persist_config off
+	auto_https off
+	servers {
+		# Der Tunnel laeuft auf diesem PC und meldet, dass die Besucher HTTPS nutzen.
+		trusted_proxies static private_ranges
+	}
+}
+
+http://:__PORT__ {
+	bind 127.0.0.1 [::1]
+	root * "__ROOT__"
+	encode zstd gzip
+
+	# Datenbank, Konfiguration und XML-RPC niemals ausliefern.
+	@geheim path_regexp (?i)^/(wp-content/database/|wp-config\.php|xmlrpc\.php)|/\.ht
+	respond @geheim 404
+
+	php_fastcgi __PHP_UPSTREAMS__ {
+		lb_policy least_conn
+		lb_try_duration 10s
+	}
+	file_server
+}

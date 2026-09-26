@@ -4,7 +4,15 @@ Eine Datei, doppelklicken, fertig: **`Website-Installer.bat`** richtet auf einem
 Windows-PC (10 oder 11) eine eigene Website ein. Keine Admin-Rechte, keine
 zusätzlichen Programme – es nutzt nur das PowerShell, das in Windows schon drin ist.
 
-Zwei Modi, die der Installer abfragt:
+Der Installer fragt zuerst, **was für eine Website** es sein soll:
+
+- **[1] Einfache Website** – dein HTML-Design (z. B. aus Claude Design) hochladen und im
+  eingebauten Editor bearbeiten.
+- **[2] WordPress** – das bekannte WordPress, auf Deutsch. Seiten, Beiträge, Bilder, Menüs,
+  Plugins und Themes bearbeitest du im WordPress-Dashboard.
+  Details unten unter [WordPress](#wordpress).
+
+Danach fragt er, **wo** sie laufen soll:
 
 - **[1] Nur auf diesem PC** – zum Ausprobieren, nur du siehst die Seite.
 - **[2] Im Internet unter deiner eigenen Domain** – dieser PC wird zum Server.
@@ -61,6 +69,41 @@ Um die Seite später ins Internet zu stellen, einfach den Inhalt von `website\`
 bei einem Hoster hochladen (z. B. Netlify, GitHub Pages, Cloudflare Pages –
 per Drag & Drop).
 
+## WordPress
+
+Alles, was WordPress braucht, landet portabel im Website-Ordner. Ins System wird nichts
+installiert, außer bei Bedarf der Visual-C++-Laufzeit von Microsoft, die PHP braucht.
+
+| Teil | Wofür |
+|---|---|
+| **PHP 8.3** (offizieller Windows-Build) | darin läuft WordPress, mit 4 Prozessen für mehrere Besucher gleichzeitig |
+| **Caddy** | schneller Webserver, reicht Anfragen an PHP weiter |
+| **WordPress (deutsch)** | direkt von de.wordpress.org |
+| **SQLite Database Integration** | offizielles Plugin vom WordPress-Team, Datenbank als Datei statt MySQL |
+
+Der Installer fragt nach Benutzername, E-Mail und Passwort für WordPress und richtet
+alles fertig ein: deutsche Datums-/Zeitformate, schöne Links (`/meine-seite/`) und ein
+kleines Schutz-Plugin. Das Plugin sperrt die Anmeldung nach 5 falschen Passwörtern
+15 Minuten lang und schaltet XML-RPC ab. Die Datenbank, `wp-config.php` und
+`xmlrpc.php` liefert der Webserver nie aus.
+
+WordPress läuft im Hintergrund und startet mit Windows, auch lokal. Deshalb fragt Windows
+einmal nach Administrator-Rechten. Bearbeiten geht unter `…/wp-admin/`.
+
+**Dein Claude-Design in WordPress:** In WordPress kommt das Aussehen aus einem *Theme*.
+Aus deinem Claude-Design-Export kann Claude ein WordPress-Theme machen. Das lädst du dann unter
+**Design → Themes → Theme hochladen** hoch. Danach bearbeitest du Texte und Bilder
+direkt im WordPress-Editor.
+
+Hinweise:
+
+- WordPress kann von diesem PC aus keine E-Mails verschicken (z. B. „Passwort vergessen“).
+  Leg dir am besten einen zweiten Admin-Benutzer als Reserve an.
+- Sichern: den ganzen Ordner `website\` kopieren. Die Datenbank liegt in
+  `website\wp-content\database\`.
+- Wechselst du von lokal auf deine Domain (Installer erneut mit [2] starten), zieht der
+  Installer die Adresse in WordPress samt Links in Beiträgen mit um.
+
 ## Online mit eigener Domain
 
 Der PC wird über einen **Cloudflare Tunnel** mit deiner Domain verbunden. Das ist kostenlos,
@@ -77,10 +120,11 @@ Deine Heim-IP-Adresse bleibt dabei verborgen.
 
 **Dann:** Installer starten, **[2]** wählen und den Anweisungen folgen. Der Installer
 
-- fragt ein Passwort für die Bearbeiten-Seite ab (gespeichert nur als PBKDF2-Hash),
+- fragt bei der einfachen Website ein Passwort für die Bearbeiten-Seite ab (gespeichert nur als
+  PBKDF2-Hash). Bei WordPress schützt WordPress selbst die Anmeldung,
 - lädt `cloudflared` herunter und öffnet den Browser für die Cloudflare-Anmeldung,
 - legt den Tunnel an und setzt die DNS-Einträge für `deine-domain.de` und `www.deine-domain.de`,
-- richtet eine Windows-Aufgabe ein, die Webserver und Tunnel **beim Hochfahren startet**
+- richtet eine Windows-Aufgabe ein, die Webserver (bzw. PHP + Caddy) und Tunnel **beim Hochfahren startet**
   (auch ohne Anmeldung) und bei Absturz neu startet,
 - schaltet den Standby am Stromnetz ab, damit der Server wach bleibt.
 
@@ -104,4 +148,5 @@ python build.py
 ```
 
 `build.py` packt `install.ps1` samt `server.ps1`, `host.ps1`, `uninstall.ps1`,
-`admin.html`, `login.html` und `start.html` (Base64) in `Website-Installer.bat`.
+`admin.html`, `login.html`, `start.html` und den Dateien in `src/wordpress/`
+(Base64) in `Website-Installer.bat`.

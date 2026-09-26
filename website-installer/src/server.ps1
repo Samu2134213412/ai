@@ -374,6 +374,8 @@ function Invoke-Request($ctx) {
     if ($req.HttpMethod -ne 'GET' -and $req.HttpMethod -ne 'HEAD') { Send-Text $ctx 405 'Nicht erlaubt.'; return }
 
     try { $full = Resolve-SitePath $path -AllowRoot } catch { $full = $null }
+    # Quelltext und Datenbanken nie ausliefern (z. B. Reste einer WordPress-Installation).
+    if ($full -and ($full -match '(?i)\.(php|sqlite)$' -or [IO.Path]::GetFileName($full).StartsWith('.ht'))) { $full = $null }
     if ($full -and (Test-Path -LiteralPath $full -PathType Container)) {
         if (-not $path.EndsWith('/')) { Send-Redirect $ctx ($req.Url.AbsolutePath + '/'); return }
         $full = Join-Path $full 'index.html'
