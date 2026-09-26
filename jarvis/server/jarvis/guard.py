@@ -114,14 +114,21 @@ class Reply:
     #: Gesetzt, wenn der Wächter den Text des Modells verworfen hat.
     blocked: bool = False
     blocked_text: str = ""
+    #: Etwas, das nur der Nutzer selbst entscheiden kann und die Oberfläche
+    #: als Knopf anbietet (z. B. eine höhere Autonomiestufe). Kein Werkzeug
+    #: und kein Modell löst es aus.
+    offer: dict | None = None
 
     def as_event(self) -> dict:
-        return {
+        event = {
             "text": self.text,
             "provenance": self.provenance,
             "evidence": [r.as_event() for r in self.results],
             "blocked": self.blocked,
         }
+        if self.offer:
+            event["angebot"] = self.offer
+        return event
 
 
 def claims_completion(text: str) -> bool:

@@ -783,14 +783,24 @@ class Agent:
     # ausschließlich die Liste der ``ToolResult``s -- und, wo es einen
     # Verifizierer gibt, dessen unabhängige Nachprüfung.
 
-    def _refuse_autonomy(self) -> guard.Reply:
+    def _refuse_autonomy(self, goal: str = "", *, extension: bool = False) -> guard.Reply:
+        """Die Stufe reicht nicht -- und nur der Nutzer darf sie anheben.
+
+        Die Antwort trägt deshalb ein Angebot, aus dem die Oberfläche einen
+        Knopf macht ("Stufe 3 erlauben und Ziel starten"): Der Nutzer
+        bestätigt, die Oberfläche setzt die Stufe über ``PUT /api/autonomy``
+        und schickt den Auftrag erneut. Jarvis selbst hebt die Stufe nie an --
+        kein Werkzeug führt dorthin."""
         autonomy = self.config.autonomy
         return guard.Reply(
             text=(f"Autonomiestufe {int(autonomy)} ({autonomy.label}) erlaubt keine "
-                  "eigenständige Zielverfolgung -- das braucht Stufe 3. Sage mir "
-                  "stattdessen einzelne Schritte, oder hebe autonomy_level in "
-                  "jarvis.json an."),
-            provenance=guard.TALK)
+                  "eigenständige Zielverfolgung -- das braucht Stufe 3. Du kannst sie "
+                  "hier direkt erlauben (bleibt gespeichert, zurückstellen im Regler "
+                  "„Autonomie“), mir stattdessen einzelne Schritte sagen oder "
+                  "autonomy_level in jarvis.json anheben."),
+            provenance=guard.TALK,
+            offer={"art": "autonomie", "stufe": int(AutonomyLevel.GOAL_PURSUIT),
+                   "ziel": goal, "erweiterung": extension})
 
     async def handle_agent_task(self, goal: str, *, budget: GoalBudget | None = None
                                 ) -> guard.Reply:
@@ -805,7 +815,7 @@ class Agent:
         if not description:
             return guard.Reply(text="", provenance=guard.TALK)
         if self.config.autonomy < AutonomyLevel.GOAL_PURSUIT:
-            return self._refuse_autonomy()
+            return self._refuse_autonomy(description)
 
         target, control = self._open_goal(description, budget=budget)
         reply = await self._pursue_goal(target, control)
@@ -826,7 +836,7 @@ class Agent:
         if not description:
             return None, guard.Reply(text="", provenance=guard.TALK)
         if self.config.autonomy < AutonomyLevel.GOAL_PURSUIT:
-            return None, self._refuse_autonomy()
+            return None, self._refuse_autonomy(description)
 
         target, control = self._open_goal(description, budget=budget)
         runner = asyncio.create_task(self._run_goal_in_background(target, control))
@@ -1151,7 +1161,7 @@ class Agent:
         ändert, ist mindestens so viel Eigeninitiative wie ein einzelnes Ziel.
         """
         if self.config.autonomy < AutonomyLevel.GOAL_PURSUIT:
-            return self._refuse_autonomy()
+            return self._refuse_autonomy(extension=True)
         if self._extension is not None:
             return guard.Reply(text="Der Erweiterungsmodus läuft schon.",
                                provenance=guard.TALK)

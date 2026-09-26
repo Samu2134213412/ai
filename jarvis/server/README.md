@@ -132,6 +132,17 @@ GOAL → ANALYZE → PLAN → SELECT ACTION → EXECUTE → VERIFY → REFLECT �
 
 Die Stufe kann das Permission-System nur **verschärfen**, nie lockern.
 
+**Umstellen kann sie nur der Nutzer** — im Regler „Autonomie" der
+Oberfläche, über `PUT /api/autonomy` (`{"stufe": 0..4}`, gespeichert in der
+`jarvis.json`, mit Audit-Eintrag `jarvis.autonomy.set`) oder von Hand in der
+Datei. Reicht die Stufe für den Agent- oder Erweiterungsmodus nicht, trägt
+die Absage ein Angebot (`angebot` im Nachrichten-Ereignis), aus dem die
+Oberfläche den Knopf „Stufe 3 erlauben und Ziel starten" macht: Rückfrage,
+Stufe setzen, denselben Auftrag erneut schicken. Kein Werkzeug ändert die
+Stufe, und Jarvis' HTTP-Werkzeuge senden nur GET/HEAD — das Modell kann sich
+nicht selbst mehr Eigenständigkeit geben
+(`test_kein_werkzeug_kann_die_autonomie_aendern`).
+
 **Im Hintergrund, nicht blockierend:** `mode="agent"` antwortet sofort mit
 einer Zwischenmeldung — die nichts über ein Ergebnis behauptet — und arbeitet
 daneben weiter. Steuerbar über `POST /api/goals/{id}/{pause|resume|cancel}`

@@ -453,6 +453,17 @@ button.dg:hover{background:var(--red);color:var(--void)}
         <div class="wave" id="wave"></div>
       </section>
       <section class="fr pan" style="flex:none">
+        <h2>Autonomie<span class="rt" id="autoRt">unbekannt</span></h2>
+        <div class="in">
+          <div class="field"><label for="autoSel">Autonomiestufe</label>
+            <select id="autoSel" disabled></select></div>
+          <p class="hint">Wie viel Jarvis selbstständig tun darf. Ab Stufe 3 verfolgt er ein
+          Ziel (Agent-Modus) eigenständig über mehrere Schritte -- jeder einzelne
+          Werkzeugaufruf fragt trotzdem nach den Berechtigungsregeln. Gespeichert in
+          jarvis.json; nur du stellst sie um, nie Jarvis selbst.</p>
+        </div>
+      </section>
+      <section class="fr pan" style="flex:none">
         <h2>Erweiterungsmodus<span class="rt off" id="extRt">aus</span></h2>
         <div class="in">
           <p class="hint" id="extStatus">Läuft nicht.</p>
@@ -825,14 +836,24 @@ setMode("idle","Warte auf Verbindung zum Jarvis-Server");
    3  DIALOG — jede Aussage traegt ihren Beleg
    ═══════════════════════════════════════════════════════════════ */
 const PROV={tool:["tool","Tool-Beleg"],talk:["talk","kein Tool"],fail:["fail","fehlgeschlagen"]};
-function say({who,text,prov="talk",demo=false,evidence=null,fail=false,mode=null}){
+const OFFERS=new Map(); let offerSeq=0;
+function offerHtml(offer){
+  // Nur was der Nutzer selbst entscheiden muss (guard.Reply.offer). Bisher:
+  // eine höhere Autonomiestufe, danach derselbe Auftrag noch einmal.
+  if(!offer || offer.art!=="autonomie") return "";
+  const id="o"+(++offerSeq); OFFERS.set(id,offer);
+  const was=offer.ziel?" und Ziel starten":offer.erweiterung?" und Erweiterungsmodus starten":"";
+  return `<div class="btnrow"><button type="button" data-offer="${id}">Stufe ${Number(offer.stufe)} erlauben${was}</button></div>`;
+}
+function say({who,text,prov="talk",demo=false,evidence=null,fail=false,mode=null,offer=null}){
   const n=el("article","msg"+(who==="me"?" me":"")), tags=[];
   if(demo) tags.push('<span class="pv demo">Demo</span>');
   if(mode==="code") tags.push('<span class="pv tool">Code-Modus</span>');
   if(mode==="agent") tags.push('<span class="pv warn">Agent-Modus</span>');
   if(who!=="me"){ const p=PROV[prov]||PROV.talk; tags.push(`<span class="pv ${p[0]}">${p[1]}</span>`); }
   n.innerHTML=`<div class="who">${who==="me"?"Du":"Jarvis"}${tags.join("")}</div><p>${text}</p>`
-    +(evidence?`<div class="ev${fail?" bad":""}">${evidence}</div>`:"");
+    +(evidence?`<div class="ev${fail?" bad":""}">${evidence}</div>`:"")
+    +offerHtml(offer);
   $("log").appendChild(n); $("log").scrollTop=$("log").scrollHeight; return n;
 }
 
@@ -1457,6 +1478,62 @@ $("focusToggle").addEventListener("click",async ()=>{
   }
 });
 
+/* ── Autonomie ─────────────────────────────────────────────── */
+let AUTONOMIE=null;
+function autoRender(st){
+  if(!st || !Array.isArray(st.stufen)) return;
+  AUTONOMIE=st;
+  const sel=$("autoSel");
+  sel.innerHTML=st.stufen.map(s=>`<option value="${Number(s.stufe)}">${Number(s.stufe)} · ${esc(s.name)}</option>`).join("");
+  sel.value=String(st.stufe); sel.disabled=false;
+  $("autoRt").textContent="Stufe "+Number(st.stufe);
+}
+function autonomieFrage(stufe){
+  const was={3:"Jarvis darf dann ein Ziel, das du ihm gibst (Agent-Modus), selbstständig in mehreren Schritten verfolgen.",
+             4:"Jarvis darf dann zusätzlich von sich aus auf erkannte Ereignisse reagieren."}[stufe]||"";
+  return `Autonomiestufe ${stufe} erlauben?\n\n${was}\n\nJeder einzelne Werkzeugaufruf bleibt an die `
+    +"Berechtigungsregeln gebunden -- riskante Aktionen fragen weiterhin nach, CRITICAL immer. "
+    +"(Ausnahme wie bisher: Fokus- und Erweiterungsmodus, siehe dort.)\n\n"
+    +"Die Stufe wird in jarvis.json gespeichert. Zurückstellen kannst du sie jederzeit im Regler „Autonomie“.";
+}
+async function setAutonomy(stufe){
+  const res=await fetch("/api/autonomy",{method:"PUT",
+    headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({stufe})});
+  if(!res.ok) throw new Error("Server antwortete mit Status "+res.status);
+  const st=await res.json(); autoRender(st); return st;
+}
+$("autoSel").addEventListener("change",async ()=>{
+  const neu=Number($("autoSel").value), alt=AUTONOMIE?Number(AUTONOMIE.stufe):0;
+  // Senken fragt nicht nach; Anheben auf eigenständiges Handeln schon.
+  if(neu>alt && neu>=3 && !confirm(autonomieFrage(neu))){ $("autoSel").value=String(alt); return; }
+  try{ await setAutonomy(neu); }
+  catch(e){
+    $("autoSel").value=String(alt);
+    say({who:"jarvis",prov:"fail",text:"Autonomiestufe konnte nicht geändert werden.",
+      evidence:esc(String((e&&e.message)||e)),fail:true});
+  }
+});
+$("log").addEventListener("click",async (e)=>{
+  const btn=e.target.closest("[data-offer]"); if(!btn) return;
+  const offer=OFFERS.get(btn.dataset.offer); if(!offer) return;
+  if(!confirm(autonomieFrage(Number(offer.stufe)))) return;
+  btn.disabled=true;
+  try{
+    await setAutonomy(Number(offer.stufe));
+  }catch(err){
+    btn.disabled=false;
+    say({who:"jarvis",prov:"fail",text:"Autonomiestufe konnte nicht geändert werden.",
+      evidence:esc(String((err&&err.message)||err)),fail:true});
+    return;
+  }
+  OFFERS.delete(btn.dataset.offer);
+  btn.closest(".btnrow").innerHTML=`<span class="hint">Stufe ${Number(offer.stufe)} erlaubt.</span>`;
+  // Derselbe Auftrag noch einmal -- jetzt mit der Stufe, die er braucht.
+  if(offer.ziel && live && sock && sock.readyState===1)
+    sock.send(JSON.stringify({type:"command", text:offer.ziel, mode:"agent"}));
+  else if(offer.erweiterung) extAction("start");
+});
+
 /* ── Erweiterungsmodus ─────────────────────────────────────── */
 function extRender(status){
   // status.laeuft kann schon false sein, während das Objekt selbst noch
@@ -2042,6 +2119,7 @@ function applyHello(m){
   if(m.telemetrie) JARVIS.telemetry(m.telemetrie);
   if(typeof m.whisper_configured==="boolean") JARVIS.whisperStatus(m.whisper_configured);
   if(typeof m.fokus_modus==="boolean") JARVIS.focusStatus(m.fokus_modus);
+  if(m.autonomie) autoRender(m.autonomie);
   JARVIS.extensionStatus(m.erweiterungsmodus);
   loadVerlauf();
   if(m.gedaechtnis && Array.isArray(m.gedaechtnis.nodes)){
@@ -2070,8 +2148,9 @@ function onFrame(m){
     case "message":
       say({who: m.who === "me" ? "me" : "jarvis", text: asHtml(m.text),
            prov: m.provenance || "talk", evidence: evidenceHtml(m.evidence),
-           fail: m.provenance === "fail", mode: m.mode || null});
+           fail: m.provenance === "fail", mode: m.mode || null, offer: m.angebot || null});
       break;
+    case "autonomy": autoRender(m); break;
     case "tool.finished":
       pushWave(m.ok ? 55 + Math.random() * 40 : 18);
       loadVerlaufSoon();

@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from . import guard
 from .agent import Agent
 from .audit import AuditLog
+from .autonomy import AutonomyLevel
 from .config import Config
 from .decision import DecisionEngine, DecisionLog
 from .events import Event, EventBus, ProactiveEngine, Proposal
@@ -71,6 +72,10 @@ class WhisperKeyIn(BaseModel):
 
 class FocusModeIn(BaseModel):
     an: bool
+
+
+class AutonomyIn(BaseModel):
+    stufe: int = Field(..., ge=int(min(AutonomyLevel)), le=int(max(AutonomyLevel)))
 
 
 #: Was sich am laufenden Erweiterungsmodus von außen steuern lässt --
@@ -339,6 +344,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             "geraete": hub.count,
             "whisper_configured": whisper.configured,
             "fokus_modus": agent.focus_mode,
+            "autonomie": autonomy_state(),
             "erweiterungsmodus": agent.extension_status,
             "berechtigungen": {
                 "read": permission_gate.policy.requires_confirmation(PermissionLevel.READ),
@@ -348,6 +354,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                 "offen": len(permission_gate.pending),
             },
         }
+
+    def autonomy_state() -> dict:
+        stufe = config.autonomy
+        return {"stufe": int(stufe), "name": stufe.label,
+                "stufen": [{"stufe": int(s), "name": s.label} for s in AutonomyLevel]}
 
     @app.get("/api/health")
     async def health() -> dict:
@@ -490,6 +501,27 @@ def create_app(config: Config | None = None) -> FastAPI:
         verdrahtet, kein Konfigurationswert."""
         an = await agent.set_focus_mode(body.an)
         return {"fokus_modus": an}
+
+    # --------------------------------------------------------- Autonomie
+    @app.put("/api/autonomy", dependencies=Guarded)
+    async def set_autonomy(body: AutonomyIn) -> dict:
+        """Die Autonomiestufe (``autonomy.py``) -- das Steuerelement des
+        Nutzers, wie ``/api/focus-mode``. Das Modell kommt hier nicht hin:
+        Kein Werkzeug ändert die Stufe, und Jarvis' HTTP-Werkzeuge senden nur
+        GET/HEAD. Gespeichert in der jarvis.json, damit ein Neustart nicht
+        still auf eine andere Stufe zurückfällt; der Audit-Eintrag hält fest,
+        wann sie von wo nach wo ging."""
+        vorher = config.autonomy
+        neu = AutonomyLevel.from_value(body.stufe)
+        config.autonomy_level = int(neu)
+        config.save()
+        audit.record(tool="jarvis.autonomy.set", level=PermissionLevel.SYSTEM,
+                     arguments={"vorher": int(vorher), "stufe": int(neu)}, ok=True,
+                     summary=f"Autonomiestufe {int(vorher)} → {int(neu)} ({neu.label})",
+                     request="oberflaeche")
+        stand = autonomy_state()
+        await hub.send("autonomy", stand)
+        return stand
 
     @app.get("/api/tasks", dependencies=Guarded)
     async def list_tasks(limit: int = 20) -> dict:

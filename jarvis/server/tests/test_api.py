@@ -638,3 +638,67 @@ def test_erweiterungsmodus_start_pause_stop_ueber_http(config, fake_ollama, monk
             time.sleep(0.02)
         else:
             raise AssertionError("Erweiterungsmodus hat nicht gestoppt")
+
+
+# ══════════════════════════════════════════════════════ Autonomie per Knopf
+def test_zu_niedrige_stufe_bietet_den_knopf_an_und_danach_laeuft_das_ziel(
+        config, fake_ollama, workspace):
+    """Der Weg, den die Oberfläche geht: Agent-Modus auf Stufe 2 → Absage mit
+    Angebot → Nutzer erlaubt Stufe 3 (PUT /api/autonomy) → derselbe Auftrag
+    noch einmal → das Ziel läuft wirklich."""
+    import json as json_mod
+
+    from jarvis.config import Config
+
+    assert config.autonomy_level == 2  # die Voreinstellung bleibt, wie gefordert
+    app = create_app(config)
+    app.state.permission_gate.policy = PermissionPolicy(
+        confirm_read=False, confirm_write=False, confirm_system=False)
+    app.state.agent.client = fake_ollama([
+        ChatTurn(text='["Systeminfo lesen"]'),
+        ChatTurn(tool_calls=[ToolCall("get_system_info", {})]),
+        ChatTurn(text="System geprüft."),
+    ])
+
+    with TestClient(app) as test_client:
+        stand = test_client.get("/api/health").json()["autonomie"]
+        assert stand["stufe"] == 2
+        assert [s["stufe"] for s in stand["stufen"]] == [0, 1, 2, 3, 4]
+
+        absage = test_client.post(
+            "/api/command", json={"text": "Prüfe das System", "mode": "agent"}).json()
+        assert "Stufe 3" in absage["text"]
+        assert absage["angebot"] == {"art": "autonomie", "stufe": 3,
+                                     "ziel": "Prüfe das System", "erweiterung": False}
+        assert test_client.get("/api/goals").json()["ziele"] == []
+
+        neu = test_client.put("/api/autonomy", json={"stufe": 3}).json()
+        assert neu["stufe"] == 3 and neu["name"] == "Eigenständige Zielverfolgung"
+        # Gespeichert -- ein Neustart fällt nicht still auf 2 zurück.
+        auf_platte = json_mod.loads(config.config_path.read_text(encoding="utf-8"))
+        assert auf_platte["autonomy_level"] == 3
+        assert Config.load(config.config_path).autonomy_level == 3
+        eintrag = test_client.get("/api/audit", params={"tool": "jarvis.autonomy.set"}).json()
+        assert "2 → 3" in str(eintrag)
+
+        antwort = test_client.post(
+            "/api/command", json={"text": absage["angebot"]["ziel"], "mode": "agent"}).json()
+        assert "angebot" not in antwort
+        ziele = test_client.get("/api/goals").json()["ziele"]
+        assert len(ziele) == 1
+        assert _warte_auf_ziel(test_client, ziele[0]["id"])["status"] == "completed"
+
+
+def test_autonomie_nur_gueltige_stufen_und_zuruecksetzen(client):
+    assert client.put("/api/autonomy", json={"stufe": 5}).status_code == 422
+    assert client.put("/api/autonomy", json={"stufe": -1}).status_code == 422
+    assert client.put("/api/autonomy", json={"stufe": 4}).json()["stufe"] == 4
+    assert client.put("/api/autonomy", json={"stufe": 1}).json()["stufe"] == 1
+    assert client.get("/api/health").json()["autonomie"]["stufe"] == 1
+
+
+def test_kein_werkzeug_kann_die_autonomie_aendern(client):
+    """Die Stufe stellt nur der Nutzer um. Gäbe es ein Werkzeug dafür, könnte
+    das Modell sich selbst mehr Eigenständigkeit geben."""
+    registry = client.app_state.agent.registry
+    assert [t.name for t in registry if "autonom" in t.name.lower()] == []

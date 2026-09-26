@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (940 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (943 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 416 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -166,6 +166,11 @@ Fertig und getestet (940 Tests, siehe `ROADMAP.md` für die Phasen):
   Externe Programme (ffmpeg, Tesseract, nginx, …) bleiben bewusst außen vor —
   die verlangen weiterhin einen Installer oder den Paketmanager des
   Betriebssystems, von Hand
+* **Autonomie per Knopf:** Reicht die Autonomiestufe für den Agent-Modus
+  nicht (Vorgabe: 2), bietet die Absage jetzt „Stufe 3 erlauben und Ziel
+  starten" an — mit Rückfrage, gespeichert in der `jarvis.json`, danach
+  läuft derselbe Auftrag. Zurückstellen im Regler „Autonomie". Umstellen
+  kann nur der Nutzer, kein Werkzeug und kein Modell
 * **Werkzeugaufrufe als Text (`textcalls.py`):** Schreibt ein Modell seinen
   Aufruf als Text statt über Ollamas Schnittstelle (Qwen3-Coder lässt z. B.
   das öffnende `<tool_call>` weg), hielt Jarvis das früher für die fertige

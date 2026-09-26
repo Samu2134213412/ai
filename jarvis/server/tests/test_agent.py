@@ -537,6 +537,10 @@ async def test_erweiterungsmodus_braucht_autonomiestufe_3(config, store, registr
 
     assert "Stufe 3" in reply.text
     assert agent.extension_status is None
+    # Die Oberfläche bietet an, Stufe 3 zu erlauben und neu zu starten --
+    # anheben kann sie nur der Nutzer, nicht der Agent selbst.
+    assert reply.offer == {"art": "autonomie", "stufe": 3, "ziel": "", "erweiterung": True}
+    assert config.autonomy_level == 2
 
 
 async def test_erweiterungsmodus_plant_und_erledigt_eine_echte_aufgabe(
