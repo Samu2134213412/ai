@@ -67,6 +67,10 @@ einmal wirklich durchlaufen, nicht nur behauptet.
 
 ## Build & Ausführen
 
+Am einfachsten: Doppelklick auf `install.bat` (baut, installiert nach
+`%LOCALAPPDATA%\Programs\Guardian`, richtet Regeln/Konfiguration ein und
+prüft das Ergebnis; siehe `README.md`). Von Hand:
+
 ```powershell
 cd guardian
 cargo build --release
@@ -87,6 +91,13 @@ Windows 10/11 nachgeprüft:
 - Ob `cargo build --release` mit `yara-x` auf einem frischen Windows-
   Toolchain-Setup ohne Weiteres durchläuft (die Crate ist reines Rust, ein
   Problem ist nicht zu erwarten, aber unverifiziert ist unverifiziert)
+- `install.ps1` unter echtem Windows: Der komplette Ablauf (Build,
+  Installation, Regeln, Konfiguration, Status, Probescan, Deinstallation,
+  Fehlerpfade) lief unter PowerShell 7 auf Linux; PSScriptAnalyzer meldet
+  keine Inkompatibilität mit Windows PowerShell 5.1. Die reinen Windows-Teile
+  -- PATH in der Registry, die Benachrichtigung an Explorer, der Rust-
+  Download, der Downloads-Ordner aus der Registry -- sind nur einzeln bzw.
+  mit nachgebildeter Registry geprüft.
 
 ## Bekannte Lücken in Phase 1 (bewusst, nicht vergessen)
 

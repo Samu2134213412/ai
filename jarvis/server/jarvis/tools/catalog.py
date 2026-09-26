@@ -93,7 +93,8 @@ PROBES: dict[str, Probe] = {p.key: p for p in (
     Probe("qrcode", "qrcode", "module", "qrcode", "pip install qrcode"),
     Probe("pyautogui", "PyAutoGUI", "module", "pyautogui", "pip install pyautogui"),
     Probe("guardian", "Guardian", "binary", "guardian",
-          "im Ordner guardian/: cargo build --release (Rust: https://rustup.rs), "
+          "guardian\\install.bat ausführen (baut mit cargo build und richtet ein; "
+          "Linux: im Ordner guardian/ cargo build --release), "
           "oder guardian.binary in der jarvis.json"),
 )}
 

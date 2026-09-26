@@ -47,7 +47,11 @@ _EXE = "guardian.exe" if os.name == "nt" else "guardian"
 
 def _finde_guardian(konfiguriert: str) -> str:
     """Wo liegt die ``guardian``-Datei? Reihenfolge: ausdrücklich
-    konfiguriert → PATH → Release-Build im Repo → Debug-Build im Repo.
+    konfiguriert → PATH → wohin ``guardian/install.bat`` installiert →
+    Release-Build im Repo → Debug-Build im Repo.
+
+    Der Installationsort steht eigens in der Liste: Ein Jarvis, das vor der
+    Installation gestartet wurde, kennt den neuen PATH-Eintrag noch nicht.
 
     Ein konfigurierter Pfad, der nicht existiert, gilt als "nicht gefunden"
     -- nicht als Anlass, stillschweigend eine andere Guardian-Datei zu
@@ -58,11 +62,10 @@ def _finde_guardian(konfiguriert: str) -> str:
     im_path = shutil.which("guardian")
     if im_path:
         return im_path
-    for build in ("release", "debug"):
-        kandidat = _REPO / "guardian" / "target" / build / _EXE
-        if kandidat.is_file():
-            return str(kandidat)
-    return ""
+    kandidaten = [_REPO / "guardian" / "target" / build / _EXE for build in ("release", "debug")]
+    if os.environ.get("LOCALAPPDATA"):
+        kandidaten.insert(0, Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Guardian" / _EXE)
+    return next((str(k) for k in kandidaten if k.is_file()), "")
 
 
 def _kurz(wert: str, grenze: int = 600) -> str:
@@ -81,9 +84,9 @@ def build(ctx: ToolContext) -> list[Tool]:
         oder scheitert mit Guardians eigener Fehlermeldung."""
         exe = probe("guardian")[1]
         if not exe:
-            raise ToolError("Guardian ist nicht gebaut oder nicht gefunden -- im Ordner "
-                            "guardian/: cargo build --release, oder guardian.binary in "
-                            "der jarvis.json setzen.")
+            raise ToolError("Guardian ist nicht gebaut oder nicht gefunden -- "
+                            "guardian\\install.bat ausführen (baut und richtet es ein), "
+                            "oder guardian.binary in der jarvis.json setzen.")
         args = [exe]
         if cfg.config:
             args += ["--config", os.path.expanduser(cfg.config)]

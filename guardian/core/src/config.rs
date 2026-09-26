@@ -67,8 +67,8 @@ pub struct GuardianConfig {
     pub log_path: PathBuf,
     pub hash_db_path: PathBuf,
     /// Roots `guardian scan --full` walks. Empty by default until the user
-    /// (or the Windows installer, in a later phase) fills in real folders --
-    /// Guardian never guesses at directories to touch.
+    /// (or `install.ps1`, which offers the Downloads folder) fills in real
+    /// folders -- Guardian never guesses at directories to touch.
     pub scan_roots: Vec<PathBuf>,
     pub extensions: Vec<String>,
     /// Compute SHA-1/MD5 too, only for matching against legacy malware

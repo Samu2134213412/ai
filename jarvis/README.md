@@ -116,7 +116,7 @@ erwartet.
 
 ## Stand
 
-Fertig und getestet (928 Tests, siehe `ROADMAP.md` für die Phasen):
+Fertig und getestet (930 Tests, siehe `ROADMAP.md` für die Phasen):
 
 * Werkzeugschicht mit erzwungenem Beleg — kein Erfolg ohne `ToolResult`
 * 416 Werkzeuge in Tool-Packs, u. a. Dateien/Archive, Text/Daten, System/
@@ -171,8 +171,9 @@ Fertig und getestet (928 Tests, siehe `ROADMAP.md` für die Phasen):
   mit echtem Probelauf), Quarantäne ansehen, Ereignisse, Regeln. Jarvis ruft
   Guardians Programm mit `--json` auf, prüft jede gemeldete Quarantäne bzw.
   Wiederherstellung auf der Platte nach, und das Zurückholen einer als
-  Bedrohung eingestuften Datei ist CRITICAL: immer mit Bestätigung — siehe
-  `server/README.md`
+  Bedrohung eingestuften Datei ist CRITICAL: immer mit Bestätigung.
+  Installiert wird Guardian per Doppelklick auf `guardian\install.bat` —
+  siehe `server/README.md` und `../guardian/README.md`
 * **Session-Gedächtnis (`kind="sitzung"`):** die in `ROADMAP.md` offen
   gelassene Ebene zwischen Kurz- und Langzeitgedächtnis. Zug-Paare, die aus
   dem kurzlebigen Chat-Fenster (`Agent.history`) fallen, landen jetzt mit

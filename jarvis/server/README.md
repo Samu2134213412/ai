@@ -588,13 +588,17 @@ gebaut und getestet. `tools/packs/guardian.py` ruft dessen Programm mit
   (Punkt 8, `test_es_gibt_keinen_portscanner`) verbietet „scan" in
   Werkzeugnamen, und das bleibt so streng, statt für Guardian aufgeweicht zu
   werden.
+* **Installieren:** `guardian\install.bat` baut Guardian, legt es nach
+  `%LOCALAPPDATA%\Programs\Guardian` (plus PATH-Eintrag), richtet Regeln und
+  Konfiguration ein und prüft das Ergebnis -- siehe `guardian/README.md`.
 * **Wo liegt Guardian?** `guardian.binary` in der `jarvis.json`; leer heißt:
-  PATH, dann `guardian/target/release`, dann `guardian/target/debug`. Ein
+  PATH, dann der Installationsort (auch für ein Jarvis, das vor der
+  Installation gestartet wurde und den neuen PATH noch nicht kennt), dann
+  `guardian/target/release`, dann `guardian/target/debug`. Ein
   eingetragener, aber fehlender Pfad gilt als „nicht gefunden", statt
   stillschweigend eine andere Guardian-Datei zu nehmen. Solange Guardian
-  nicht gebaut ist, stehen die Werkzeuge in der Statusliste auf
-  `nachrüsten` mit dem Bauhinweis (`cargo build --release` im Ordner
-  `guardian/`).
+  fehlt, stehen die Werkzeuge in der Statusliste auf `nachrüsten` mit dem
+  Hinweis auf `install.bat`.
 
 ### Sicherheit
 

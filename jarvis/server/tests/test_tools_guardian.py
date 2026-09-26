@@ -23,12 +23,13 @@ from jarvis.config import GuardianConfig
 from jarvis.permissions import PermissionLevel
 from jarvis.tools import build_registry, tool_status
 from jarvis.tools.base import ToolResult
-from jarvis.tools.catalog import probe
-from jarvis.tools.packs.guardian import _finde_guardian
+from jarvis.tools.catalog import PROBES, probe
+from jarvis.tools.packs.guardian import _EXE, _finde_guardian
 
 EICAR = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 EICAR_SHA256 = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
-REPO_RULES = Path(__file__).resolve().parents[3] / "guardian" / "rules"
+GUARDIAN = Path(__file__).resolve().parents[3] / "guardian"
+REPO_RULES = GUARDIAN / "rules"
 
 _gebaut = bool(_finde_guardian(""))
 braucht_guardian = pytest.mark.skipif(not _gebaut, reason="Guardian nicht gebaut "
@@ -118,6 +119,24 @@ def test_konfigurierter_pfad_der_fehlt_wird_nicht_still_ersetzt(tmp_path):
     """Hat der Nutzer eine bestimmte Datei eingetragen, darf Jarvis nicht
     heimlich eine andere Guardian-Datei (PATH/Repo) nehmen."""
     assert _finde_guardian(str(tmp_path / "falsch" / "guardian")) == ""
+
+
+def test_installierter_guardian_wird_auch_ohne_neuen_path_gefunden(tmp_path, monkeypatch):
+    """Ein Jarvis, das vor install.bat gestartet wurde, kennt den neuen
+    PATH-Eintrag nicht -- den Installationsort findet es trotzdem, und zwar
+    vor einem (womöglich älteren) Build im Repo."""
+    exe = tmp_path / "Programs" / "Guardian" / _EXE
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("PATH", "")
+    assert _finde_guardian("") == str(exe)
+
+
+def test_der_hinweis_nennt_einen_installer_den_es_gibt():
+    assert "install.bat" in PROBES["guardian"].install_hint
+    for datei in ("install.bat", "uninstall.bat", "install.ps1"):
+        assert (GUARDIAN / datei).is_file(), datei
 
 
 # ══════════════════════════════════════════════════════ echte Guardian-Datei

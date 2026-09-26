@@ -9,7 +9,31 @@ Malware/Persistenztechniken nach.
 `STATUS.md` für den vollständigen Nachweis und `ROADMAP.md` für die
 restlichen Phasen. `ARCHITECTURE.md` erklärt Aufbau und Entscheidungen.
 
-## Schnellstart
+## Installation (Windows)
+
+Doppelklick auf **`install.bat`**. Der Installer (`install.ps1`, braucht
+keine Administratorrechte):
+
+1. sucht Rust -- fehlt es, fragt er, ob er den offiziellen Rust-Installer
+   laden und starten soll (dort die Vorgabe nehmen; die Visual Studio Build
+   Tools, nach denen er ggf. fragt, braucht Windows zum Bauen),
+2. baut Guardian (`cargo build --release --locked`),
+3. kopiert `guardian.exe` nach `%LOCALAPPDATA%\Programs\Guardian` und trägt
+   den Ordner in deinen PATH ein,
+4. kopiert die Regeln aus `rules\` in Guardians Regelordner und legt
+   `%PROGRAMDATA%\Guardian\config.toml` mit deinem Downloads-Ordner als
+   Scan-Ordner an -- eine vorhandene Konfiguration bleibt unverändert,
+5. prüft mit `guardian --json status` und einem Probescan ohne Quarantäne,
+   dass Guardian läuft und Regeln geladen hat. "Installiert" meldet er nur
+   mit diesem Beleg.
+
+Erneut ausführen = aktualisieren. **`uninstall.bat`** entfernt Programm und
+PATH-Eintrag; Konfiguration, Protokoll und Quarantäne bleiben absichtlich
+liegen (in der Quarantäne liegen deine Dateien). Jarvis findet die
+installierte Guardian-Datei automatisch -- nach einem Neustart von Jarvis
+stehen die `guardian.*`-Werkzeuge auf "bereit".
+
+## Schnellstart (Entwicklung)
 
 ```bash
 cargo build --workspace
@@ -32,8 +56,9 @@ bedienen, ohne Textausgabe raten zu müssen.
 
 Ohne `--config <pfad>` benutzt Guardian `%PROGRAMDATA%\Guardian\config.toml`
 unter Windows (bzw. `~/.guardian/config.toml` in einer Entwicklungsumgebung
-ohne Windows) und legt beim ersten Lauf sinnvolle Vorgaben an, wenn die
-Datei fehlt.
+ohne Windows). Fehlt die Datei, gelten die eingebauten Vorgaben -- ohne
+Scan-Ordner und mit einem leeren Regelordner, bis der Installer (oder du)
+Regeln hineinlegt.
 
 ## Grundprinzip
 
