@@ -27,6 +27,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from . import console
+
 from . import detect
 from .providers import get_provider
 
@@ -35,7 +37,17 @@ FAIL = "FAIL"
 WARN = "WARN"
 SKIP = "SKIP"
 
-_MARK = {PASS: "✓", FAIL: "✗", WARN: "!", SKIP: "-"}
+#: Resolved on first use, so the stream reconfiguration in main() applies.
+_MARK: dict[str, str] | None = None
+
+
+def _mark(status: str, stream=None) -> str:
+    global _MARK
+    if _MARK is None or stream is not None:
+        _MARK = console.marks(
+            {PASS: "✓", FAIL: "✗", WARN: "!", SKIP: "-"},
+            {PASS: "+", FAIL: "!", WARN: "?", SKIP: "-"}, stream)
+    return _MARK[status]
 
 
 @dataclass
@@ -53,7 +65,7 @@ class Stage:
 
 
 def _fmt(stage: Stage, index: int, total: int) -> str:
-    head = (f"[{index}/{total}] {_MARK[stage.status]} {stage.name}"
+    head = (f"[{index}/{total}] {_mark(stage.status)} {stage.name}"
             f"{f'  ({stage.elapsed:.1f}s)' if stage.elapsed >= 0.1 else ''}")
     lines = [head]
     if stage.status == PASS and stage.proved:

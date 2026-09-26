@@ -1,0 +1,18 @@
+[package]
+name = "guardian-scanners"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+guardian-core = { path = "../core" }
+guardian-intelligence = { path = "../intelligence" }
+anyhow.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+md-5.workspace = true
+yara-x.workspace = true
+walkdir.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

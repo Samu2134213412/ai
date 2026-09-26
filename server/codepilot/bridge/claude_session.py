@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import time
 import uuid
@@ -160,6 +161,15 @@ class ClaudeCodeSession:
 
         cmd = self._build_command()
         env = self._build_env()
+        # On Windows, a child process with no console flag inherits its
+        # parent's console when there is one, but creates its own new
+        # console window when there is none -- which is exactly the case
+        # once CodePilot itself runs windowless (spawned by Jarvis). Without
+        # this flag, every single turn would flash a fresh console for the
+        # claude.EXE child. CREATE_NO_WINDOW is a no-op on other platforms.
+        extra: dict = {}
+        if os.name == "nt":
+            extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             self.proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -168,6 +178,7 @@ class ClaudeCodeSession:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **extra,
             )
         except (FileNotFoundError, PermissionError, OSError) as exc:
             raise BridgeError(f"Could not start Claude Code: {exc}") from exc

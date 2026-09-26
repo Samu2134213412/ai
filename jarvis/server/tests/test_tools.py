@@ -1,0 +1,280 @@
+"""Werkzeuge: die Grenzen, innerhalb derer sie wirken, und die Form des Belegs."""
+
+from __future__ import annotations
+
+import os
+import time
+from pathlib import Path
+
+import pytest
+
+from jarvis.permissions import PermissionLevel
+from jarvis.tools import knowledge, shell, system
+from jarvis.tools.base import Registry, Tool, ToolError, ToolMissing, ToolResult
+from jarvis.tools.files import Workspace, build as build_files
+
+
+# ══════════════════════════════════════════════════════ Pfad-Containment
+def test_pfad_ausserhalb_des_bereichs_wird_abgewiesen(workspace, tmp_path):
+    ws = Workspace([workspace])
+    with pytest.raises(ToolError, match="außerhalb"):
+        ws.resolve(str(tmp_path / "woanders.txt"))
+
+
+def test_punkt_punkt_wird_aufgeloest_nicht_nur_gefiltert(workspace):
+    ws = Workspace([workspace])
+    with pytest.raises(ToolError, match="außerhalb"):
+        ws.resolve(str(workspace / ".." / "entwischt.txt"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Symlinks brauchen Rechte auf Windows")
+def test_symlink_der_hinausfuehrt_wird_abgewiesen(workspace, tmp_path):
+    aussen = tmp_path / "aussen"
+    aussen.mkdir()
+    (workspace / "tuer").symlink_to(aussen, target_is_directory=True)
+    ws = Workspace([workspace])
+    with pytest.raises(ToolError, match="außerhalb"):
+        ws.resolve(str(workspace / "tuer" / "beute.txt"))
+
+
+def test_relativer_pfad_landet_in_der_ersten_wurzel(workspace):
+    ws = Workspace([workspace])
+    assert Path(ws.resolve("notiz.txt")).parent == workspace
+
+
+def test_ohne_freigegebene_wurzel_geht_gar_nichts():
+    ws = Workspace([])
+    with pytest.raises(ToolError, match="kein Arbeitsbereich"):
+        ws.resolve("irgendwas.txt")
+
+
+# ══════════════════════════════════════════════════════════ Belegform
+def test_write_file_liest_die_groesse_von_der_platte(workspace):
+    write = {t.name: t for t in build_files(Workspace([workspace]))}["write_file"]
+    result = write.run(path=str(workspace / "a.txt"), content="Hällo")
+    assert result.ok is True
+    assert result.evidence["bytes"] == (workspace / "a.txt").stat().st_size
+    assert result.evidence["bytes"] == 6          # ä ist zwei Bytes in UTF-8
+
+
+def test_delete_file_prueft_nach_dem_loeschen_nach(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    target = workspace / "weg.txt"
+    target.write_text("x", encoding="utf-8")
+    result = tools["delete_file"].run(path=str(target))
+    assert result.ok is True
+    assert not target.exists()
+
+
+def test_fehlende_datei_ist_ein_fehler_kein_erfolg(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    with pytest.raises(ToolError, match="existiert nicht"):
+        tools["read_file"].run(path=str(workspace / "nix.txt"))
+
+
+# ══════════════════════════════════════════════════════════ Registry
+def test_registry_verwandelt_absturz_in_ehrliches_ergebnis():
+    registry = Registry()
+
+    def explodiert() -> ToolResult:
+        raise RuntimeError("kaputt")
+
+    registry.add(Tool("bumm", "", {"type": "object", "properties": {}}, explodiert))
+    result = registry.call("bumm", {})
+    assert result.ok is False
+    assert "kaputt" in result.summary
+
+
+def test_registry_lehnt_falschen_rueckgabetyp_ab():
+    registry = Registry()
+    registry.add(Tool("luegner", "", {"type": "object", "properties": {}},
+                      lambda: "fertig!"))
+    with pytest.raises(TypeError, match="ToolResult"):
+        registry.call("luegner", {})
+
+
+def test_unbekanntes_werkzeug_wirft_toolmissing():
+    with pytest.raises(ToolMissing):
+        Registry().call("gibtsnicht", {})
+
+
+def test_falsche_argumente_werden_zum_fehlschlag_nicht_zum_absturz(workspace):
+    registry = Registry()
+    for tool in build_files(Workspace([workspace])):
+        registry.add(tool)
+    result = registry.call("write_file", {"voellig": "falsch"})
+    assert result.ok is False
+    assert "Argumente" in result.summary
+
+
+# ══════════════════════════════════════════════════════════ Shell-Politik
+def test_shell_ist_standardmaessig_aus():
+    with pytest.raises(ToolError, match="abgeschaltet"):
+        shell.ShellPolicy().check(["python", "-V"])
+
+
+def test_leere_allowlist_gibt_nichts_frei():
+    with pytest.raises(ToolError, match="Allowlist ist leer"):
+        shell.ShellPolicy(enabled=True).check(["python"])
+
+
+def test_programm_ausserhalb_der_allowlist_wird_abgewiesen():
+    policy = shell.ShellPolicy(enabled=True, allowlist=["python"])
+    with pytest.raises(ToolError, match="nicht auf der Allowlist"):
+        policy.check(["rm", "-rf", "/"])
+
+
+def test_allowlist_greift_auch_bei_vollem_pfad_und_exe():
+    policy = shell.ShellPolicy(enabled=True, allowlist=["python"])
+    assert policy.check([r"C:\Python311\python.exe", "-V"]) == "python"
+
+
+def test_verkettung_laeuft_nicht_weil_es_keine_shell_gibt(tmp_path):
+    """'echo a && rm -rf x' startet 'echo' mit Argumenten, keine Kette."""
+    policy = shell.ShellPolicy(enabled=True, allowlist=["echo"], cwd=tmp_path)
+    run = {t.name: t for t in shell.build(policy)}["run_command"]
+    result = run.run(command="echo hallo && echo getarnt")
+    assert result.ok is True
+    # '&&' erscheint als Text in der Ausgabe, wurde also nicht ausgeführt.
+    assert "&&" in result.payload
+
+
+def test_exit_code_ungleich_null_ist_ein_fehlschlag(tmp_path):
+    policy = shell.ShellPolicy(enabled=True, allowlist=["python3"], cwd=tmp_path)
+    run = {t.name: t for t in shell.build(policy)}["run_command"]
+    result = run.run(command="python3 -c \"import sys; sys.exit(3)\"")
+    assert result.ok is False
+    assert result.evidence["exit_code"] == 3
+
+
+# ══════════════════════════════════════════════════════════ Systemwerte
+def test_systeminfo_meldet_echte_werte():
+    result = system.get_system_info()
+    assert result.ok is True
+    assert result.evidence["kerne"] == (os.cpu_count() or 0)
+
+
+def test_telemetrie_erfindet_nichts_wenn_psutil_fehlt(monkeypatch):
+    monkeypatch.setattr(system, "psutil", None)
+    assert system.telemetry() == {}
+
+
+def test_cpu_ohne_psutil_ist_ein_fehler_keine_schaetzung(monkeypatch):
+    monkeypatch.setattr(system, "psutil", None)
+    with pytest.raises(ToolError, match="psutil"):
+        system.get_cpu_info()
+
+
+# ══════════════════════════════════════════════════════════ Gedächtnis
+def test_memory_add_liest_zurueck_was_es_geschrieben_hat(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    result = add.run(label="Kaffee", text="schwarz, ohne Zucker", kind="vorliebe")
+    assert result.ok is True
+    assert store.get(result.evidence["id"]).label == "Kaffee"
+
+
+def test_memory_add_setzt_wichtigkeit_und_markiert_die_quelle(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    result = add.run(label="Wichtig", text="nie vergessen", kind="regel", importance=0.9)
+    assert result.ok is True
+    gespeichert = store.get(result.evidence["id"])
+    assert gespeichert.importance == 0.9
+    # Herkunft ist immer "modell" -- dieses Werkzeug wird nur vom Modell
+    # aufgerufen, nie direkt von der Oberfläche (die schreibt über /api/memory).
+    assert gespeichert.source == "modell"
+
+
+def test_memory_add_lehnt_wichtigkeit_ausserhalb_0_bis_1_ab(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    with pytest.raises(ToolError, match="importance"):
+        add.run(label="X", importance=5.0)
+
+
+def test_memory_add_ohne_ttl_ist_dauerhaft(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    result = add.run(label="Dauerhaft")
+    assert result.evidence["laeuft_ab"] is None
+    assert store.get(result.evidence["id"]).expires is None
+
+
+def test_memory_add_mit_ttl_setzt_eine_ablaufzeit(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    vorher = time.time()
+    result = add.run(label="Nur für heute", kind="sitzung", ttl_hours=24)
+    gespeichert = store.get(result.evidence["id"])
+    assert gespeichert.expires is not None
+    assert gespeichert.expires == pytest.approx(vorher + 24 * 3600, abs=5)
+    assert result.evidence["laeuft_ab"] == gespeichert.expires
+
+
+def test_memory_add_lehnt_negative_ttl_ab(store):
+    add = {t.name: t for t in knowledge.build(store)}["memory_add"]
+    with pytest.raises(ToolError, match="ttl_hours"):
+        add.run(label="X", ttl_hours=-1)
+
+
+def test_memory_forget_prueft_nach(store):
+    tools = {t.name: t for t in knowledge.build(store)}
+    node = store.add(label="Vergänglich")
+    result = tools["memory_forget"].run(id=node.id)
+    assert result.ok is True
+    assert store.get(node.id) is None
+
+
+# ══════════════════════════════════════════════════ Sicherheitsstufen
+def test_lesende_dateiwerkzeuge_sind_safe(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    assert tools["read_file"].level is PermissionLevel.SAFE
+    assert tools["list_dir"].level is PermissionLevel.SAFE
+    assert tools["search_files"].level is PermissionLevel.SAFE
+
+
+def test_schreibende_dateiwerkzeuge_sind_write(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    assert tools["write_file"].level is PermissionLevel.WRITE
+    assert tools["move_file"].level is PermissionLevel.WRITE
+
+
+def test_loeschen_ist_critical(workspace):
+    tools = {t.name: t for t in build_files(Workspace([workspace]))}
+    assert tools["delete_file"].level is PermissionLevel.CRITICAL
+
+
+def test_systemmodul_registriert_selbst_nichts_mehr():
+    """Die fünf alten Systemwerkzeuge sind in packs/sysinfo.py aufgegangen --
+    ihre Namen leben dort als Alias weiter, die Implementierung gibt es nur
+    noch einmal."""
+    assert system.build() == []
+    assert system.telemetry is not None  # die Telemetriequelle bleibt hier
+
+
+def test_gedaechtnis_lesen_ist_safe_schreiben_ist_write_loeschen_ist_critical(store):
+    tools = {t.name: t for t in knowledge.build(store)}
+    assert tools["memory_search"].level is PermissionLevel.SAFE
+    assert tools["memory_add"].level is PermissionLevel.WRITE
+    assert tools["memory_link"].level is PermissionLevel.WRITE
+    assert tools["memory_forget"].level is PermissionLevel.CRITICAL
+
+
+def test_run_command_ist_system():
+    policy = shell.ShellPolicy(enabled=True, allowlist=["echo"])
+    tools = {t.name: t for t in shell.build(policy)}
+    assert tools["run_command"].level is PermissionLevel.SYSTEM
+
+
+def test_schreibende_werkzeuge_sind_nicht_safe():
+    """Die Stufe ist das, woran das Permission-System hängt -- ein
+    schreibendes Werkzeug auf SAFE würde ungefragt durchlaufen."""
+    from jarvis.tools.files import Workspace, build as files_build
+    tools = {t.name: t for t in files_build(Workspace([]))}
+    assert tools["write_file"].level is PermissionLevel.WRITE
+    assert tools["delete_file"].level is PermissionLevel.CRITICAL
+    assert tools["read_file"].level is PermissionLevel.SAFE
+
+
+def test_mutating_property_leitet_sich_aus_level_ab():
+    safe = Tool("x", "", {"type": "object", "properties": {}}, lambda: None)
+    critical = Tool("y", "", {"type": "object", "properties": {}}, lambda: None,
+                    level=PermissionLevel.CRITICAL)
+    assert safe.mutating is False
+    assert critical.mutating is True

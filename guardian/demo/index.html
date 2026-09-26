@@ -1,0 +1,703 @@
+<title>Guardian Console</title>
+<style>
+  /* Deliberately single-theme: a dark security operations console is the
+     domain convention (EDR/AV dashboards are almost universally dark), so
+     colors are declared once and explicitly, not swapped per prefers-color-scheme. */
+  :root {
+    --bg: #0a0e14;
+    --surface: #121926;
+    --surface-2: #182131;
+    --border: #26324a;
+    --ink: #e7edf7;
+    --muted: #8b98ad;
+    --accent: #6d8dff;
+    --accent-ink: #0a0e14;
+    --safe: #35c46a;
+    --warn: #e8a53d;
+    --danger: #ef4b5f;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+  }
+
+  @font-face {
+    font-family: "IBM Plex Sans";
+    src: local("IBM Plex Sans");
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    margin: 0;
+    padding-inline: 16px;
+    min-height: 100%;
+  }
+
+  html, body { height: 100%; }
+
+  .app {
+    max-width: 980px;
+    margin: 0 auto;
+    padding-block: 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .brand {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-mark { font-size: 1.3rem; }
+
+  .status-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .pill {
+    font-size: 0.75rem;
+    font-family: "IBM Plex Mono", monospace;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    padding: 5px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill b { color: var(--ink); }
+  .pill-safe { color: var(--safe); border-color: color-mix(in srgb, var(--safe) 40%, var(--border)); }
+
+  .demo-banner {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .demo-banner strong { color: var(--ink); }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    font: inherit;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85rem;
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .panel { display: none; flex-direction: column; gap: 16px; }
+  .panel.active { display: flex; }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .stat-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+  .stat-tile.stat-danger .stat-value { color: var(--danger); }
+
+  .grid-two {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 12px;
+  }
+  @media (max-width: 720px) {
+    .grid-two { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .card h2 {
+    margin: 0;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .hint { margin: -6px 0 0; font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+
+  .file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    font: inherit;
+    color: inherit;
+  }
+  .file-row:hover, .file-row:focus-visible { border-color: var(--accent); outline: none; }
+  .file-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .file-name { font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; overflow-wrap: anywhere; }
+  .file-meta { font-size: 0.72rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; }
+
+  .chip {
+    font-size: 0.7rem;
+    font-family: "IBM Plex Mono", monospace;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chip-trusted { background: color-mix(in srgb, var(--safe) 18%, transparent); color: var(--safe); }
+  .chip-monitoring { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .chip-quarantined { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+
+  .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 480px) { .btn-grid { grid-template-columns: 1fr; } }
+
+  button.sim {
+    font: inherit;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  button.sim:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+  button.sim:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.sim.btn-danger:hover { border-color: var(--danger); }
+  button.sim.btn-ghost { color: var(--muted); grid-column: 1 / -1; text-align: center; }
+
+  .score-block { display: flex; flex-direction: column; gap: 8px; }
+  .score-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .score-num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+  .score-verdict { font-size: 0.72rem; font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+  .score-bar-track { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; border: 1px solid var(--border); }
+  .score-bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+  .score-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .score-findings li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--muted);
+  }
+  .score-findings li b { color: var(--ink); font-weight: 500; }
+
+  .empty-note { font-size: 0.8rem; color: var(--muted); }
+
+  .java-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .java-grid { grid-template-columns: 1fr; } }
+
+  .kv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
+  .kv-list li { display: flex; justify-content: space-between; gap: 10px; }
+  .kv-list .k { color: var(--muted); }
+  .kv-list .v { font-family: "IBM Plex Mono", monospace; text-align: right; overflow-wrap: anywhere; }
+
+  .behaviour-list, .action-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .behaviour-list li, .action-list li { font-size: 0.85rem; display: flex; gap: 8px; align-items: flex-start; }
+  .behaviour-list li::before { content: "•"; color: var(--warn); }
+  .action-list li::before { content: "✓"; color: var(--danger); font-family: "IBM Plex Mono", monospace; }
+
+  .tree { font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; margin: 0; white-space: pre; overflow-x: auto; line-height: 1.7; }
+  .tree .node-root { color: var(--ink); }
+  .tree .node-mid { color: var(--warn); }
+  .tree .node-leaf { color: var(--danger); }
+
+  .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .timeline li {
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  .timeline li:last-child { border-bottom: none; }
+  .timeline li.empty-note { display: block; }
+  .timeline time {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  .timeline .ev-danger { color: var(--danger); }
+  .timeline .ev-warn { color: var(--warn); }
+  .timeline .ev-safe { color: var(--safe); }
+
+  footer.note {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-align: center;
+    padding-top: 6px;
+  }
+  footer.note code { font-family: "IBM Plex Mono", monospace; }
+
+  [hidden] { display: none !important; }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">🛡</span> Guardian</div>
+    <div class="status-pills">
+      <span class="pill pill-safe">● Geschützt</span>
+      <span class="pill">Echtzeitschutz: <b>EIN</b></span>
+      <span class="pill">Java Secure Mode: <b>EIN</b></span>
+    </div>
+  </header>
+
+  <div class="demo-banner">
+    <strong>Demo-Modus — simulierte Daten.</strong> Alles auf dieser Seite ist eine
+    Visualisierung, keine laufende Überwachung: es wird keine echte Datei
+    gescannt, kein echter Prozess beobachtet und keine Schadsoftware
+    verwendet. Die Phase-1-CLI (<code style="font-family:'IBM Plex Mono',monospace">guardian scan|status|quarantine</code>)
+    ist real und bereits getestet; dieses Panel zeigt vorab, wie die
+    für spätere Phasen geplante Überwachung (Echtzeitschutz, Verhaltensanalyse,
+    Java Secure Mode) sich anfühlen wird.
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
+    <button class="tab" data-tab="java" role="tab" aria-selected="false">Java Secure Mode</button>
+    <button class="tab" data-tab="events" role="tab" aria-selected="false">Ereignisse</button>
+  </nav>
+
+  <main>
+    <section id="tab-dashboard" class="panel active">
+      <div class="stat-grid">
+        <div class="stat-tile">
+          <div class="stat-label">Dateien gescannt</div>
+          <div class="stat-value" id="stat-files">12,483</div>
+        </div>
+        <div class="stat-tile stat-danger">
+          <div class="stat-label">Bedrohungen blockiert</div>
+          <div class="stat-value" id="stat-threats">3</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Prozesse überwacht</div>
+          <div class="stat-value" id="stat-procs">147</div>
+        </div>
+      </div>
+
+      <div class="grid-two">
+        <div class="card">
+          <h2>Überwachte Dateien</h2>
+          <ul class="file-list" id="file-list"></ul>
+        </div>
+
+        <div class="card">
+          <h2>Aktionen simulieren</h2>
+          <p class="hint">Erzeugt ausschließlich harmlose, simulierte Security-Events.
+            Es wird dabei keine echte Datei ausgeführt oder erzeugt.</p>
+          <div class="btn-grid">
+            <button class="sim" data-sim="safe">Simulate Safe File</button>
+            <button class="sim" data-sim="jar">Simulate Suspicious JAR</button>
+            <button class="sim btn-danger" data-sim="malware">Simulate Malware Detection</button>
+            <button class="sim btn-danger" data-sim="ransomware">Simulate Ransomware Behaviour</button>
+            <button class="sim btn-danger" data-sim="java">Simulate Java Secure Mode Alert</button>
+            <button class="sim btn-ghost" data-sim="clear">Clear Events</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="detail-card">
+        <h2>Warum dieser Wert? (letzte Auswahl)</h2>
+        <div id="detail-body"></div>
+      </div>
+    </section>
+
+    <section id="tab-java" class="panel">
+      <div class="card">
+        <h2>Letzter Java-Secure-Mode-Vorfall</h2>
+        <div id="java-body"></div>
+      </div>
+    </section>
+
+    <section id="tab-events" class="panel">
+      <div class="card">
+        <h2>Event Timeline</h2>
+        <ol class="timeline" id="timeline" aria-live="polite"></ol>
+      </div>
+    </section>
+  </main>
+
+  <footer class="note">Guardian Phase 1 (CLI, Rust) ist real und getestet — dieses Panel ist ein
+    reiner Vorschau-/Demo-Client mit clientseitig simulierten Daten, ohne Verbindung zur
+    laufenden Guardian-Instanz.</footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const SEVERITY = { safe: "safe", warn: "warn", danger: "danger" };
+
+  function verdictOf(score) {
+    if (score >= 85) return { label: "quarantine", sev: SEVERITY.danger };
+    if (score >= 70) return { label: "contain", sev: SEVERITY.danger };
+    if (score >= 50) return { label: "elevated", sev: SEVERITY.warn };
+    if (score >= 30) return { label: "suspicious", sev: SEVERITY.warn };
+    return { label: "clean", sev: SEVERITY.safe };
+  }
+
+  function fmtTime(d) {
+    return d.toLocaleTimeString("de-DE", { hour12: false });
+  }
+
+  function fakeHash() {
+    const chars = "0123456789abcdef";
+    let out = "";
+    for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out + "…" + Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  }
+
+  const state = {
+    filesScanned: 12483,
+    threatsBlocked: 3,
+    processesMonitored: 147,
+    files: [],
+    events: [],
+    java: null,
+    selectedFileId: null,
+    nextId: 1,
+  };
+
+  function seed() {
+    const now = Date.now();
+    state.files = [
+      {
+        id: state.nextId++,
+        name: "minecraft_server.jar",
+        status: "trusted",
+        score: 2,
+        hash: fakeHash(),
+        findings: [{ label: "Bekannter, wiederholt genutzter Prozess", points: 2 }],
+      },
+      {
+        id: state.nextId++,
+        name: "unknown-mod.jar",
+        status: "monitoring",
+        score: 42,
+        hash: fakeHash(),
+        findings: [
+          { label: "Unbekannter Herausgeber", points: 15 },
+          { label: "Unbekannte Reputation", points: 12 },
+          { label: "Ungewöhnliche Signaturmerkmale", points: 15 },
+        ],
+      },
+      {
+        id: state.nextId++,
+        name: "suspicious.jar",
+        status: "quarantined",
+        score: 91,
+        hash: fakeHash(),
+        findings: [
+          { label: "Unbekannte Herkunft", points: 20 },
+          { label: "YARA-Erkennung", points: 30 },
+          { label: "Ungewöhnliche Sektionsmerkmale", points: 20 },
+          { label: "Unbekannte Reputation", points: 21 },
+        ],
+      },
+    ];
+    state.events = [
+      { time: new Date(now - 3 * 60000), text: "minecraft_server.jar gestartet — bekannter Prozess", sev: SEVERITY.safe },
+      { time: new Date(now - 2 * 60000), text: "unknown-mod.jar geladen — Threat Score 42, Überwachung aktiv", sev: SEVERITY.warn },
+      { time: new Date(now - 1 * 60000), text: "suspicious.jar erkannt — Threat Score 91, in Quarantäne verschoben", sev: SEVERITY.danger },
+    ];
+    state.java = javaIncident(78, now - 90000);
+    render();
+  }
+
+  function javaIncident(score, atMs) {
+    return {
+      time: new Date(atMs),
+      process: "java.exe",
+      application: "unknown-mod.jar",
+      score,
+      findings: [
+        { label: "Unbekanntes JAR", points: 20 },
+        { label: "PowerShell als Kindprozess gestartet", points: 25 },
+        { label: "Persistenzänderung versucht", points: 18 },
+        { label: "Unbekannte Netzwerkverbindung geöffnet", points: 15 },
+      ],
+      tree: ["java.exe", "unknown-mod.jar", "powershell.exe", "downloaded.exe"],
+      actions: [
+        "Prozess angehalten",
+        "Netzwerkzugriff eingeschränkt",
+        "Datei in Quarantäne verschoben",
+      ],
+    };
+  }
+
+  function pushEvent(text, sev) {
+    state.events.unshift({ time: new Date(), text, sev });
+  }
+
+  function scoreBlockHtml(score, findings, { compact } = {}) {
+    const v = verdictOf(score);
+    const color = `var(--${v.sev})`;
+    const rows = findings
+      .map((f) => `<li><b>+${f.points}</b><span>${f.label}</span></li>`)
+      .join("");
+    return `
+      <div class="score-block">
+        <div class="score-head">
+          <span class="score-num">Threat Score: ${score} / 100</span>
+          <span class="score-verdict" style="color:${color}">${v.label}</span>
+        </div>
+        <div class="score-bar-track"><div class="score-bar-fill" style="width:${score}%;background:${color}"></div></div>
+        ${compact ? "" : `<ul class="score-findings">${rows}</ul>`}
+      </div>`;
+  }
+
+  function render() {
+    document.getElementById("stat-files").textContent = state.filesScanned.toLocaleString("de-DE");
+    document.getElementById("stat-threats").textContent = state.threatsBlocked.toLocaleString("de-DE");
+    document.getElementById("stat-procs").textContent = state.processesMonitored.toLocaleString("de-DE");
+    renderFileList();
+    renderDetail();
+    renderTimeline();
+    renderJava();
+  }
+
+  function renderFileList() {
+    const list = document.getElementById("file-list");
+    list.innerHTML = "";
+    if (state.files.length === 0) {
+      list.innerHTML = '<li class="empty-note">Keine Dateien in dieser Sitzung — mit den Aktionen rechts eine simulieren.</li>';
+      return;
+    }
+    for (const f of state.files) {
+      const li = document.createElement("li");
+      const chipClass = f.status === "trusted" ? "chip-trusted" : f.status === "monitoring" ? "chip-monitoring" : "chip-quarantined";
+      const chipLabel = f.status === "trusted" ? "Trusted" : f.status === "monitoring" ? "Monitoring" : "Quarantined";
+      li.innerHTML = `
+        <button class="file-row" type="button" data-file-id="${f.id}">
+          <span class="file-main">
+            <span class="file-name">${f.name}</span>
+            <span class="file-meta">sha256≈${f.hash} · score ${f.score}</span>
+          </span>
+          <span class="chip ${chipClass}">${chipLabel}</span>
+        </button>`;
+      list.appendChild(li);
+    }
+  }
+
+  function renderDetail() {
+    const body = document.getElementById("detail-body");
+    const file = state.files.find((f) => f.id === state.selectedFileId) || state.files[state.files.length - 1];
+    if (!file) {
+      body.innerHTML = '<p class="empty-note">Auf eine Datei links klicken, um die Score-Begründung zu sehen.</p>';
+      return;
+    }
+    body.innerHTML = `<p class="hint" style="margin-top:0">${file.name}</p>` + scoreBlockHtml(file.score, file.findings);
+  }
+
+  function renderTimeline() {
+    const el = document.getElementById("timeline");
+    el.innerHTML = "";
+    if (state.events.length === 0) {
+      el.innerHTML = '<li class="empty-note" style="border:none">Keine Ereignisse — geleert oder noch keine Aktion simuliert.</li>';
+      return;
+    }
+    for (const ev of state.events) {
+      const li = document.createElement("li");
+      li.innerHTML = `<time>${fmtTime(ev.time)}</time><span class="ev-${ev.sev}">${ev.text}</span>`;
+      el.appendChild(li);
+    }
+  }
+
+  function renderJava() {
+    const body = document.getElementById("java-body");
+    const j = state.java;
+    if (!j) {
+      body.innerHTML = '<p class="empty-note">Noch kein Java-Secure-Mode-Ereignis. Auf „Simulate Java Secure Mode Alert" klicken.</p>';
+      return;
+    }
+    const treeHtml =
+      `<span class="node-root">${j.tree[0]}</span>\n` +
+      `└── <span class="node-mid">${j.tree[1]}</span>\n` +
+      `    └── <span class="node-mid">${j.tree[2]}</span>\n` +
+      `        └── <span class="node-leaf">${j.tree[3]}</span>`;
+
+    body.innerHTML = `
+      <div class="java-grid">
+        <div>
+          <ul class="kv-list">
+            <li><span class="k">Process</span><span class="v">${j.process}</span></li>
+            <li><span class="k">Application</span><span class="v">${j.application}</span></li>
+            <li><span class="k">Erkannt um</span><span class="v">${fmtTime(j.time)}</span></li>
+          </ul>
+          <h2 style="margin-top:14px">Observed behaviour</h2>
+          <ul class="behaviour-list">
+            ${j.findings.map((f) => `<li>${f.label}</li>`).join("")}
+          </ul>
+          <h2 style="margin-top:14px">Action</h2>
+          <ul class="action-list">
+            ${j.actions.map((a) => `<li>${a}</li>`).join("")}
+          </ul>
+        </div>
+        <div>
+          <h2>Event Tree</h2>
+          <pre class="tree">${treeHtml}</pre>
+          <h2 style="margin-top:14px">Score-Begründung</h2>
+          ${scoreBlockHtml(j.score, j.findings)}
+        </div>
+      </div>`;
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll(".tab").forEach((t) => {
+      const active = t.dataset.tab === name;
+      t.classList.toggle("active", active);
+      t.setAttribute("aria-selected", String(active));
+    });
+    document.querySelectorAll(".panel").forEach((p) => {
+      p.classList.toggle("active", p.id === `tab-${name}`);
+    });
+  }
+
+  function simulate(kind) {
+    const now = Date.now();
+    if (kind === "safe") {
+      const n = state.nextId++;
+      const file = { id: n, name: `installer_${n}.exe`, status: "trusted", score: 3, hash: fakeHash(),
+        findings: [{ label: "Bekannte, signierte Anwendung", points: 3 }] };
+      state.files.unshift(file);
+      state.filesScanned++;
+      state.selectedFileId = n;
+      pushEvent(`${file.name} gescannt — sauber (Score ${file.score})`, SEVERITY.safe);
+    } else if (kind === "jar") {
+      const n = state.nextId++;
+      const findings = [
+        { label: "Unbekannter Herausgeber", points: 15 },
+        { label: "Unbekannte Reputation", points: 12 },
+        { label: "Ungewöhnliche Signaturmerkmale", points: 15 },
+      ];
+      const score = findings.reduce((s, f) => s + f.points, 0);
+      const file = { id: n, name: `mod-${n}.jar`, status: "monitoring", score, hash: fakeHash(), findings };
+      state.files.unshift(file);
+      state.filesScanned++;
+      state.selectedFileId = n;
+      pushEvent(`${file.name} geladen — Threat Score ${score}, Überwachung aktiv`, SEVERITY.warn);
+    } else if (kind === "malware") {
+      const n = state.nextId++;
+      const findings = [
+        { label: "Unbekannte ausführbare Datei", points: 20 },
+        { label: "Verdächtiger Kindprozess", points: 15 },
+        { label: "YARA-Erkennung", points: 25 },
+        { label: "Persistenzversuch", points: 12 },
+        { label: "Unbekannte Reputation", points: 10 },
+      ];
+      const score = findings.reduce((s, f) => s + f.points, 0);
+      const file = { id: n, name: `payload_${n}.exe`, status: "quarantined", score, hash: fakeHash(), findings };
+      state.files.unshift(file);
+      state.filesScanned++;
+      state.threatsBlocked++;
+      state.selectedFileId = n;
+      pushEvent(`${file.name} — Threat Score ${score}, Malware erkannt`, SEVERITY.danger);
+      pushEvent(`${file.name} in Quarantäne verschoben`, SEVERITY.danger);
+    } else if (kind === "ransomware") {
+      const n = state.nextId++;
+      const findings = [
+        { label: "Canary-Datei durch unbekannten Prozess verändert", points: 30 },
+        { label: "Massenhafte Dateiänderungen erkannt", points: 28 },
+        { label: "Unbekannter Prozess", points: 15 },
+        { label: "Persistenzversuch", points: 15 },
+      ];
+      const score = findings.reduce((s, f) => s + f.points, 0);
+      const file = { id: n, name: `enc_worker_${n}.exe`, status: "quarantined", score, hash: fakeHash(), findings };
+      state.files.unshift(file);
+      state.filesScanned++;
+      state.threatsBlocked++;
+      state.selectedFileId = n;
+      pushEvent("Canary-Datei .security_canary_01.txt verändert von unbekanntem Prozess", SEVERITY.danger);
+      pushEvent(`${file.name} angehalten, Kindprozesse gestoppt`, SEVERITY.danger);
+      pushEvent("Betroffene Dateien isoliert, Netzwerkzugriff blockiert", SEVERITY.danger);
+    } else if (kind === "java") {
+      state.java = javaIncident(78, now);
+      state.threatsBlocked++;
+      state.processesMonitored++;
+      pushEvent("java.exe startete unknown-mod.jar", SEVERITY.warn);
+      pushEvent("Unbekannte Netzwerkverbindung erkannt", SEVERITY.warn);
+      pushEvent("powershell.exe als Kindprozess gestartet", SEVERITY.danger);
+      pushEvent("Threat Score auf 78 gestiegen", SEVERITY.danger);
+      pushEvent("Prozess angehalten, Payload in Quarantäne verschoben", SEVERITY.danger);
+      switchTab("java");
+    } else if (kind === "clear") {
+      state.events = [];
+    }
+    render();
+  }
+
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+
+  document.querySelectorAll("button.sim").forEach((btn) => {
+    btn.addEventListener("click", () => simulate(btn.dataset.sim));
+  });
+
+  document.getElementById("file-list").addEventListener("click", (e) => {
+    const row = e.target.closest(".file-row");
+    if (!row) return;
+    state.selectedFileId = Number(row.dataset.fileId);
+    renderDetail();
+  });
+
+  seed();
+})();
+</script>

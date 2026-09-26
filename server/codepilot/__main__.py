@@ -10,7 +10,7 @@ import argparse
 import asyncio
 import sys
 
-from . import __version__, detect, doctor
+from . import __version__, console, detect, doctor
 from .app import create_app
 from .config import BIND_CHOICES, BIND_PRIVATE, SettingsStore
 from .providers import get_provider
@@ -23,8 +23,16 @@ BANNER = r"""
 """
 
 
-def _mark(ok: bool) -> str:
-    return "✓" if ok else "✗"
+#: Resolved on first use, after main() has reconfigured the streams.
+_MARKS: dict[str, str] | None = None
+
+
+def _mark(ok: bool, stream=None) -> str:
+    global _MARKS
+    if _MARKS is None or stream is not None:
+        _MARKS = console.marks({"ok": "✓", "no": "✗"},
+                               {"ok": "+", "no": "!"}, stream)
+    return _MARKS["ok"] if ok else _MARKS["no"]
 
 
 async def preflight(settings) -> bool:
@@ -67,6 +75,9 @@ async def preflight(settings) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before anything prints: a redirected stdout on Windows defaults to the
+    # process code page, and the banner's check marks would kill the process.
+    console.make_output_robust()
     parser = argparse.ArgumentParser(prog="python -m codepilot",
                                      description="CodePilot Remote desktop server")
     parser.add_argument("--host", help="override the bind address for this run")
