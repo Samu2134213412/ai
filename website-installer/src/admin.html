@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website bearbeiten</title>
+<style>
+  :root {
+    --bg: #f5f5f2; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #e2e1dc; --accent: #2f5bea; --accent-soft: #e8eeff;
+    --ok: #1f8a4c; --err: #c23b2e; --code-bg: #fbfbf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9b9a93;
+      --line: #33332f; --accent: #7c9bff; --accent-soft: #232b45;
+      --ok: #4cc27f; --err: #ff7a6b; --code-bg: #1a1a18;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+  button, .btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 12px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  button:hover, .btn:hover { border-color: var(--muted); }
+  button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0 auto 0 0; }
+  header h1 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  main { flex: 1; display: grid; grid-template-columns: 290px 1fr; min-height: 0; }
+  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  .section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 16px 12px; text-align: center; color: var(--muted); transition: .15s; }
+  #drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+  #drop strong { color: var(--text); display: block; margin-bottom: 4px; }
+  #drop .row { display: flex; gap: 6px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 10px; color: var(--muted); cursor: pointer; }
+  .files-head { display: flex; align-items: center; gap: 6px; }
+  .files-head h2 { margin: 0 auto 0 0; }
+  .files-head button { padding: 4px 9px; font-size: 13px; }
+  #files { list-style: none; margin: 0; padding: 6px 8px 16px; overflow: auto; flex: 1; }
+  #files li { padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 14px; display: flex; gap: 8px; align-items: baseline; overflow: hidden; }
+  #files li:hover { background: var(--bg); }
+  #files li.active { background: var(--accent-soft); }
+  #files li .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #files li .dir { color: var(--muted); }
+  #files li .size { margin-left: auto; color: var(--muted); font-size: 12px; flex-shrink: 0; }
+  #files .empty { color: var(--muted); cursor: default; }
+  .workspace { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; min-width: 0; }
+  .workspace.no-preview { grid-template-columns: 1fr; }
+  .workspace.no-preview .preview { display: none; }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); min-height: 50px; }
+  .bar .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: auto; }
+  .bar .title .dirty { color: var(--accent); }
+  #editor { flex: 1; width: 100%; border: 0; resize: none; padding: 14px 16px; font: 13.5px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--code-bg); color: var(--text); outline: none; tab-size: 2; white-space: pre; overflow: auto; }
+  #viewer { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto; color: var(--muted); text-align: center; }
+  #viewer img { max-width: 100%; max-height: 100%; background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+  iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; z-index: 10; }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--err); color: #fff; }
+  #busy { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 9; }
+  #busy div { background: var(--panel); padding: 18px 24px; border-radius: 12px; }
+  .hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+    .workspace { grid-template-columns: 1fr; }
+    .pane + .pane { border-left: 0; border-top: 1px solid var(--line); min-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="siteName">Meine Website <small>bearbeiten</small></h1>
+  <a class="btn primary" href="/" target="_blank">Website ansehen &#8599;</a>
+  <button id="openFolder" title="Den Ordner mit deinen Website-Dateien im Explorer oeffnen">Ordner &ouml;ffnen</button>
+  <button id="openBackups" title="Automatische Sicherungen ansehen">Sicherungen</button>
+</header>
+
+<main>
+  <aside>
+    <div class="section">
+      <h2>Design hochladen</h2>
+      <div id="drop">
+        <strong>Hier hineinziehen</strong>
+        ZIP-Datei, HTML-Datei oder ganzen Ordner (z.&nbsp;B. dein Export aus Claude Design)
+        <div class="row">
+          <button id="pickFiles">Datei w&auml;hlen</button>
+          <button id="pickFolder">Ordner w&auml;hlen</button>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="replace" checked>
+        <span>Bisherige Website ersetzen<br>(die alte Version wird vorher automatisch gesichert)</span></label>
+      <input type="file" id="fileInput" multiple hidden>
+      <input type="file" id="folderInput" webkitdirectory hidden>
+    </div>
+    <div class="section files-head">
+      <h2>Dateien</h2>
+      <button id="newFile" title="Neue Datei anlegen">+ Neu</button>
+      <button id="reload" title="Liste aktualisieren">&#8635;</button>
+    </div>
+    <ul id="files"></ul>
+  </aside>
+
+  <section class="workspace" id="workspace">
+    <div class="pane">
+      <div class="bar">
+        <span class="title" id="fileTitle">Keine Datei ge&ouml;ffnet</span>
+        <button id="deleteFile" disabled>L&ouml;schen</button>
+        <button id="save" class="primary" disabled>Speichern</button>
+      </div>
+      <textarea id="editor" spellcheck="false" hidden></textarea>
+      <div id="viewer">Links eine Datei anklicken, um sie zu bearbeiten.<br>
+        Tipp: <kbd>Strg</kbd>+<kbd>S</kbd> speichert.</div>
+    </div>
+    <div class="pane preview">
+      <div class="bar">
+        <span class="title">Vorschau</span>
+        <button id="refreshPreview" title="Vorschau neu laden">&#8635;</button>
+        <button id="togglePreview" title="Vorschau ausblenden">Ausblenden</button>
+      </div>
+      <iframe id="preview" src="/" title="Vorschau"></iframe>
+    </div>
+  </section>
+</main>
+
+<div id="busy"><div id="busyText">Wird hochgeladen&hellip;</div></div>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const TEXT_EXT = /\.(html?|css|m?js|json|txt|md|svg|xml|csv|webmanifest|map|ts|jsx|tsx)$/i;
+const IMG_EXT = /\.(png|jpe?g|gif|webp|avif|ico|bmp|svg)$/i;
+
+let current = null;   // Pfad der offenen Datei
+let original = '';    // Inhalt beim Oeffnen/Speichern
+let files = [];
+
+// ---------------------------------------------------------------- Helfer
+async function api(action, { method = 'GET', params = {}, body } = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch('/_api/' + action + (qs ? '?' + qs : ''), {
+    method, body, headers: { 'X-Meine-Website': '1' }
+  });
+  if (!res.ok) {
+    let msg = res.status + ' ' + res.statusText;
+    try { msg = (await res.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res;
+}
+let toastTimer;
+function toast(msg, isErr = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', isErr ? 6000 : 3000);
+}
+function busy(text) {
+  $('busy').style.display = text ? 'flex' : 'none';
+  if (text) $('busyText').textContent = text;
+}
+function fmtSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+function isDirty() { return current && !$('editor').hidden && $('editor').value !== original; }
+function updateTitle() {
+  $('fileTitle').innerHTML = '';
+  if (!current) { $('fileTitle').textContent = 'Keine Datei geöffnet'; return; }
+  $('fileTitle').textContent = current;
+  if (isDirty()) {
+    const d = document.createElement('span');
+    d.className = 'dirty'; d.textContent = ' ●'; d.title = 'Nicht gespeichert';
+    $('fileTitle').appendChild(d);
+  }
+}
+function refreshPreview(path) {
+  const f = $('preview');
+  if (path && /\.html?$/i.test(path)) {
+    f.src = '/' + path.split('/').map(encodeURIComponent).join('/') + '?t=' + Date.now();
+  } else {
+    try { f.contentWindow.location.reload(); } catch { f.src = f.src; }
+  }
+}
+
+// ---------------------------------------------------------------- Dateien
+async function loadFiles() {
+  try {
+    files = await (await api('files')).json();
+  } catch (e) { toast('Dateiliste konnte nicht geladen werden: ' + e.message, true); return; }
+  const ul = $('files');
+  ul.innerHTML = '';
+  if (!files.length) {
+    ul.innerHTML = '<li class="empty">Noch keine Dateien &ndash; lade oben dein Design hoch.</li>';
+    return;
+  }
+  for (const f of files) {
+    const li = document.createElement('li');
+    const slash = f.path.lastIndexOf('/');
+    const name = document.createElement('span');
+    name.className = 'name';
+    if (slash >= 0) {
+      const d = document.createElement('span');
+      d.className = 'dir'; d.textContent = f.path.slice(0, slash + 1);
+      name.appendChild(d);
+    }
+    name.appendChild(document.createTextNode(f.path.slice(slash + 1)));
+    const size = document.createElement('span');
+    size.className = 'size'; size.textContent = fmtSize(f.size);
+    li.append(name, size);
+    li.title = f.path + ' – geändert ' + f.modified;
+    li.dataset.path = f.path;
+    if (f.path === current) li.classList.add('active');
+    li.onclick = () => openFile(f.path);
+    ul.appendChild(li);
+  }
+}
+
+async function openFile(path) {
+  if (isDirty() && !confirm('Die Änderungen an "' + current + '" sind noch nicht gespeichert. Trotzdem wechseln?')) return;
+  current = path;
+  document.querySelectorAll('#files li').forEach(li => li.classList.toggle('active', li.dataset.path === path));
+  const ed = $('editor'), viewer = $('viewer');
+  $('deleteFile').disabled = false;
+  if (TEXT_EXT.test(path)) {
+    try {
+      original = await (await api('file', { params: { path } })).text();
+    } catch (e) { toast(e.message, true); return; }
+    ed.value = original;
+    ed.hidden = false; viewer.hidden = true;
+    $('save').disabled = false;
+    ed.focus();
+  } else {
+    ed.hidden = true; viewer.hidden = false;
+    $('save').disabled = true;
+    original = '';
+    viewer.innerHTML = '';
+    if (IMG_EXT.test(path)) {
+      const img = document.createElement('img');
+      img.src = '/' + path.split('/').map(encodeURIComponent).join('/') + '?t=' + Date.now();
+      viewer.appendChild(img);
+    } else {
+      viewer.textContent = 'Diese Datei kann hier nicht bearbeitet werden. Du findest sie über „Ordner öffnen“.';
+    }
+  }
+  updateTitle();
+  if (/\.html?$/i.test(path)) refreshPreview(path);
+}
+
+async function saveFile() {
+  if (!current || $('editor').hidden) return;
+  const text = $('editor').value;
+  try {
+    await api('file', { method: 'PUT', params: { path: current }, body: text });
+  } catch (e) { toast('Speichern fehlgeschlagen: ' + e.message, true); return; }
+  original = text;
+  updateTitle();
+  toast('Gespeichert ✓');
+  refreshPreview(/\.html?$/i.test(current) ? current : null);
+  loadFiles();
+}
+
+// ---------------------------------------------------------------- Upload
+// Liest einen hineingezogenen Ordner rekursiv aus.
+function readEntry(entry, prefix = '') {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file(f => resolve([{ file: f, path: prefix + f.name }]), () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => reader.readEntries(async (entries) => {
+        if (!entries.length) {
+          const nested = await Promise.all(all.map(e => readEntry(e, prefix + entry.name + '/')));
+          resolve(nested.flat());
+        } else { all.push(...entries); readBatch(); }
+      }, () => resolve([]));
+      readBatch();
+    } else resolve([]);
+  });
+}
+
+function stripCommonFolder(list) {
+  while (list.length && list.every(x => x.path.includes('/'))) {
+    const top = list[0].path.split('/')[0];
+    if (!list.every(x => x.path.split('/')[0] === top)) break;
+    list = list.map(x => ({ file: x.file, path: x.path.slice(top.length + 1) }));
+  }
+  return list;
+}
+
+async function upload(list) {
+  list = list.filter(x => !/(^|\/)(\.DS_Store|Thumbs\.db|__MACOSX(\/.*)?)$/.test(x.path) && !x.path.startsWith('__MACOSX/'));
+  if (!list.length) return;
+  if (isDirty() && !confirm('Deine ungespeicherten Änderungen gehen verloren. Trotzdem hochladen?')) return;
+  const replace = $('replace').checked;
+  let info = '';
+  busy('Wird hochgeladen …');
+  try {
+    if (list.length === 1 && /\.zip$/i.test(list[0].path)) {
+      const r = await (await api('upload-zip', { method: 'POST', params: { replace: replace ? '1' : '0' }, body: list[0].file })).json();
+      info = r.files + ' Dateien aus der ZIP übernommen';
+      if (r.redirect) info += ' · Startseite: ' + r.redirect;
+    } else {
+      list = stripCommonFolder(list);
+      if (list.length === 1 && /\.html?$/i.test(list[0].path) && replace) list[0].path = 'index.html';
+      if (replace) await api('clear', { method: 'POST' });
+      let i = 0;
+      for (const x of list) {
+        busy('Wird hochgeladen … ' + (++i) + ' / ' + list.length);
+        await api('file', { method: 'PUT', params: { path: x.path }, body: x.file });
+      }
+      const r = await (await api('fix-index', { method: 'POST' })).json();
+      info = list.length + (list.length === 1 ? ' Datei' : ' Dateien') + ' hochgeladen';
+      if (r.redirect) info += ' · Startseite: ' + r.redirect;
+    }
+    current = null; original = '';
+    $('editor').hidden = true; $('viewer').hidden = false;
+    $('viewer').textContent = 'Fertig! Links eine Datei anklicken, um sie zu bearbeiten.';
+    $('save').disabled = true; $('deleteFile').disabled = true;
+    updateTitle();
+    toast(info + ' ✓');
+  } catch (e) {
+    toast('Hochladen fehlgeschlagen: ' + e.message, true);
+  } finally {
+    busy(null);
+    await loadFiles();
+    $('preview').src = '/?t=' + Date.now();
+  }
+}
+
+const drop = $('drop');
+['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => {
+  e.preventDefault();
+  if (ev === 'drop' || !e.relatedTarget) drop.classList.remove('over');
+}));
+document.addEventListener('drop', async (e) => {
+  const items = [...(e.dataTransfer.items || [])];
+  const entries = items.map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+  let list;
+  if (entries.length) list = (await Promise.all(entries.map(en => readEntry(en)))).flat();
+  else list = [...e.dataTransfer.files].map(f => ({ file: f, path: f.name }));
+  upload(list);
+});
+$('pickFiles').onclick = () => $('fileInput').click();
+$('pickFolder').onclick = () => $('folderInput').click();
+$('fileInput').onchange = (e) => { upload([...e.target.files].map(f => ({ file: f, path: f.name }))); e.target.value = ''; };
+$('folderInput').onchange = (e) => { upload([...e.target.files].map(f => ({ file: f, path: f.webkitRelativePath || f.name }))); e.target.value = ''; };
+
+// ---------------------------------------------------------------- Knoepfe
+$('save').onclick = saveFile;
+$('editor').addEventListener('input', updateTitle);
+$('editor').addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {   // Tab rueckt ein, statt das Feld zu verlassen
+    e.preventDefault();
+    const ed = e.target, s = ed.selectionStart;
+    ed.setRangeText('  ', s, ed.selectionEnd, 'end');
+    updateTitle();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
+});
+window.addEventListener('beforeunload', (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+$('deleteFile').onclick = async () => {
+  if (!current || !confirm('"' + current + '" wirklich löschen?')) return;
+  try { await api('file', { method: 'DELETE', params: { path: current } }); }
+  catch (e) { toast(e.message, true); return; }
+  toast('Gelöscht');
+  current = null; original = '';
+  $('editor').hidden = true; $('viewer').hidden = false;
+  $('viewer').textContent = 'Links eine Datei anklicken, um sie zu bearbeiten.';
+  $('save').disabled = true; $('deleteFile').disabled = true;
+  updateTitle(); loadFiles(); refreshPreview();
+};
+
+$('newFile').onclick = async () => {
+  const name = prompt('Name der neuen Datei (z. B. kontakt.html oder css/extra.css):');
+  if (!name) return;
+  const path = name.trim().replace(/\\/g, '/').replace(/^\/+/, '');
+  if (files.some(f => f.path.toLowerCase() === path.toLowerCase())) { openFile(path); return; }
+  let body = '';
+  if (/\.html?$/i.test(path)) body = '<!doctype html>\n<html lang="de">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>Neue Seite</title>\n</head>\n<body>\n  <h1>Neue Seite</h1>\n</body>\n</html>\n';
+  try { await api('file', { method: 'PUT', params: { path }, body }); }
+  catch (e) { toast(e.message, true); return; }
+  await loadFiles();
+  openFile(path);
+};
+
+$('reload').onclick = loadFiles;
+$('refreshPreview').onclick = () => refreshPreview();
+$('togglePreview').onclick = () => {
+  const ws = $('workspace');
+  ws.classList.add('no-preview');
+  const b = document.createElement('button');
+  b.textContent = 'Vorschau zeigen';
+  b.onclick = () => { ws.classList.remove('no-preview'); b.remove(); };
+  document.querySelector('.pane .bar').insertBefore(b, $('deleteFile'));
+};
+$('openFolder').onclick = () => api('open-folder', { method: 'POST' }).catch(e => toast(e.message, true));
+$('openBackups').onclick = () => api('open-folder', { method: 'POST', params: { which: 'backups' } }).catch(e => toast(e.message, true));
+
+// ---------------------------------------------------------------- Start
+api('info').then(r => r.json()).then(info => {
+  document.title = info.name + ' bearbeiten';
+  $('siteName').innerHTML = '';
+  $('siteName').append(info.name, Object.assign(document.createElement('small'), { textContent: 'bearbeiten' }));
+}).catch(() => {});
+loadFiles();
+</script>
+</body>
+</html>

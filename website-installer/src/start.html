@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__SITE_NAME__</title>
+<style>
+  :root { --bg: #f5f5f2; --text: #1d1d1b; --muted: #6b6b66; --accent: #2f5bea; --card: #fff; --line: #e2e1dc; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --text: #ecebe6; --muted: #9b9a93; --accent: #7c9bff; --card: #1f1f1d; --line: #33332f; }
+  }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+         font: 17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 24px; box-sizing: border-box; }
+  main { max-width: 620px; }
+  h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -.02em; }
+  p { color: var(--muted); margin: 0 0 14px; }
+  ol { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 18px 40px; margin: 24px 0; }
+  li { margin: 6px 0; }
+  a.btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>__SITE_NAME__ l&auml;uft! &#127881;</h1>
+  <p>Das hier ist nur ein Platzhalter. So kommt dein eigenes Design hierher:</p>
+  <ol>
+    <li>Design in Claude Design fertig machen und exportieren (als ZIP, HTML-Datei oder Ordner).</li>
+    <li>Auf <strong>&bdquo;Website bearbeiten&ldquo;</strong> klicken.</li>
+    <li>Den Export in das Upload-Feld ziehen &ndash; fertig.</li>
+  </ol>
+  <a class="btn" href="/_admin/">Website bearbeiten</a>
+</main>
+</body>
+</html>
