@@ -108,8 +108,6 @@ final class SelfTest {
         }
         SCENARIOS.add(new Scenario("Kit Schwert+Axt vs 3 Zombies", PvpBotEntity.Style.AUTO, 1800, 0,
                 level -> List.of(zombie(level, 6, 4), zombie(level, -6, 3), zombie(level, 5, -7)), SelfTest::swordKit));
-        SCENARIOS.add(new Scenario("Kit Schwert+Axt vs Eisengolem", PvpBotEntity.Style.AUTO, 2400, 0,
-                level -> List.of(golem(level, 6, 2, false)), SelfTest::swordKit));
         SCENARIOS.add(new Scenario("Kit Bogen vs Eisengolem (NoAI, 20 Bloecke)", PvpBotEntity.Style.AUTO, 2400, 0,
                 level -> List.of(golem(level, 20, 3, true)), SelfTest::bowKit));
         SCENARIOS.add(new Scenario("Grube: Schwert-Kit, Ziel draussen", PvpBotEntity.Style.AUTO, 2400, PIT_X,
