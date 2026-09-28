@@ -1,0 +1,16 @@
+name: PvP Bot - probe versions
+on:
+  push:
+    branches: [claude/minecraft-pvp-bot-26ty7h]
+    paths: ['.github/workflows/pvpbot-probe.yml']
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "== game (top 25) =="; curl -s https://meta.fabricmc.net/v2/versions/game | jq -r '.[:25][] | "\(.version) stable=\(.stable)"'
+          echo "== loader =="; curl -s https://meta.fabricmc.net/v2/versions/loader | jq -r '.[:5][] | .version'
+          echo "== yarn 1.21.11 =="; curl -s https://meta.fabricmc.net/v2/versions/yarn/1.21.11 | jq -r '.[:3][] | .version'
+          echo "== loom =="; curl -s https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml | grep -o '<version>[^<]*</version>' | tail -15
+          echo "== fabric-api =="; curl -s https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml | grep -o '<version>[^<]*</version>' | tail -25
