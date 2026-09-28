@@ -3,6 +3,8 @@ package de.samu.pvpbot.entity;
 import de.samu.pvpbot.PvpBotMod;
 import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.brain.BotBrain.Pattern;
+import de.samu.pvpbot.brain.Kit;
+import de.samu.pvpbot.brain.Kit.Role;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -53,6 +55,13 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -98,10 +107,15 @@ public class PvpBotEntity extends PathfinderMob {
     private Style style = Style.AUTO;
     private final Deque<UUID> targetQueue = new ArrayDeque<>();
 
-    private ItemStack mace = ItemStack.EMPTY;
-    private ItemStack spear = ItemStack.EMPTY;
-    private ItemStack elytra = ItemStack.EMPTY;
-    private ItemStack chestplate = ItemStack.EMPTY;
+    private final BotKit kit = new BotKit();
+    private boolean duelOwner;
+
+    // Getting unstuck.
+    private @Nullable Vec3 stuckAnchor;
+    private int stuckTicks;
+    private int unstuckStage;
+    private long lastUnstuckTime;
+    private int bowShots;
 
     private Mode mode = Mode.IDLE;
     private int modeTicks;
@@ -134,6 +148,9 @@ public class PvpBotEntity extends PathfinderMob {
         super(type, level);
         this.lookControl = new BotLookControl(this);
         this.setPersistenceRequired();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            this.setDropChance(slot, 0.0F);
+        }
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -225,7 +242,20 @@ public class PvpBotEntity extends PathfinderMob {
 
     public void clearTargets() {
         this.targetQueue.clear();
+        this.duelOwner = false;
         this.setTarget(null);
+    }
+
+    /** Sparring: the bot fights its own owner until one of them is down. */
+    public void startDuel(Player owner) {
+        this.setOwner(owner);
+        this.targetQueue.clear();
+        this.duelOwner = true;
+        this.setTarget(owner);
+    }
+
+    public boolean isInDuel() {
+        return this.duelOwner;
     }
 
     public String describeState() {
@@ -257,7 +287,7 @@ public class PvpBotEntity extends PathfinderMob {
     protected boolean considersEntityAsAlly(Entity other) {
         if (this.ownerId != null) {
             if (this.ownerId.equals(other.getUUID())) {
-                return true;
+                return !this.duelOwner;
             }
             if (other instanceof PvpBotEntity bot && this.ownerId.equals(bot.ownerId)) {
                 return true;
@@ -286,28 +316,86 @@ public class PvpBotEntity extends PathfinderMob {
 
     // ------------------------------------------------------------------ equipment
 
+    /** The original mace/spear/elytra loadout. Consumables never run out. */
     public void equipLoadout() {
-        this.mace = enchanted(new ItemStack(Items.MACE),
-                Enchantments.DENSITY, 5, Enchantments.WIND_BURST, 3, Enchantments.FIRE_ASPECT, 2, Enchantments.UNBREAKING, 3);
-        this.spear = enchanted(new ItemStack(Items.NETHERITE_SPEAR),
-                Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3);
-        this.elytra = enchanted(new ItemStack(Items.ELYTRA), Enchantments.UNBREAKING, 3);
-        this.chestplate = enchanted(new ItemStack(Items.NETHERITE_CHESTPLATE),
-                Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3);
-
-        this.setItemSlot(EquipmentSlot.HEAD, enchanted(new ItemStack(Items.NETHERITE_HELMET),
-                Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
-        this.setItemSlot(EquipmentSlot.CHEST, this.chestplate);
-        this.setItemSlot(EquipmentSlot.LEGS, enchanted(new ItemStack(Items.NETHERITE_LEGGINGS),
-                Enchantments.BLAST_PROTECTION, 4, Enchantments.UNBREAKING, 3));
-        this.setItemSlot(EquipmentSlot.FEET, enchanted(new ItemStack(Items.NETHERITE_BOOTS),
+        List<ItemStack> items = new ArrayList<>();
+        items.add(enchanted(new ItemStack(Items.MACE),
+                Enchantments.DENSITY, 5, Enchantments.WIND_BURST, 3, Enchantments.FIRE_ASPECT, 2, Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.NETHERITE_SPEAR), Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.ELYTRA), Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.NETHERITE_HELMET), Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.NETHERITE_CHESTPLATE), Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.NETHERITE_LEGGINGS), Enchantments.BLAST_PROTECTION, 4, Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.NETHERITE_BOOTS),
                 Enchantments.PROTECTION, 4, Enchantments.FEATHER_FALLING, 4, Enchantments.UNBREAKING, 3));
-        this.setItemSlot(EquipmentSlot.MAINHAND, this.style == Style.SPEAR ? this.spear : this.mace);
-        this.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.TOTEM_OF_UNDYING));
+        items.add(new ItemStack(Items.TOTEM_OF_UNDYING));
+        items.add(new ItemStack(Items.WIND_CHARGE, 64));
+        ItemStack rockets = new ItemStack(Items.FIREWORK_ROCKET, 64);
+        rockets.set(DataComponents.FIREWORKS, new Fireworks(1, List.of()));
+        items.add(rockets);
+        items.add(new ItemStack(Items.GOLDEN_APPLE, MAX_GAPPLES));
+        this.setKit(items, true);
+    }
+
+    /** Replaces everything the bot carries. The bot works out itself how to fight with it. */
+    public void setKit(List<ItemStack> items, boolean infinite) {
         for (EquipmentSlot slot : EquipmentSlot.values()) {
-            this.setDropChance(slot, 0.0F);
+            this.setItemSlot(slot, ItemStack.EMPTY);
         }
+        this.kit.clear();
+        items.forEach(this.kit::add);
+        this.kit.setInfinite(infinite);
         this.gapples = MAX_GAPPLES;
+        this.kit.equipBest(this, false);
+        ItemStack weapon = this.style == Style.SPEAR && !this.spear().isEmpty() ? this.spear()
+                : !this.mace().isEmpty() ? this.mace() : !this.spear().isEmpty() ? this.spear() : this.kit.bestBlade();
+        this.holdItem(weapon);
+    }
+
+    /** Takes all items away from the bot (e.g. to give a survival kit back to its owner). */
+    public List<ItemStack> removeKit() {
+        List<ItemStack> items = new ArrayList<>(this.kit.items());
+        this.setKit(List.of(), true);
+        return items;
+    }
+
+    public BotKit getKit() {
+        return this.kit;
+    }
+
+    public String describeKit() {
+        StringBuilder sb = new StringBuilder(Kit.describeSignature(this.kit.signature()));
+        sb.append(this.kit.isInfinite() ? " §8(unendlich)" : " §8(verbraucht sich)");
+        return sb.toString();
+    }
+
+    private ItemStack mace() {
+        return this.kit.find(Role.MACE);
+    }
+
+    private ItemStack spear() {
+        return this.kit.find(Role.SPEAR);
+    }
+
+    private ItemStack bow() {
+        ItemStack bow = this.kit.find(Role.BOW);
+        return bow.isEmpty() ? this.kit.find(Role.CROSSBOW) : bow;
+    }
+
+    private boolean hasArrows() {
+        return this.kit.has(Role.ARROW) || this.kit.isInfinite() && !this.bow().isEmpty();
+    }
+
+    @Override
+    protected void dropCustomDeathLoot(ServerLevel level, DamageSource source, boolean killedByPlayer) {
+        super.dropCustomDeathLoot(level, source, killedByPlayer);
+        if (!this.kit.isInfinite()) {
+            // A kit given in survival is real loot.
+            for (ItemStack stack : new ArrayList<>(this.kit.items())) {
+                this.spawnAtLocation(level, stack.copy());
+            }
+            this.kit.clear();
+        }
     }
 
     private ItemStack enchanted(ItemStack stack, Object... enchantsAndLevels) {
@@ -321,6 +409,16 @@ public class PvpBotEntity extends PathfinderMob {
         return stack;
     }
 
+    /** Like holdWeapon, but also allows an empty hand (fists). */
+    private void holdItem(ItemStack item) {
+        if (this.getMainHandItem() != item) {
+            if (this.isUsingItem()) {
+                this.stopUsingItem();
+            }
+            this.setItemSlot(EquipmentSlot.MAINHAND, item);
+        }
+    }
+
     private void holdWeapon(ItemStack weapon) {
         if (!weapon.isEmpty() && this.getMainHandItem() != weapon) {
             if (this.isUsingItem()) {
@@ -331,22 +429,23 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private boolean holdingSpear() {
-        return !this.spear.isEmpty() && this.getMainHandItem() == this.spear;
+        ItemStack spear = this.spear();
+        return !spear.isEmpty() && this.getMainHandItem() == spear;
     }
 
     private void wearElytra(boolean wantElytra) {
-        ItemStack wanted = wantElytra ? this.elytra : this.chestplate;
-        if (!wanted.isEmpty() && this.getItemBySlot(EquipmentSlot.CHEST) != wanted) {
+        ItemStack wanted = wantElytra ? this.kit.find(Role.ELYTRA) : this.kit.bestArmor(EquipmentSlot.CHEST);
+        if ((wantElytra ? !wanted.isEmpty() : true) && this.getItemBySlot(EquipmentSlot.CHEST) != wanted) {
             this.setItemSlot(EquipmentSlot.CHEST, wanted);
         }
     }
 
     private boolean wantsMace() {
-        return this.style != Style.SPEAR && !this.mace.isEmpty();
+        return this.style != Style.SPEAR && !this.mace().isEmpty();
     }
 
     private boolean wantsSpear() {
-        return this.style != Style.MACE && !this.spear.isEmpty();
+        return this.style != Style.MACE && !this.spear().isEmpty();
     }
 
     // ------------------------------------------------------------------ server tick
@@ -364,7 +463,8 @@ public class PvpBotEntity extends PathfinderMob {
         if (this.gappleCooldown > 0) this.gappleCooldown--;
 
         // Eat a golden apple when low.
-        if (this.getHealth() < 10.0F && this.gapples > 0 && this.gappleCooldown == 0) {
+        if (this.getHealth() < 10.0F && this.gappleCooldown == 0
+                && (this.kit.isInfinite() ? this.gapples > 0 && this.kit.has(Role.GAPPLE) : this.kit.take(Role.GAPPLE))) {
             this.gapples--;
             this.gappleCooldown = 80;
             this.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 100, 1));
@@ -376,10 +476,13 @@ public class PvpBotEntity extends PathfinderMob {
         if (this.getTarget() == null) {
             if (++this.idleTicks > 600) {
                 this.idleTicks = 0;
-                this.gapples = MAX_GAPPLES;
-                if (this.getOffhandItem().isEmpty()) {
-                    this.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.TOTEM_OF_UNDYING));
+                if (this.kit.isInfinite()) {
+                    this.gapples = MAX_GAPPLES;
+                    if (!this.kit.has(Role.TOTEM) && this.kit.signature().length() > 0) {
+                        this.kit.add(new ItemStack(Items.TOTEM_OF_UNDYING));
+                    }
                 }
+                this.kit.equipBest(this, false);
             }
         } else {
             this.idleTicks = 0;
@@ -398,15 +501,175 @@ public class PvpBotEntity extends PathfinderMob {
         // Wind-charge clutch: never die of fall damage when a smash is not about to land.
         Vec3 v = this.getDeltaMovement();
         if (!this.onGround() && !this.isFallFlying() && v.y < -0.65 && this.fallDistance > 3.0
-                && this.groundDistance(3) <= 2 && !(this.getTarget() != null && this.inSmashReach(this.getTarget()))) {
+                && this.groundDistance(3) <= 2 && !(this.getTarget() != null && this.inSmashReach(this.getTarget()))
+                && this.kit.take(Role.WIND_CHARGE)) {
             this.windBurst(level, new Vec3(v.x * 0.5, 0.55, v.z * 0.5));
             this.resetFallDistance();
+        }
+
+        // Keep the off hand stocked (a popped totem is gone) and never stay stuck somewhere.
+        if (this.tickCount % 20 == 0 && this.getOffhandItem().isEmpty()) {
+            this.kit.equipBest(this, this.isFallFlying());
+        }
+        this.tickStuck(level);
+    }
+
+    // ------------------------------------------------------------------ getting unstuck
+
+    private void tickStuck(ServerLevel level) {
+        LivingEntity target = this.getTarget();
+        Player owner = this.getOwner();
+        boolean wantsToMove = this.isFallFlying()
+                || target != null && this.pattern != Pattern.BOW_SNIPE && this.distanceTo(target) > 4.0
+                || target == null && this.following && owner != null && this.distanceToSqr(owner) > 36.0;
+        if (this.isInWall()) {
+            this.stuckTicks += 5;
+        } else if (!wantsToMove) {
+            this.stuckTicks = 0;
+            this.stuckAnchor = null;
+            return;
+        }
+        if (this.stuckAnchor == null || this.position().distanceToSqr(this.stuckAnchor) > 2.25) {
+            this.stuckAnchor = this.position();
+            this.stuckTicks = 0;
+            if (level.getGameTime() - this.lastUnstuckTime > 200L) {
+                this.unstuckStage = 0;
+            }
+            return;
+        }
+        this.stuckTicks++;
+        if (this.stuckTicks >= (this.isFallFlying() ? 15 : 40)) {
+            this.stuckTicks = 0;
+            this.unstuck(level);
+        }
+    }
+
+    /** Tries ever stronger ways out: hop aside, wind charge, dig free, teleport. */
+    private void unstuck(ServerLevel level) {
+        this.unstuckStage++;
+        this.lastUnstuckTime = level.getGameTime();
+        if (this.pattern != null) {
+            // Getting stuck is a bad outcome for whatever the bot was trying.
+            this.attemptTaken += 3.0F;
+        }
+        boolean wasFlying = this.isFallFlying();
+        if (wasFlying) {
+            this.stopFallFlying();
+            this.flightCooldown = 100;
+        }
+        if (this.mode != Mode.GROUND && this.mode != Mode.IDLE) {
+            this.stopUsingItem();
+            this.setMode(Mode.GROUND);
+        }
+        this.getNavigation().stop();
+        double angle = this.random.nextDouble() * Math.PI * 2.0;
+        String how;
+        switch (this.unstuckStage) {
+            case 1 -> {
+                this.setDeltaMovement(Math.cos(angle) * 0.35, 0.45, Math.sin(angle) * 0.35);
+                this.needsSync = true;
+                how = "springe zur Seite";
+            }
+            case 2 -> {
+                if (this.kit.take(Role.WIND_CHARGE)) {
+                    this.windBurst(level, new Vec3(Math.cos(angle) * 0.4, 1.0, Math.sin(angle) * 0.4));
+                    how = "Windladung";
+                } else {
+                    this.setDeltaMovement(Math.cos(angle) * 0.5, 0.5, Math.sin(angle) * 0.5);
+                    this.needsSync = true;
+                    how = "springe weg";
+                }
+            }
+            case 3 -> {
+                if (this.breakFree(level)) {
+                    how = "baue mich frei";
+                } else {
+                    this.teleportFree(level);
+                    how = "teleportiere mich raus";
+                    this.unstuckStage = 0;
+                }
+            }
+            default -> {
+                this.teleportFree(level);
+                how = "teleportiere mich raus";
+                this.unstuckStage = 0;
+            }
+        }
+        if (DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   stuck -> {}", how);
+        }
+        this.tellOwner("§7Ich stecke fest – " + how + ".", false);
+    }
+
+    /** Breaks the blocks around feet and head (never bedrock, obsidian or containers). */
+    private boolean breakFree(ServerLevel level) {
+        if (!level.getGameRules().get(GameRules.MOB_GRIEFING)) {
+            return false;
+        }
+        boolean broke = false;
+        BlockPos base = this.blockPosition();
+        for (int dy = 0; dy <= 2; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    BlockPos p = base.offset(dx, dy, dz);
+                    BlockState state = level.getBlockState(p);
+                    if (state.isAir() || state.hasBlockEntity() || state.getCollisionShape(level, p).isEmpty()) {
+                        continue;
+                    }
+                    float hardness = state.getDestroySpeed(level, p);
+                    if (hardness >= 0.0F && hardness <= 25.0F) {
+                        broke |= level.destroyBlock(p, true, this, 512);
+                    }
+                }
+            }
+        }
+        if (broke) {
+            this.swingMainHand();
+        }
+        return broke;
+    }
+
+    private boolean isStandable(ServerLevel level, BlockPos p) {
+        return level.getBlockState(p).getCollisionShape(level, p).isEmpty()
+                && level.getBlockState(p.above()).getCollisionShape(level, p.above()).isEmpty()
+                && !level.getBlockState(p.below()).getCollisionShape(level, p.below()).isEmpty()
+                && level.getFluidState(p).isEmpty();
+    }
+
+    private void teleportFree(ServerLevel level) {
+        BlockPos base = this.blockPosition();
+        BlockPos dest = null;
+        for (int i = 0; i < 40 && dest == null; i++) {
+            BlockPos p = base.offset(this.random.nextInt(13) - 6, this.random.nextInt(9) - 2, this.random.nextInt(13) - 6);
+            if (this.isStandable(level, p)) {
+                dest = p;
+            }
+        }
+        if (dest == null) {
+            dest = new BlockPos(base.getX(), level.getHeight(Heightmap.Types.MOTION_BLOCKING, base.getX(), base.getZ()), base.getZ());
+        }
+        level.sendParticles(ParticleTypes.PORTAL, this.getX(), this.getY() + 1.0, this.getZ(), 30, 0.3, 0.8, 0.3, 0.2);
+        this.teleportTo(dest.getX() + 0.5, dest.getY(), dest.getZ() + 0.5);
+        this.setDeltaMovement(Vec3.ZERO);
+        this.resetFallDistance();
+        level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ENDERMAN_TELEPORT, this.getSoundSource(), 1.0F, 1.0F);
+    }
+
+    private void tellOwner(String message, boolean important) {
+        long now = this.level().getGameTime();
+        if (this.talk && (important || now - this.lastMessageTime > 300L) && this.getOwner() instanceof ServerPlayer owner) {
+            this.lastMessageTime = now;
+            owner.sendSystemMessage(Component.literal("§b[" + this.getName().getString() + "] " + message));
         }
     }
 
     private void refreshTarget(ServerLevel level) {
         LivingEntity current = this.getTarget();
         if (current != null && !this.isValidTarget(current)) {
+            if (this.duelOwner && this.isOwnedBy(current)) {
+                this.duelOwner = false;
+                this.tellOwner(current.isAlive() ? "§7Duell beendet." : "§6GG! §7Das Duell geht an mich.", true);
+            }
             this.setTarget(null);
             current = null;
         }
@@ -434,7 +697,7 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private void fireRocket(ServerLevel level) {
-        if (this.rocketCooldown > 0) {
+        if (this.rocketCooldown > 0 || !this.kit.take(Role.ROCKET)) {
             return;
         }
         ItemStack rocket = new ItemStack(Items.FIREWORK_ROCKET);
@@ -463,7 +726,8 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private boolean canFlyHere() {
-        return !this.elytra.isEmpty() && !this.isInWater() && this.level().canSeeSky(this.blockPosition().above());
+        return this.kit.has(Role.ELYTRA) && this.kit.has(Role.ROCKET) && !this.isInWater()
+                && this.level().canSeeSky(this.blockPosition().above());
     }
 
     private static float yawTo(Vec3 dir) {
@@ -505,7 +769,7 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private boolean trySmash(ServerLevel level, LivingEntity target) {
-        if (this.getMainHandItem() == this.mace && MaceItem.canSmashAttack(this) && this.inSmashReach(target)) {
+        if (this.getMainHandItem() == this.mace() && MaceItem.canSmashAttack(this) && this.inSmashReach(target)) {
             this.faceEntity(target, 180.0F);
             this.swingMainHand();
             this.doHurtTarget(level, target);
@@ -560,14 +824,22 @@ public class PvpBotEntity extends PathfinderMob {
                 return;
             }
         }
-        if (this.attemptTicks > 40) {
+        if (this.attemptTicks > (this.pattern == Pattern.BOW_SNIPE ? 90 : 40)) {
             // Melee rounds are short so the bot re-evaluates often.
             this.finishAttempt();
             return;
         }
 
+        if (this.pattern == Pattern.BOW_SNIPE) {
+            this.tickBow(level, target, dist, sees);
+            return;
+        }
         boolean useSpear = this.pattern == Pattern.SPEAR_KITE;
-        this.holdWeapon(useSpear ? this.spear : this.mace);
+        this.holdItem(switch (this.pattern) {
+            case SPEAR_KITE -> this.spear();
+            case MACE_MELEE -> this.mace();
+            default -> this.kit.bestBlade();
+        });
 
         if (this.random.nextInt(30) == 0) {
             this.strafeDir = -this.strafeDir;
@@ -599,14 +871,65 @@ public class PvpBotEntity extends PathfinderMob {
                 this.faceEntity(target, 180.0F);
                 this.swingMainHand();
                 this.doHurtTarget(level, target);
-                this.meleeCooldown = 16;
+                // Same attack cooldown a player has with this weapon.
+                double speed = Kit.attackSpeed(this.getMainHandItem());
+                this.meleeCooldown = Math.max(8, (int) Math.round(20.0 / Math.max(0.5, speed)));
             }
         }
     }
 
+    /** Bow/crossbow: keep a comfortable distance, draw fully and shoot with a bit of lead. */
+    private void tickBow(ServerLevel level, LivingEntity target, double dist, boolean sees) {
+        ItemStack bow = this.bow();
+        if (bow.isEmpty() || !this.hasArrows()) {
+            this.finishAttempt();
+            return;
+        }
+        this.holdWeapon(bow);
+        this.faceEntity(target, 30.0F);
+        if (dist < 7.0) {
+            this.setSprinting(true);
+            this.getNavigation().stop();
+            this.getMoveControl().strafe(-0.8F, this.strafeDir * 0.4F);
+        } else if (dist > 24.0 || !sees) {
+            this.getNavigation().moveTo(target, 1.1);
+        } else {
+            this.setSprinting(false);
+            this.getNavigation().stop();
+            this.getMoveControl().strafe(0.0F, this.strafeDir * 0.6F);
+        }
+        if (!this.isUsingItem()) {
+            this.startUsingItem(InteractionHand.MAIN_HAND);
+        } else if (this.getTicksUsingItem() >= 20 && sees) {
+            this.shootArrow(level, target, bow);
+            this.stopUsingItem();
+            if (++this.bowShots >= 3) {
+                this.bowShots = 0;
+                this.finishAttempt();
+            }
+        }
+    }
+
+    private void shootArrow(ServerLevel level, LivingEntity target, ItemStack bow) {
+        ItemStack arrowItem = this.kit.find(Role.ARROW);
+        ItemStack ammo = arrowItem.isEmpty() ? new ItemStack(Items.ARROW) : arrowItem.copyWithCount(1);
+        if (!this.kit.isInfinite() && !arrowItem.isEmpty()) {
+            arrowItem.shrink(1);
+        }
+        AbstractArrow arrow = ProjectileUtil.getMobArrow(this, ammo, BowItem.getPowerForTime(20), bow);
+        Vec3 lead = target.getDeltaMovement().multiply(1.0, 0.0, 1.0).scale(this.distanceTo(target) / 3.0);
+        double xd = target.getX() + lead.x - this.getX();
+        double zd = target.getZ() + lead.z - this.getZ();
+        double yd = target.getY(0.5) - arrow.getY();
+        double horizontal = Math.sqrt(xd * xd + zd * zd);
+        Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, yd + horizontal * horizontal / 330.0, zd, 3.0F, 1.0F);
+        this.swingMainHand();
+        level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(), 1.0F, 1.0F);
+    }
+
     private void jab(LivingEntity target) {
         this.faceEntity(target, 180.0F);
-        PiercingWeapon piercing = this.spear.get(DataComponents.PIERCING_WEAPON);
+        PiercingWeapon piercing = this.spear().get(DataComponents.PIERCING_WEAPON);
         if (piercing != null) {
             piercing.attack(this, EquipmentSlot.MAINHAND);
         } else if (this.level() instanceof ServerLevel level) {
@@ -618,10 +941,11 @@ public class PvpBotEntity extends PathfinderMob {
     // --- mace: wind charge jump
 
     private void startWindJump(ServerLevel level, LivingEntity target) {
-        this.holdWeapon(this.mace);
+        this.holdWeapon(this.mace());
         this.getNavigation().stop();
         Vec3 horizontal = target.position().subtract(this.position()).multiply(1.0, 0.0, 1.0);
         Vec3 push = horizontal.lengthSqr() > 1.0E-4 ? horizontal.normalize().scale(0.15) : Vec3.ZERO;
+        this.kit.take(Role.WIND_CHARGE);
         this.windBurst(level, new Vec3(push.x, 1.15, push.z));
         this.windCooldown = WIND_COOLDOWN;
         this.setMode(Mode.WIND_JUMP);
@@ -629,7 +953,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     /** Airborne after a wind jump or a dive: steer onto the target and smash it on the way down. */
     private void tickAirSmash(ServerLevel level, LivingEntity target) {
-        this.holdWeapon(this.mace);
+        this.holdWeapon(this.mace());
         this.faceEntity(target, 40.0F);
         this.getNavigation().stop();
 
@@ -657,7 +981,7 @@ public class PvpBotEntity extends PathfinderMob {
     // --- spear: ground charge
 
     private void startSpearCharge(LivingEntity target) {
-        this.holdWeapon(this.spear);
+        this.holdWeapon(this.spear());
         this.getNavigation().stop();
         this.setSprinting(true);
         this.startUsingItem(InteractionHand.MAIN_HAND);
@@ -665,7 +989,7 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private int spearUseDuration() {
-        KineticWeapon kinetic = this.spear.get(DataComponents.KINETIC_WEAPON);
+        KineticWeapon kinetic = this.spear().get(DataComponents.KINETIC_WEAPON);
         return kinetic != null ? Math.max(20, kinetic.computeDamageUseDuration()) : 60;
     }
 
@@ -710,9 +1034,15 @@ public class PvpBotEntity extends PathfinderMob {
     private void startTakeoff(ServerLevel level, LivingEntity target) {
         this.getNavigation().stop();
         this.wearElytra(true);
-        this.holdWeapon(this.lancePlan ? this.spear : this.mace);
+        this.holdWeapon(this.lancePlan ? this.spear() : this.mace());
         Vec3 v = this.getDeltaMovement();
-        this.windBurst(level, new Vec3(v.x, 1.0, v.z));
+        if (this.kit.take(Role.WIND_CHARGE)) {
+            this.windBurst(level, new Vec3(v.x, 1.0, v.z));
+        } else {
+            // No wind charge: jump and get going with a rocket.
+            this.setDeltaMovement(v.x, 0.6, v.z);
+            this.needsSync = true;
+        }
         this.setMode(Mode.TAKEOFF);
     }
 
@@ -749,6 +1079,13 @@ public class PvpBotEntity extends PathfinderMob {
             }
             this.startGliding();
         }
+        if (this.horizontalCollision) {
+            // Flew into a wall: turn away, pull up and boost out instead of hugging the block.
+            Vec3 away = this.getLookAngle().multiply(-1.0, 0.0, -1.0);
+            this.face(away.add(0.0, 1.2, 0.0), 60.0F);
+            this.fireRocket(level);
+            return;
+        }
 
         Vec3 pos = this.position();
         Vec3 v = this.getDeltaMovement();
@@ -776,7 +1113,7 @@ public class PvpBotEntity extends PathfinderMob {
                 }
             }
             case APPROACH -> {
-                this.holdWeapon(this.mace);
+                this.holdWeapon(this.mace());
                 Vec3 lead = target.getDeltaMovement().multiply(1.0, 0.0, 1.0).scale(hDist / Math.max(0.8, speed));
                 Vec3 above = target.position().add(lead).add(0.0, CRUISE_HEIGHT, 0.0).subtract(pos);
                 this.face(new Vec3(above.x, Mth.clamp(above.y, -4.0, 4.0), above.z), 15.0F);
@@ -795,7 +1132,7 @@ public class PvpBotEntity extends PathfinderMob {
                 }
             }
             case LANCE -> {
-                this.holdWeapon(this.spear);
+                this.holdWeapon(this.spear());
                 double dist = this.distanceTo(target);
                 Vec3 lead = target.getDeltaMovement().scale(Math.min(10.0, dist / Math.max(0.8, speed)));
                 Vec3 aimPoint = target.getBoundingBox().getCenter().add(lead);
@@ -842,7 +1179,7 @@ public class PvpBotEntity extends PathfinderMob {
                 : this.ceilingHeight(12) <= 10 ? BotBrain.Env.CAVE : BotBrain.Env.OPEN;
         double hDist = this.position().subtract(target.position()).horizontalDistance();
         boolean inAir = target.isFallFlying() || !target.onGround() && target.getY() - this.getY() > 4.0;
-        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player);
+        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player, this.kit.signature());
     }
 
     /** Height of the first solid block above the head, up to {@code max}. */
@@ -869,7 +1206,14 @@ public class PvpBotEntity extends PathfinderMob {
         if (this.wantsSpear()) {
             out.add(Pattern.SPEAR_KITE);
         }
-        if (!flying && this.wantsMace() && this.onGround() && this.windCooldown == 0 && sees
+        if (!this.kit.bestBlade().isEmpty() || out.isEmpty()) {
+            // Sword, axe, trident – or fists when nothing else is left.
+            out.add(Pattern.BLADE_MELEE);
+        }
+        if (!this.bow().isEmpty() && this.hasArrows() && sees && hDist > 5.0) {
+            out.add(Pattern.BOW_SNIPE);
+        }
+        if (!flying && this.wantsMace() && this.kit.has(Role.WIND_CHARGE) && this.onGround() && this.windCooldown == 0 && sees
                 && hDist > 1.0 && hDist < 8.0 && dy < 3.0 && dy > -4.0) {
             out.add(Pattern.WIND_SMASH);
         }
@@ -1087,10 +1431,9 @@ public class PvpBotEntity extends PathfinderMob {
         output.putString("PvpBotStyle", this.style.name());
         output.putInt("PvpBotGapples", this.gapples);
         output.putBoolean("PvpBotTalk", this.talk);
-        output.store("PvpBotMace", ItemStack.OPTIONAL_CODEC, this.mace);
-        output.store("PvpBotSpear", ItemStack.OPTIONAL_CODEC, this.spear);
-        output.store("PvpBotElytra", ItemStack.OPTIONAL_CODEC, this.elytra);
-        output.store("PvpBotChestplate", ItemStack.OPTIONAL_CODEC, this.chestplate);
+        output.store("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf(), new ArrayList<>(this.kit.items()));
+        output.putBoolean("PvpBotKitInfinite", this.kit.isInfinite());
+        output.putBoolean("PvpBotDuel", this.duelOwner);
     }
 
     @Override
@@ -1112,16 +1455,25 @@ public class PvpBotEntity extends PathfinderMob {
         }
         this.gapples = input.getIntOr("PvpBotGapples", MAX_GAPPLES);
         this.talk = input.getBooleanOr("PvpBotTalk", true);
-        this.mace = input.read("PvpBotMace", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
-        this.spear = input.read("PvpBotSpear", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
-        this.elytra = input.read("PvpBotElytra", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
-        this.chestplate = input.read("PvpBotChestplate", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
-        // Re-link worn/held items with our stored copies so swapping keeps working after a reload.
-        if (ItemStack.isSameItemSameComponents(this.getMainHandItem(), this.mace)) {
-            this.setItemSlot(EquipmentSlot.MAINHAND, this.mace);
-        } else if (ItemStack.isSameItemSameComponents(this.getMainHandItem(), this.spear)) {
-            this.setItemSlot(EquipmentSlot.MAINHAND, this.spear);
+        this.duelOwner = input.getBooleanOr("PvpBotDuel", false);
+        List<ItemStack> saved = input.read("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf()).orElse(null);
+        this.kit.clear();
+        if (saved == null) {
+            // Saved before kits existed: give it the default loadout again.
+            this.equipLoadout();
+        } else {
+            saved.forEach(this.kit::add);
+            this.kit.setInfinite(input.getBooleanOr("PvpBotKitInfinite", true));
+            // Re-link worn and held items with the kit's stacks so swapping keeps working.
+            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                ItemStack worn = this.getItemBySlot(slot);
+                for (ItemStack stack : this.kit.items()) {
+                    if (!worn.isEmpty() && ItemStack.matches(worn, stack)) {
+                        this.setItemSlot(slot, stack);
+                        break;
+                    }
+                }
+            }
         }
-        this.setItemSlot(EquipmentSlot.CHEST, this.chestplate.isEmpty() ? this.getItemBySlot(EquipmentSlot.CHEST) : this.chestplate);
     }
 }

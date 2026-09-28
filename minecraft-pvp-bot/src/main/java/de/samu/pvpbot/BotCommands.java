@@ -16,7 +16,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
 
 public final class BotCommands {
     private BotCommands() {
@@ -31,6 +33,13 @@ public final class BotCommands {
                 .then(Commands.literal("attack")
                         .then(Commands.argument("targets", EntityArgument.entities())
                                 .executes(BotCommands::attack)))
+                .then(Commands.literal("duel").executes(BotCommands::duel))
+                .then(Commands.literal("kit")
+                        .executes(BotCommands::kitShow)
+                        .then(Commands.literal("default").executes(BotCommands::kitDefault))
+                        .then(Commands.literal("copy").executes(BotCommands::kitCopy))
+                        .then(Commands.literal("give").executes(BotCommands::kitGive))
+                        .then(Commands.literal("take").executes(BotCommands::kitTake)))
                 .then(Commands.literal("stop").executes(BotCommands::stop))
                 .then(Commands.literal("follow").executes(ctx -> setFollow(ctx, true)))
                 .then(Commands.literal("stay").executes(ctx -> setFollow(ctx, false)))
@@ -83,7 +92,11 @@ public final class BotCommands {
         List<PvpBotEntity> bots = myBots(ctx);
         int count = 0;
         for (Entity entity : targets) {
-            if (entity instanceof LivingEntity living && !(entity instanceof PvpBotEntity) && entity != ctx.getSource().getEntity()) {
+            if (entity == ctx.getSource().getEntity()) {
+                // "@s": the player wants to fight the bots themselves.
+                return duel(ctx);
+            }
+            if (entity instanceof LivingEntity living && !(entity instanceof PvpBotEntity)) {
                 for (PvpBotEntity bot : bots) {
                     bot.addTarget(living, true);
                 }
@@ -100,6 +113,124 @@ public final class BotCommands {
         final int n = count;
         ctx.getSource().sendSuccess(() -> Component.literal("§c" + bots.size() + " Bot(s) greifen " + n + " Ziel(e) an!"), false);
         return count;
+    }
+
+    private static int duel(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        if (player.isCreative() || player.isSpectator()) {
+            ctx.getSource().sendFailure(Component.literal("Im Kreativmodus kann dir der Bot nichts tun. Wechsle mit /gamemode survival in den Überlebensmodus."));
+            return 0;
+        }
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.startDuel(player));
+        if (!bots.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§c⚔ Duell! §7" + bots.size() + " Bot(s) kämpfen gegen dich. Aufgeben mit §f/pvpbot stop§7."), false);
+        }
+        return bots.size();
+    }
+
+    private static @org.jspecify.annotations.Nullable PvpBotEntity nearestBot(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        return myBots(ctx).stream().min(java.util.Comparator.comparingDouble(b -> b.distanceToSqr(player))).orElse(null);
+    }
+
+    private static int kitShow(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        for (PvpBotEntity bot : myBots(ctx)) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§f" + bot.getName().getString() + "§7: Kit " + bot.describeKit()), false);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§7Ändern: §f/pvpbot kit default§7 (Mace/Speer/Elytra), §fcopy§7 (Kopie deines Inventars, nur Kreativ), §fgive§7 (gibt ihm deine Rüstung + Hotbar, Survival), §ftake§7 (zurückholen)"), false);
+        return 1;
+    }
+
+    private static int kitDefault(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        for (PvpBotEntity bot : bots) {
+            if (!bot.getKit().isInfinite()) {
+                ctx.getSource().sendFailure(Component.literal(bot.getName().getString() + " hat noch dein Survival-Kit – hol es erst mit /pvpbot kit take zurück."));
+                continue;
+            }
+            bot.equipLoadout();
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§aStandard-Kit: Mace, Speer, Elytra."), false);
+        return bots.size();
+    }
+
+    private static List<ItemStack> playerKitItems(ServerPlayer player, boolean hotbarOnly) {
+        List<ItemStack> items = new java.util.ArrayList<>();
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.OFFHAND}) {
+            items.add(player.getItemBySlot(slot));
+        }
+        var inventory = player.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < (hotbarOnly ? 9 : inventory.size()); i++) {
+            items.add(inventory.get(i));
+        }
+        items.removeIf(ItemStack::isEmpty);
+        return items;
+    }
+
+    private static int kitCopy(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        if (!player.isCreative()) {
+            ctx.getSource().sendFailure(Component.literal("Kopieren geht nur im Kreativmodus. Im Survival nimm /pvpbot kit give – dann bekommt er deine echten Sachen."));
+            return 0;
+        }
+        List<PvpBotEntity> bots = myBots(ctx);
+        for (PvpBotEntity bot : bots) {
+            if (!bot.getKit().isInfinite()) {
+                continue;
+            }
+            bot.setKit(playerKitItems(player, false).stream().map(ItemStack::copy).toList(), true);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§aDeine Bots haben jetzt eine Kopie deines Kits. Sie lernen selbst, wie man damit kämpft."), false);
+        return bots.size();
+    }
+
+    private static int kitGive(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        PvpBotEntity bot = nearestBot(ctx);
+        if (bot == null) {
+            return 0;
+        }
+        if (!bot.getKit().isInfinite()) {
+            ctx.getSource().sendFailure(Component.literal(bot.getName().getString() + " hat schon ein Survival-Kit von dir."));
+            return 0;
+        }
+        List<ItemStack> items = playerKitItems(player, true);
+        if (items.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("Du hast nichts in Rüstung, Hotbar oder Zweithand."));
+            return 0;
+        }
+        // Move (not copy) the items: survival friendly, nothing gets duplicated.
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.OFFHAND}) {
+            player.setItemSlot(slot, ItemStack.EMPTY);
+        }
+        var inventory = player.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < 9; i++) {
+            inventory.set(i, ItemStack.EMPTY);
+        }
+        bot.setKit(items, false);
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + bot.getName().getString() + " kämpft jetzt mit deinem Kit (" + bot.describeKit()
+                + "§a). Stirbt er, lässt er alles fallen. Zurück mit §f/pvpbot kit take§a."), false);
+        return 1;
+    }
+
+    private static int kitTake(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        PvpBotEntity bot = nearestBot(ctx);
+        if (bot == null) {
+            return 0;
+        }
+        if (bot.getKit().isInfinite()) {
+            ctx.getSource().sendFailure(Component.literal(bot.getName().getString() + " hat kein Kit von dir."));
+            return 0;
+        }
+        for (ItemStack stack : bot.removeKit()) {
+            if (!player.getInventory().add(stack)) {
+                player.drop(stack, false);
+            }
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§aDu hast dein Kit zurück. Der Bot kämpft jetzt mit den Fäusten – /pvpbot kit default gibt ihm wieder seine Ausrüstung."), false);
+        return 1;
     }
 
     private static int stop(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

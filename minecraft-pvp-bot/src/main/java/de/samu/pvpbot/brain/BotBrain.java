@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import de.samu.pvpbot.PvpBotMod;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,6 +16,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import net.minecraft.util.RandomSource;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The shared, persistent memory of all PvP bots: for every combat situation it remembers how well
@@ -31,7 +32,9 @@ public final class BotBrain {
         WIND_SMASH("Windladungs-Smash", false),
         SPEAR_CHARGE("Speer-Ansturm", false),
         ELYTRA_DIVE("Elytra-Mace-Sturzflug", false),
-        ELYTRA_LANCE("Elytra-Speerflug", false);
+        ELYTRA_LANCE("Elytra-Speerflug", false),
+        BLADE_MELEE("Schwert/Axt-Nahkampf", true),
+        BOW_SNIPE("Bogenschüsse", true);
 
         public final String label;
         public final boolean melee;
@@ -60,24 +63,28 @@ public final class BotBrain {
         }
     }
 
-    /** One combat situation. */
-    public record Context(Env env, Range range, boolean targetInAir, boolean targetIsPlayer) {
+    /** One combat situation: surroundings, distance, target, and the kit the bot is fighting with. */
+    public record Context(Env env, Range range, boolean targetInAir, boolean targetIsPlayer, String kit) {
+        /** The kit of the original mace/spear/elytra loadout, used for memories saved before kits existed. */
+        public static final String DEFAULT_KIT = "MSEC";
+
         public String key() {
-            return env.name() + "|" + range.name() + "|" + (targetInAir ? "AIR" : "GROUND") + "|" + (targetIsPlayer ? "PLAYER" : "MOB");
+            return env.name() + "|" + range.name() + "|" + (targetInAir ? "AIR" : "GROUND") + "|" + (targetIsPlayer ? "PLAYER" : "MOB") + "|" + kit;
         }
 
         public String describe() {
             return env.label + ", " + range.label + ", Ziel " + (targetInAir ? "in der Luft" : "am Boden")
-                    + ", gegen " + (targetIsPlayer ? "Spieler" : "Mobs");
+                    + ", gegen " + (targetIsPlayer ? "Spieler" : "Mobs") + ", Kit " + Kit.describeSignature(kit);
         }
 
         static @Nullable Context parse(String key) {
             String[] p = key.split("\\|");
-            if (p.length != 4) {
+            if (p.length != 4 && p.length != 5) {
                 return null;
             }
             try {
-                return new Context(Env.valueOf(p[0]), Range.valueOf(p[1]), p[2].equals("AIR"), p[3].equals("PLAYER"));
+                return new Context(Env.valueOf(p[0]), Range.valueOf(p[1]), p[2].equals("AIR"), p[3].equals("PLAYER"),
+                        p.length == 5 ? p[4] : DEFAULT_KIT);
             } catch (IllegalArgumentException e) {
                 return null;
             }
@@ -93,6 +100,8 @@ public final class BotBrain {
     /** What happened when a result was learned; used for chat feedback. */
     public record Lesson(boolean newFavourite, boolean flop, double score, double value) {
     }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("pvpbot");
 
     public static final BotBrain INSTANCE = new BotBrain();
 
@@ -111,26 +120,29 @@ public final class BotBrain {
         switch (ctx.range()) {
             case CLOSE -> v += switch (p) {
                 case WIND_SMASH -> 3.0;
-                case MACE_MELEE, SPEAR_KITE -> 1.5;
+                case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> 1.5;
+                case BOW_SNIPE -> -3.0;
                 case SPEAR_CHARGE -> -1.0;
                 default -> -2.0;
             };
             case MID -> v += switch (p) {
                 case WIND_SMASH -> 3.0;
                 case SPEAR_CHARGE -> 2.0;
-                case ELYTRA_DIVE -> 1.0;
+                case ELYTRA_DIVE, BOW_SNIPE -> 1.0;
                 default -> 0.0;
             };
             case FAR -> v += switch (p) {
                 case ELYTRA_DIVE -> 4.0;
+                case BOW_SNIPE -> 3.0;
                 case ELYTRA_LANCE, SPEAR_CHARGE -> 2.0;
-                case MACE_MELEE, SPEAR_KITE -> -2.0;
+                case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> -2.0;
                 default -> 0.0;
             };
         }
         if (ctx.targetInAir()) {
             v += switch (p) {
                 case ELYTRA_LANCE -> 4.0;
+                case BOW_SNIPE -> 2.0;
                 case SPEAR_KITE -> 1.0;
                 case ELYTRA_DIVE, SPEAR_CHARGE -> -2.0;
                 default -> 0.0;
@@ -266,11 +278,13 @@ public final class BotBrain {
                         // unknown pattern from another version
                     }
                 }
-                this.table.put(key, row);
+                Context ctx = Context.parse(key);
+                // Older memories had no kit in the key: they belong to the default kit.
+                this.table.put(ctx != null ? ctx.key() : key, row);
             }
-            PvpBotMod.LOGGER.info("PvP-Bot-Gedächtnis geladen: {} Situationen", this.table.size());
+            LOGGER.info("PvP-Bot-Gedächtnis geladen: {} Situationen", this.table.size());
         } catch (IOException | RuntimeException e) {
-            PvpBotMod.LOGGER.warn("PvP-Bot-Gedächtnis konnte nicht gelesen werden, starte neu", e);
+            LOGGER.warn("PvP-Bot-Gedächtnis konnte nicht gelesen werden, starte neu", e);
         }
     }
 
@@ -310,7 +324,7 @@ public final class BotBrain {
             Files.writeString(this.file, gson.toJson(root), StandardCharsets.UTF_8);
             this.dirty = false;
         } catch (IOException e) {
-            PvpBotMod.LOGGER.warn("PvP-Bot-Gedächtnis konnte nicht gespeichert werden", e);
+            LOGGER.warn("PvP-Bot-Gedächtnis konnte nicht gespeichert werden", e);
         }
     }
 }
