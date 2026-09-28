@@ -56,6 +56,7 @@ final class SelfTest {
     private static int otherHits;
     private static float maxHit;
     private static boolean flew;
+    private static int graceTicks;
 
     private SelfTest() {
     }
@@ -216,7 +217,9 @@ final class SelfTest {
 
     private static boolean finished() {
         boolean allDead = targets.stream().noneMatch(LivingEntity::isAlive);
-        return allDead || !bot.isAlive() || ticks >= SCENARIOS.get(index).timeoutTicks();
+        // Give the bot a moment after the last kill so it can learn from the finishing blow.
+        graceTicks = allDead ? graceTicks + 1 : 0;
+        return allDead && graceTicks > 10 || !bot.isAlive() || ticks >= SCENARIOS.get(index).timeoutTicks();
     }
 
     private static void report() {

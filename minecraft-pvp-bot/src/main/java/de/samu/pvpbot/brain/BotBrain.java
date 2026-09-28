@@ -199,7 +199,7 @@ public final class BotBrain {
     public synchronized Lesson learn(Context ctx, Pattern p, double score) {
         Pattern before = favourite(ctx);
         Stat s = stat(ctx, p);
-        double alpha = s.uses == 0 ? 0.5 : Math.max(0.2, 1.0 / (s.uses + 1));
+        double alpha = s.uses == 0 ? 0.4 : Math.max(0.15, 1.0 / (s.uses + 1));
         s.value += alpha * (score - s.value);
         s.uses++;
         s.best = Math.max(s.best, score);
