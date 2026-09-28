@@ -40,7 +40,7 @@ jobs:
         run: |
           JAR=$(find ~/.gradle/caches/fabric-loom/minecraftMaven -name 'minecraft-merged-deobf-*.jar' ! -name '*sources*' | head -1)
           CP="$JAR:$(find ~/.gradle/caches/modules-2 -name '*.jar' | tr '\n' ':')"
-          SRC=$(find ~/.gradle .gradle -name 'minecraft-*sources*.jar' 2>/dev/null | head -1)
+          SRC=$(find ~/.gradle $PWD/.gradle -name 'minecraft-*sources*.jar' 2>/dev/null | head -1)
           echo "JAR=$JAR SRC=$SRC"
           if [ -n "$GREP" ]; then unzip -Z1 "$JAR" | grep -E "$GREP" | grep -v '\$' | head -400; fi
           for c in $JAVAP; do echo "=================== $c"; javap -p -cp "$CP" "$c" || true; done
