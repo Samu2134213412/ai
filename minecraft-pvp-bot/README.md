@@ -111,6 +111,19 @@ Freunde und drück **K** oder `/autopilot target nearest`.
 Hinweis: Auf öffentlichen Servern ist so etwas meist verboten und wird von Anti-Cheat-Plugins
 erkannt. Nimm ihn nur auf eigenen oder privaten Servern, wo alle einverstanden sind.
 
+## Getestet
+
+Jede Änderung wird automatisch in echtem Minecraft 26.3 getestet (siehe unten). Stand der letzten Tests:
+
+- **Bot** auf einem echten Server: 17 von 17 Kämpfen gewonnen, z. B. Elytra-Mace-Sturzflug auf einen
+  45 Blöcke entfernten Eisengolem (bis zu 96 Schaden mit einem Treffer), Speer-Flugangriff (46 Schaden),
+  Schwert-Kit gegen 3 Zombies, Bogen-Kit, und aus einer 1×1-Steingrube hat er sich selbst freigebaut.
+- **Autopilot** in einem echten Client: gewinnt mit Schwert, Mace + Windladungen, Speer, Bogen und
+  Elytra + Mace (Sturzflug aus 35 Blöcken Entfernung: 62 Schaden) gegen Eisengolems und gegen 3 Zombies.
+- **Duell Autopilot gegen Bot** mit exakt gleichem Kit: knapp, bisher gewinnt meist der Bot
+  (mit ~9 Herzpunkten übrig).
+- Nicht getestet: gegen echte menschliche Spieler. Da ist die erste Zeit Lernphase.
+
 ## Für Entwickler
 
 - Bot: `src/main/java/de/samu/pvpbot/` (Kampf-KI in `entity/PvpBotEntity.java`, Kits in

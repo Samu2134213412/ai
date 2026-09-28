@@ -167,7 +167,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
                 break;
             }
         }
-        String line = String.format("%s %-38s %s nach %.1fs", won ? "PASS" : "FAIL", name, won ? "gewonnen" : lost ? "verloren" : "Zeit abgelaufen", waited / 20.0);
+        boolean duel = name.startsWith("DUELL");
+        String verdict = duel ? (won ? "INFO Autopilot gewinnt" : lost ? "INFO Bot gewinnt" : "INFO unentschieden")
+                : (won ? "PASS" : "FAIL");
+        String line = String.format("%s %-38s %s nach %.1fs", verdict, name, won ? "gewonnen" : lost ? "verloren" : "Zeit abgelaufen", waited / 20.0);
         results.add(line);
         System.out.println(TAG + line);
         ctx.runOnClient(mc -> Autopilot.INSTANCE.setEnabled(mc, false));
