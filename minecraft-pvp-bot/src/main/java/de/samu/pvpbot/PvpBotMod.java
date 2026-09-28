@@ -68,6 +68,7 @@ public class PvpBotMod implements ModInitializer {
             }
         });
 
+        SelfTest.init();
         LOGGER.info("PvP Bot geladen - /pvpbot spawn");
     }
 }

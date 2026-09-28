@@ -9,6 +9,13 @@ base { archivesName = project.archives_base_name }
 
 loom {
     splitEnvironmentSourceSets()
+    runs {
+        server {
+            if (project.hasProperty('selftest')) {
+                vmArg '-Dpvpbot.selftest=true'
+            }
+        }
+    }
     mods {
         "pvpbot" {
             sourceSet sourceSets.main
