@@ -6,3 +6,4 @@ pluginManagement {
     }
 }
 rootProject.name = 'pvpbot'
+include 'autopilot'

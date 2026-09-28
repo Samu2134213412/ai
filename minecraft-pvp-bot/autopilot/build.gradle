@@ -1,0 +1,50 @@
+plugins {
+    id 'net.fabricmc.fabric-loom'
+}
+
+version = "${project.mod_version}+${project.minecraft_version}"
+group = project.maven_group
+
+base { archivesName = 'pvpbot-autopilot' }
+
+// The learning brain is shared with the bot mod. It is copied into this mod's own package so both
+// mods can be installed side by side without clashing classes.
+def sharedBrain = layout.buildDirectory.dir('generated/sharedBrain')
+tasks.register('copySharedBrain', Copy) {
+    from('../src/main/java/de/samu/pvpbot/brain')
+    into(sharedBrain.map { it.dir('de/samu/pvpbot/autopilot/brain') })
+    filter { String line -> line.replace('package de.samu.pvpbot.brain', 'package de.samu.pvpbot.autopilot.brain') }
+}
+sourceSets.main.java.srcDir(sharedBrain)
+tasks.named('compileJava') { dependsOn 'copySharedBrain' }
+
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = 'pvpbot-autopilot-test'
+        enableGameTests = false
+        enableClientGameTests = true
+        eula = true
+    }
+}
+
+repositories {}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    // The bot mod is only loaded in the in-game test, for a duel "autopilot vs. bot".
+    gametestRuntimeOnly project(':')
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") { expand "version": project.version }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+tasks.withType(JavaCompile).configureEach { it.options.release = 25 }

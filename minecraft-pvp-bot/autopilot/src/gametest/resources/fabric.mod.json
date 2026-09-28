@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "pvpbot-autopilot-test",
+  "version": "1.0.0",
+  "name": "PvP-Bot Autopilot in-game test",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["de.samu.pvpbot.autopilot.test.AutopilotGameTest"]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "de.samu.pvpbot.autopilot.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["MinecraftInvoker"],
+  "injectors": { "defaultRequire": 1 }
+}
