@@ -80,7 +80,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
         ctx.waitTicks(5);
         sp.getServer().runCommand("execute as @p at @p run pvpbot spawn Modell");
         sp.getServer().runCommand("execute as @p run pvpbot stay");
-        sp.getServer().runCommand("tp @e[type=pvpbot:pvp_bot] 3 ~ 0 90 0");
+        sp.getServer().runCommand("execute at @p run tp @e[type=pvpbot:pvp_bot] ~3 ~ ~ 90 0");
         ctx.waitTicks(30);
         screenshot(ctx, "Bot_Nahaufnahme");
         run(sp, "kill @e[type=pvpbot:pvp_bot]");
