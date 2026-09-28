@@ -152,11 +152,11 @@ final class SelfTest {
             }
         }
         BlockPos pit = origin.offset(PIT_X, 0, 0);
-        for (int y = 0; y <= 3; y++) {
-            for (int x = -1; x <= 1; x++) {
-                for (int z = -1; z <= 1; z++) {
-                    if (x != 0 || z != 0) {
-                        level.setBlock(pit.offset(x, y, z), Blocks.STONE.defaultBlockState(), 3);
+        for (int py = 0; py <= 3; py++) {
+            for (int px = -1; px <= 1; px++) {
+                for (int pz = -1; pz <= 1; pz++) {
+                    if (px != 0 || pz != 0) {
+                        level.setBlock(pit.offset(px, py, pz), Blocks.STONE.defaultBlockState(), 3);
                     }
                 }
             }
