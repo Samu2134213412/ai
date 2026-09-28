@@ -1,7 +1,11 @@
 package de.samu.pvpbot;
 
+import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.entity.PvpBotEntity;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
@@ -65,6 +69,16 @@ public class PvpBotMod implements ModInitializer {
                         bot.addTarget(attacker, false);
                     }
                 }
+            }
+        });
+
+        // The shared combat memory: loaded with the server, saved regularly and on shutdown.
+        ServerLifecycleEvents.SERVER_STARTED.register(server ->
+                BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-memory.json")));
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> BotBrain.INSTANCE.save());
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (server.getTickCount() % 1200 == 0) {
+                BotBrain.INSTANCE.saveIfDirty();
             }
         });
 

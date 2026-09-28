@@ -1,19 +1,25 @@
 package de.samu.pvpbot.entity;
 
+import de.samu.pvpbot.PvpBotMod;
+import de.samu.pvpbot.brain.BotBrain;
+import de.samu.pvpbot.brain.BotBrain.Pattern;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import de.samu.pvpbot.PvpBotMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -110,6 +116,17 @@ public class PvpBotEntity extends PathfinderMob {
     private int gappleCooldown;
     private int gapples = MAX_GAPPLES;
     private int idleTicks;
+    private boolean talk = true;
+
+    // Learning: the attack pattern currently being tried and how it is going.
+    private @Nullable Pattern pattern;
+    private BotBrain.@Nullable Context attemptContext;
+    private @Nullable LivingEntity attemptTarget;
+    private float attemptTargetHp;
+    private float attemptTaken;
+    private int attemptTicks;
+    private final Map<Pattern, Long> tabuUntil = new EnumMap<>(Pattern.class);
+    private long lastMessageTime;
     private float strafeDir = 1.0F;
     boolean manualRotation;
 
@@ -179,6 +196,10 @@ public class PvpBotEntity extends PathfinderMob {
         this.getNavigation().stop();
     }
 
+    public void setTalk(boolean talk) {
+        this.talk = talk;
+    }
+
     public void setStyle(Style style) {
         this.style = style;
     }
@@ -209,7 +230,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     public String describeState() {
         LivingEntity target = this.getTarget();
-        String s = this.mode.label;
+        String s = this.pattern != null ? this.pattern.label + " (" + this.mode.label + ")" : this.mode.label;
         if (target != null) {
             s += " gegen " + target.getName().getString();
         }
@@ -247,7 +268,11 @@ public class PvpBotEntity extends PathfinderMob {
 
     @Override
     public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        float before = this.getHealth() + this.getAbsorptionAmount();
         boolean hurt = super.hurtServer(level, source, amount);
+        if (this.pattern != null) {
+            this.attemptTaken += Math.max(0.0F, before - (this.getHealth() + this.getAbsorptionAmount()));
+        }
         if (hurt && source.getEntity() instanceof LivingEntity attacker && attacker != this && !this.isAlliedTo(attacker)) {
             this.addTarget(attacker, false);
         }
@@ -399,6 +424,9 @@ public class PvpBotEntity extends PathfinderMob {
     private void setMode(Mode mode) {
         this.mode = mode;
         this.modeTicks = 0;
+        if (mode == Mode.GROUND && this.pattern != null && !this.pattern.melee) {
+            this.finishAttempt();
+        }
     }
 
     private void startGliding() {
@@ -490,6 +518,12 @@ public class PvpBotEntity extends PathfinderMob {
 
     private void tickCombat(ServerLevel level, LivingEntity target) {
         this.modeTicks++;
+        if (this.pattern != null) {
+            this.attemptTicks++;
+            if (this.attemptTarget != target || this.attemptTicks > 500) {
+                this.finishAttempt();
+            }
+        }
         switch (this.mode) {
             case IDLE, GROUND -> this.tickGround(level, target);
             case WIND_JUMP, DIVE -> this.tickAirSmash(level, target);
@@ -512,39 +546,48 @@ public class PvpBotEntity extends PathfinderMob {
         double dy = target.getY() - this.getY();
         boolean sees = this.getSensing().hasLineOfSight(target);
 
-        // Far away, flying or out of reach: take to the sky.
-        if (this.flightCooldown == 0 && this.onGround() && this.canFlyHere()
-                && (hDist > 20.0 || target.isFallFlying() || dy > 6.0 || !sees && hDist > 10.0)) {
-            this.startTakeoff(level, target);
+        // Decide what to do next: the brain picks an attack pattern for this situation.
+        if (this.pattern == null) {
+            List<Pattern> options = this.feasiblePatterns(target, false);
+            if (options.isEmpty()) {
+                return;
+            }
+            BotBrain.Context ctx = this.currentContext(target);
+            Pattern chosen = BotBrain.INSTANCE.choose(ctx, options, this.random);
+            this.beginAttempt(chosen, target, ctx);
+            if (!chosen.melee) {
+                this.startPattern(level, target, chosen);
+                return;
+            }
+        }
+        if (this.attemptTicks > 40) {
+            // Melee rounds are short so the bot re-evaluates often.
+            this.finishAttempt();
             return;
         }
 
-        // Wind-charge jump into a mace smash.
-        if (this.wantsMace() && this.onGround() && this.windCooldown == 0 && sees
-                && hDist > 1.0 && hDist < 7.0 && dy < 3.0 && dy > -4.0) {
-            this.startWindJump(level, target);
-            return;
-        }
-
-        // Sprint charge with the spear.
-        if (this.wantsSpear() && this.onGround() && this.spearCooldown == 0 && sees && hDist > 5.0 && hDist < 16.0) {
-            this.startSpearCharge(target);
-            return;
-        }
-
-        // Regular melee: spear jabs have more reach, the mace hits harder up close.
-        boolean useSpear = this.wantsSpear() && (!this.wantsMace() || dist > 2.8);
+        boolean useSpear = this.pattern == Pattern.SPEAR_KITE;
         this.holdWeapon(useSpear ? this.spear : this.mace);
 
-        if (dist > 2.6) {
+        if (this.random.nextInt(30) == 0) {
+            this.strafeDir = -this.strafeDir;
+        }
+        if (useSpear) {
+            // Kite at the edge of the spear's reach.
+            if (dist > 4.0) {
+                this.setSprinting(true);
+                this.getNavigation().moveTo(target, 1.25);
+            } else {
+                this.setSprinting(false);
+                this.getNavigation().stop();
+                this.getMoveControl().strafe(dist < 2.8 ? -0.7F : 0.1F, this.strafeDir * 0.5F);
+            }
+        } else if (dist > 2.6) {
             this.setSprinting(true);
             this.getNavigation().moveTo(target, 1.25);
         } else {
             this.setSprinting(false);
             this.getNavigation().stop();
-            if (this.random.nextInt(30) == 0) {
-                this.strafeDir = -this.strafeDir;
-            }
             this.getMoveControl().strafe(-0.2F, this.strafeDir * 0.5F);
         }
 
@@ -667,8 +710,6 @@ public class PvpBotEntity extends PathfinderMob {
     private void startTakeoff(ServerLevel level, LivingEntity target) {
         this.getNavigation().stop();
         this.wearElytra(true);
-        this.lancePlan = this.style == Style.SPEAR || !this.wantsMace()
-                || this.style == Style.AUTO && this.wantsSpear() && (target.isFallFlying() || this.random.nextFloat() < 0.3F);
         this.holdWeapon(this.lancePlan ? this.spear : this.mace);
         Vec3 v = this.getDeltaMovement();
         this.windBurst(level, new Vec3(v.x, 1.0, v.z));
@@ -695,6 +736,12 @@ public class PvpBotEntity extends PathfinderMob {
 
     private void tickFlight(ServerLevel level, LivingEntity target) {
         this.getNavigation().stop();
+        if (this.pattern == null) {
+            this.continueFlightOrLand(level, target);
+            if (this.mode == Mode.GROUND) {
+                return;
+            }
+        }
         if (!this.isFallFlying()) {
             if (this.onGround() || this.isInWater()) {
                 this.endFlight();
@@ -779,11 +826,145 @@ public class PvpBotEntity extends PathfinderMob {
                 }
                 if (this.lancePassed && dist > 8.0 || this.modeTicks > 240) {
                     this.stopUsingItem();
-                    this.setMode(Mode.CLIMB);
+                    this.finishAttempt();
+                    this.continueFlightOrLand(level, target);
                 }
             }
             default -> {
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ learning
+
+    private BotBrain.Context currentContext(LivingEntity target) {
+        BotBrain.Env env = this.isInWater() ? BotBrain.Env.WATER
+                : this.ceilingHeight(12) <= 10 ? BotBrain.Env.CAVE : BotBrain.Env.OPEN;
+        double hDist = this.position().subtract(target.position()).horizontalDistance();
+        boolean inAir = target.isFallFlying() || !target.onGround() && target.getY() - this.getY() > 4.0;
+        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player);
+    }
+
+    /** Height of the first solid block above the head, up to {@code max}. */
+    private int ceilingHeight(int max) {
+        BlockPos pos = this.blockPosition();
+        for (int i = 2; i <= max; i++) {
+            BlockPos p = pos.above(i);
+            if (!this.level().getBlockState(p).getCollisionShape(this.level(), p).isEmpty()) {
+                return i;
+            }
+        }
+        return max + 1;
+    }
+
+    /** Patterns that can actually be executed right now (weapons, cooldowns, space, recent flops). */
+    private List<Pattern> feasiblePatterns(LivingEntity target, boolean flying) {
+        double hDist = this.position().subtract(target.position()).horizontalDistance();
+        double dy = target.getY() - this.getY();
+        boolean sees = this.getSensing().hasLineOfSight(target);
+        List<Pattern> out = new ArrayList<>();
+        if (this.wantsMace()) {
+            out.add(Pattern.MACE_MELEE);
+        }
+        if (this.wantsSpear()) {
+            out.add(Pattern.SPEAR_KITE);
+        }
+        if (!flying && this.wantsMace() && this.onGround() && this.windCooldown == 0 && sees
+                && hDist > 1.0 && hDist < 8.0 && dy < 3.0 && dy > -4.0) {
+            out.add(Pattern.WIND_SMASH);
+        }
+        if (!flying && this.wantsSpear() && this.onGround() && this.spearCooldown == 0 && sees && hDist > 4.0 && hDist < 18.0) {
+            out.add(Pattern.SPEAR_CHARGE);
+        }
+        boolean canFly = flying || this.onGround() && this.flightCooldown == 0 && this.canFlyHere() && hDist > 5.0;
+        if (canFly) {
+            if (this.wantsMace()) {
+                out.add(Pattern.ELYTRA_DIVE);
+            }
+            if (this.wantsSpear()) {
+                out.add(Pattern.ELYTRA_LANCE);
+            }
+        }
+        long now = this.level().getGameTime();
+        List<Pattern> allowed = new ArrayList<>(out);
+        allowed.removeIf(p -> this.tabuUntil.getOrDefault(p, 0L) > now);
+        return allowed.isEmpty() ? out : allowed;
+    }
+
+    private void beginAttempt(Pattern chosen, LivingEntity target, BotBrain.Context ctx) {
+        this.pattern = chosen;
+        this.attemptContext = ctx;
+        this.attemptTarget = target;
+        this.attemptTargetHp = target.getHealth() + target.getAbsorptionAmount();
+        this.attemptTaken = 0.0F;
+        this.attemptTicks = 0;
+        if (DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   try {} ({})", chosen.label, ctx.describe());
+        }
+    }
+
+    private void startPattern(ServerLevel level, LivingEntity target, Pattern chosen) {
+        switch (chosen) {
+            case WIND_SMASH -> this.startWindJump(level, target);
+            case SPEAR_CHARGE -> this.startSpearCharge(target);
+            case ELYTRA_DIVE, ELYTRA_LANCE -> {
+                this.lancePlan = chosen == Pattern.ELYTRA_LANCE;
+                this.startTakeoff(level, target);
+            }
+            default -> {
+            }
+        }
+    }
+
+    /** While airborne: pick the next pattern, keep flying for aerial ones, otherwise land and fight on foot. */
+    private void continueFlightOrLand(ServerLevel level, LivingEntity target) {
+        BotBrain.Context ctx = this.currentContext(target);
+        Pattern next = BotBrain.INSTANCE.choose(ctx, this.feasiblePatterns(target, true), this.random);
+        this.beginAttempt(next, target, ctx);
+        if (next.aerial()) {
+            this.lancePlan = next == Pattern.ELYTRA_LANCE;
+            this.lancePassed = false;
+            this.setMode(Mode.CLIMB);
+        } else {
+            this.stopUsingItem();
+            this.stopFallFlying();
+            this.flightCooldown = FLIGHT_COOLDOWN;
+            this.setMode(Mode.GROUND);
+        }
+    }
+
+    /** Scores the finished attempt (damage dealt vs. taken, per time) and teaches the brain. */
+    private void finishAttempt() {
+        Pattern done = this.pattern;
+        BotBrain.Context ctx = this.attemptContext;
+        this.pattern = null;
+        if (done == null || ctx == null) {
+            return;
+        }
+        LivingEntity target = this.attemptTarget;
+        this.attemptTarget = null;
+        boolean killed = target != null && !target.isAlive();
+        float hpNow = target == null ? this.attemptTargetHp : killed ? 0.0F : target.getHealth() + target.getAbsorptionAmount();
+        double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
+        double seconds = this.attemptTicks / 20.0;
+        double score = (dealt + (killed ? 8.0 : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
+        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score);
+        long now = this.level().getGameTime();
+        if (lesson.flop()) {
+            this.tabuUntil.put(done, now + 200L);
+        }
+        if (DEBUG) {
+            PvpBotMod.LOGGER.info(String.format("[SELFTEST]   learned %s: dealt=%.1f taken=%.1f time=%.1fs -> score=%.1f value=%.1f%s%s",
+                    done.label, dealt, this.attemptTaken, seconds, score, lesson.value(),
+                    lesson.newFavourite() ? " NEW FAVOURITE" : "", lesson.flop() ? " FLOP" : ""));
+        }
+        if (this.talk && (lesson.newFavourite() || lesson.flop()) && now - this.lastMessageTime > 300L
+                && this.getOwner() instanceof ServerPlayer owner) {
+            this.lastMessageTime = now;
+            String name = this.getName().getString();
+            owner.sendSystemMessage(Component.literal(lesson.newFavourite()
+                    ? String.format("§b[%s] §7Gelernt: §f%s§7 → §a%s§7 klappt am besten (Wert %.1f)", name, ctx.describe(), done.label, lesson.value())
+                    : String.format("§b[%s] §c%s§7 hat nicht funktioniert (%s) – ich probiere was anderes.", name, done.label, ctx.describe())));
         }
     }
 
@@ -814,6 +995,7 @@ public class PvpBotEntity extends PathfinderMob {
         @Override
         public void stop() {
             PvpBotEntity bot = PvpBotEntity.this;
+            bot.finishAttempt();
             bot.setAggressive(false);
             bot.setSprinting(false);
             bot.stopUsingItem();
@@ -904,6 +1086,7 @@ public class PvpBotEntity extends PathfinderMob {
         output.putBoolean("PvpBotAssisting", this.assisting);
         output.putString("PvpBotStyle", this.style.name());
         output.putInt("PvpBotGapples", this.gapples);
+        output.putBoolean("PvpBotTalk", this.talk);
         output.store("PvpBotMace", ItemStack.OPTIONAL_CODEC, this.mace);
         output.store("PvpBotSpear", ItemStack.OPTIONAL_CODEC, this.spear);
         output.store("PvpBotElytra", ItemStack.OPTIONAL_CODEC, this.elytra);
@@ -928,6 +1111,7 @@ public class PvpBotEntity extends PathfinderMob {
             this.style = Style.AUTO;
         }
         this.gapples = input.getIntOr("PvpBotGapples", MAX_GAPPLES);
+        this.talk = input.getBooleanOr("PvpBotTalk", true);
         this.mace = input.read("PvpBotMace", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
         this.spear = input.read("PvpBotSpear", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
         this.elytra = input.read("PvpBotElytra", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);

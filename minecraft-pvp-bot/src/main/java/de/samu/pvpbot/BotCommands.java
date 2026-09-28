@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.entity.PvpBotEntity;
 import java.util.Collection;
 import java.util.List;
@@ -40,6 +41,12 @@ public final class BotCommands {
                         .then(Commands.literal("auto").executes(ctx -> setStyle(ctx, PvpBotEntity.Style.AUTO)))
                         .then(Commands.literal("mace").executes(ctx -> setStyle(ctx, PvpBotEntity.Style.MACE)))
                         .then(Commands.literal("spear").executes(ctx -> setStyle(ctx, PvpBotEntity.Style.SPEAR))))
+                .then(Commands.literal("brain")
+                        .executes(BotCommands::brain)
+                        .then(Commands.literal("reset").executes(BotCommands::brainReset)))
+                .then(Commands.literal("chat")
+                        .then(Commands.literal("on").executes(ctx -> setTalk(ctx, true)))
+                        .then(Commands.literal("off").executes(ctx -> setTalk(ctx, false))))
                 .then(Commands.literal("tp").executes(BotCommands::teleport))
                 .then(Commands.literal("remove").executes(BotCommands::remove))
                 .then(Commands.literal("list").executes(BotCommands::list)));
@@ -122,6 +129,32 @@ public final class BotCommands {
         List<PvpBotEntity> bots = myBots(ctx);
         bots.forEach(b -> b.setStyle(style));
         ctx.getSource().sendSuccess(() -> Component.literal("§aKampfstil: " + style.name().toLowerCase()), false);
+        return bots.size();
+    }
+
+    private static int brain(CommandContext<CommandSourceStack> ctx) {
+        List<String> lines = BotBrain.INSTANCE.summary(12);
+        if (lines.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§7Das Gedächtnis ist noch leer – lass deine Bots ein paar Kämpfe machen."), false);
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§6Was die Bots gelernt haben §7(Wert = wie gut es klappt, (n) = wie oft probiert):"), false);
+        for (String line : lines) {
+            ctx.getSource().sendSuccess(() -> Component.literal(line), false);
+        }
+        return lines.size();
+    }
+
+    private static int brainReset(CommandContext<CommandSourceStack> ctx) {
+        BotBrain.INSTANCE.reset();
+        ctx.getSource().sendSuccess(() -> Component.literal("§eGedächtnis gelöscht – die Bots fangen wieder von vorne an zu lernen."), false);
+        return 1;
+    }
+
+    private static int setTalk(CommandContext<CommandSourceStack> ctx, boolean talk) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.setTalk(talk));
+        ctx.getSource().sendSuccess(() -> Component.literal(talk ? "§aBots erzählen dir, was sie lernen." : "§eBots lernen jetzt leise."), false);
         return bots.size();
     }
 

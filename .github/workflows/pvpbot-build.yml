@@ -29,6 +29,7 @@ jobs:
           printf 'online-mode=false\nlevel-type=minecraft\\:flat\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=false\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
           timeout 1200 ./gradlew --no-daemon runServer -Pselftest > selftest.log 2>&1 || true
           grep -E "SELFTEST|Exception|ERROR|FATAL|at de\.samu" selftest.log | head -1500
+          echo "--- gespeichertes Gedaechtnis ---"; cat run/config/pvpbot-memory.json || true
           grep -q "\[SELFTEST\] DONE" selftest.log
       - uses: actions/upload-artifact@v4
         if: always()

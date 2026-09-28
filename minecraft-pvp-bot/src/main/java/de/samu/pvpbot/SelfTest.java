@@ -1,5 +1,6 @@
 package de.samu.pvpbot;
 
+import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.entity.PvpBotEntity;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
@@ -28,9 +30,16 @@ import net.minecraft.world.level.levelgen.Heightmap;
 final class SelfTest {
     private static final String TAG = "[SELFTEST] ";
 
-    private record Scenario(String name, PvpBotEntity.Style style, int timeoutTicks,
+    private record Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, int baseX,
                             Function<ServerLevel, List<LivingEntity>> targets) {
+        Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, Function<ServerLevel, List<LivingEntity>> targets) {
+            this(name, style, timeoutTicks, 0, targets);
+        }
     }
+
+    /** X offset of the covered "cave" test area (stone roof 4 blocks above the ground). */
+    private static final int CAVE_X = 60;
+    private static int baseX;
 
     private static final List<Scenario> SCENARIOS = new ArrayList<>();
     private static final List<String> RESULTS = new ArrayList<>();
@@ -68,6 +77,16 @@ final class SelfTest {
                 level -> List.of(golem(level, -40, 20, true))));
         SCENARIOS.add(new Scenario("Elytra Speer vs laufender Zombie", PvpBotEntity.Style.SPEAR, 1800,
                 level -> List.of(zombie(level, 38, -20))));
+        for (int i = 1; i <= 3; i++) {
+            SCENARIOS.add(new Scenario("Hoehle " + i + ": Eisengolem", PvpBotEntity.Style.AUTO, 1800, CAVE_X,
+                    level -> List.of(golem(level, 7, 2, false))));
+        }
+        SCENARIOS.add(new Scenario("Hoehle: 3 Zombies", PvpBotEntity.Style.AUTO, 1800, CAVE_X,
+                level -> List.of(zombie(level, 6, 4), zombie(level, -6, 3), zombie(level, 5, -7))));
+        for (int i = 1; i <= 3; i++) {
+            SCENARIOS.add(new Scenario("Lernen " + i + ": Auto vs Eisengolem", PvpBotEntity.Style.AUTO, 1800,
+                    level -> List.of(golem(level, -9, 3, false))));
+        }
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
                 level -> List.of(zombie(level, 6, 6), zombie(level, -7, 5), zombie(level, 12, -9), zombie(level, -3, -14))));
 
@@ -99,6 +118,12 @@ final class SelfTest {
                 level.setChunkForced(cx, cz, true);
             }
         }
+        BlockPos roofCorner = origin.offset(CAVE_X, 4, 0);
+        for (int x = -15; x <= 15; x++) {
+            for (int z = -15; z <= 15; z++) {
+                level.setBlock(roofCorner.offset(x, 0, z), Blocks.STONE.defaultBlockState(), 3);
+            }
+        }
         PvpBotMod.LOGGER.info(TAG + "origin " + origin);
     }
 
@@ -116,8 +141,8 @@ final class SelfTest {
     }
 
     private static LivingEntity place(ServerLevel level, Mob mob, int dx, int dz) {
-        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, origin.getX() + dx, origin.getZ() + dz);
-        mob.snapTo(origin.getX() + dx + 0.5, y, origin.getZ() + dz + 0.5, 0.0F, 0.0F);
+        int x = origin.getX() + baseX + dx;
+        mob.snapTo(x + 0.5, origin.getY(), origin.getZ() + dz + 0.5, 0.0F, 0.0F);
         mob.setPersistenceRequired();
         level.addFreshEntity(mob);
         spawned.add(mob);
@@ -142,6 +167,9 @@ final class SelfTest {
             if (index >= SCENARIOS.size()) {
                 PvpBotMod.LOGGER.info(TAG + "==================== SUMMARY");
                 RESULTS.forEach(r -> PvpBotMod.LOGGER.info(TAG + r));
+                PvpBotMod.LOGGER.info(TAG + "==================== BRAIN");
+                BotBrain.INSTANCE.summary(40).forEach(l -> PvpBotMod.LOGGER.info(TAG + l.replaceAll("§.", "")));
+                BotBrain.INSTANCE.save();
                 PvpBotMod.LOGGER.info(TAG + "DONE");
                 origin = null;
                 server.halt(false);
@@ -172,8 +200,9 @@ final class SelfTest {
         maxHit = 0;
         flew = false;
         PvpBotMod.LOGGER.info(TAG + "==================== " + scenario.name());
+        baseX = scenario.baseX();
         bot = PvpBotMod.PVP_BOT.create(level, EntitySpawnReason.COMMAND);
-        bot.snapTo(origin.getX() + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F);
+        bot.snapTo(origin.getX() + baseX + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F);
         bot.setStyle(scenario.style());
         bot.setCustomName(Component.literal("TestBot"));
         bot.equipLoadout();
