@@ -54,18 +54,36 @@ public class AutopilotGameTest implements FabricClientGameTest {
                     ARMOR + ";give @a minecraft:mace;give @a minecraft:elytra;give @a minecraft:firework_rocket 64",
                     "summon minecraft:iron_golem 35 ~ 0 {NoAI:1b}", 900);
             fight(ctx, sp, "Schwert vs 3 Zombies", ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:golden_apple 4",
-                    "summon minecraft:zombie 6 ~ 3;summon minecraft:zombie 7 ~ -3;summon minecraft:zombie 9 ~ 0", 900);
+                    "summon minecraft:zombie 6 ~ 3;summon minecraft:zombie 7 ~ -3;summon minecraft:zombie 9 ~ 0", 900, true);
             if (FabricLoader.getInstance().isModLoaded("pvpbot")) {
-                fight(ctx, sp, "DUELL: Autopilot vs PvP-Bot",
-                        ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:mace;give @a minecraft:wind_charge 32;"
-                                + "give @a minecraft:golden_apple 8;give @a minecraft:totem_of_undying",
-                        "execute as @p at @p run pvpbot spawn Gegner;execute as @p run pvpbot duel", 1200);
+                botCloseUp(ctx, sp);
+                // Fair mirror match: the bot gets an exact copy of the player's kit.
+                String duelKit = ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:mace;give @a minecraft:wind_charge 16;"
+                        + "give @a minecraft:golden_apple 4;give @a minecraft:totem_of_undying";
+                for (int round = 1; round <= 2; round++) {
+                    fight(ctx, sp, "DUELL " + round + ": Autopilot vs PvP-Bot (gleiches Kit)", duelKit,
+                            "execute as @p at @p run pvpbot spawn Gegner;gamemode creative @a;execute as @p run pvpbot kit copy;"
+                                    + "gamemode survival @a;execute as @p run pvpbot duel", 1200);
+                }
             }
 
             System.out.println(TAG + "==================== SUMMARY");
             results.forEach(r -> System.out.println(TAG + r));
             System.out.println(TAG + "DONE");
         }
+    }
+
+    /** A still picture of the bot right in front of the camera, to check how it looks. */
+    private void botCloseUp(ClientGameTestContext ctx, TestSingleplayerContext sp) {
+        run(sp, "kill @e[type=!minecraft:player]");
+        run(sp, "tp @a 0 ~ 0 -90 10");
+        ctx.waitTicks(5);
+        sp.getServer().runCommand("execute as @p at @p run pvpbot spawn Modell");
+        sp.getServer().runCommand("execute as @p run pvpbot stay");
+        sp.getServer().runCommand("tp @e[type=pvpbot:pvp_bot] 3 ~ 0 90 0");
+        ctx.waitTicks(30);
+        screenshot(ctx, "Bot_Nahaufnahme");
+        run(sp, "kill @e[type=pvpbot:pvp_bot]");
     }
 
     private static void run(TestSingleplayerContext sp, String commands) {
@@ -83,6 +101,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
     }
 
     private void fight(ClientGameTestContext ctx, TestSingleplayerContext sp, String name, String kit, String enemies, int timeoutTicks) {
+        fight(ctx, sp, name, kit, enemies, timeoutTicks, false);
+    }
+
+    private void fight(ClientGameTestContext ctx, TestSingleplayerContext sp, String name, String kit, String enemies, int timeoutTicks, boolean mobsMode) {
         System.out.println(TAG + "==================== " + name);
         ctx.runOnClient(mc -> Autopilot.INSTANCE.setEnabled(mc, false));
         run(sp, "kill @e[type=!minecraft:player]");
@@ -104,9 +126,11 @@ public class AutopilotGameTest implements FabricClientGameTest {
             if (enemy == null) {
                 return false;
             }
-            Autopilot.INSTANCE.setTarget(mc, enemy);
-            Autopilot.INSTANCE.setTargetMode(mc, Autopilot.TargetMode.MOBS);
-            Autopilot.INSTANCE.setTarget(mc, enemy);
+            if (mobsMode) {
+                Autopilot.INSTANCE.setTargetMode(mc, Autopilot.TargetMode.MOBS);
+            } else {
+                Autopilot.INSTANCE.setTarget(mc, enemy);
+            }
             Autopilot.INSTANCE.setEnabled(mc, true);
             return true;
         });
