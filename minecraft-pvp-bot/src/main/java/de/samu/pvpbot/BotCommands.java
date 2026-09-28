@@ -226,7 +226,7 @@ public final class BotCommands {
         }
         for (ItemStack stack : bot.removeKit()) {
             if (!player.getInventory().add(stack)) {
-                player.drop(stack, false);
+                player.spawnAtLocation(ctx.getSource().getLevel(), stack);
             }
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§aDu hast dein Kit zurück. Der Bot kämpft jetzt mit den Fäusten – /pvpbot kit default gibt ihm wieder seine Ausrüstung."), false);

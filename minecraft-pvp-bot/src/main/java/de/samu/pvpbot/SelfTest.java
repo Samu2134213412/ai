@@ -31,10 +31,28 @@ final class SelfTest {
     private static final String TAG = "[SELFTEST] ";
 
     private record Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, int baseX,
-                            Function<ServerLevel, List<LivingEntity>> targets) {
+                            Function<ServerLevel, List<LivingEntity>> targets, java.util.function.@org.jspecify.annotations.Nullable Supplier<List<ItemStack>> kit) {
         Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, Function<ServerLevel, List<LivingEntity>> targets) {
-            this(name, style, timeoutTicks, 0, targets);
+            this(name, style, timeoutTicks, 0, targets, null);
         }
+
+        Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, int baseX, Function<ServerLevel, List<LivingEntity>> targets) {
+            this(name, style, timeoutTicks, baseX, targets, null);
+        }
+    }
+
+    /** X offset of a 1x1 stone pit (4 high) the bot starts in and has to get out of. */
+    private static final int PIT_X = -40;
+
+    private static List<ItemStack> swordKit() {
+        return List.of(new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.IRON_AXE), new ItemStack(Items.IRON_HELMET),
+                new ItemStack(Items.IRON_CHESTPLATE), new ItemStack(Items.IRON_LEGGINGS), new ItemStack(Items.IRON_BOOTS),
+                new ItemStack(Items.GOLDEN_APPLE, 3));
+    }
+
+    private static List<ItemStack> bowKit() {
+        return List.of(new ItemStack(Items.BOW), new ItemStack(Items.ARROW, 64), new ItemStack(Items.STONE_SWORD),
+                new ItemStack(Items.CHAINMAIL_CHESTPLATE));
     }
 
     /** X offset of the covered "cave" test area (stone roof 4 blocks above the ground). */
@@ -88,6 +106,14 @@ final class SelfTest {
             SCENARIOS.add(new Scenario("Lernen " + i + ": Auto vs Eisengolem", PvpBotEntity.Style.AUTO, 1800,
                     level -> List.of(golem(level, -9, 3, false))));
         }
+        SCENARIOS.add(new Scenario("Kit Schwert+Axt vs 3 Zombies", PvpBotEntity.Style.AUTO, 1800, 0,
+                level -> List.of(zombie(level, 6, 4), zombie(level, -6, 3), zombie(level, 5, -7)), SelfTest::swordKit));
+        SCENARIOS.add(new Scenario("Kit Schwert+Axt vs Eisengolem", PvpBotEntity.Style.AUTO, 2400, 0,
+                level -> List.of(golem(level, 6, 2, false)), SelfTest::swordKit));
+        SCENARIOS.add(new Scenario("Kit Bogen vs Eisengolem (NoAI, 20 Bloecke)", PvpBotEntity.Style.AUTO, 2400, 0,
+                level -> List.of(golem(level, 20, 3, true)), SelfTest::bowKit));
+        SCENARIOS.add(new Scenario("Grube: Schwert-Kit, Ziel draussen", PvpBotEntity.Style.AUTO, 2400, PIT_X,
+                level -> List.of(zombie(level, 7, 2)), SelfTest::swordKit));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
                 level -> List.of(zombie(level, 6, 6), zombie(level, -7, 5), zombie(level, 12, -9), zombie(level, -3, -14))));
 
@@ -123,6 +149,16 @@ final class SelfTest {
         for (int x = -15; x <= 15; x++) {
             for (int z = -15; z <= 15; z++) {
                 level.setBlock(roofCorner.offset(x, 0, z), Blocks.STONE.defaultBlockState(), 3);
+            }
+        }
+        BlockPos pit = origin.offset(PIT_X, 0, 0);
+        for (int y = 0; y <= 3; y++) {
+            for (int x = -1; x <= 1; x++) {
+                for (int z = -1; z <= 1; z++) {
+                    if (x != 0 || z != 0) {
+                        level.setBlock(pit.offset(x, y, z), Blocks.STONE.defaultBlockState(), 3);
+                    }
+                }
             }
         }
         PvpBotMod.LOGGER.info(TAG + "origin " + origin);
@@ -206,7 +242,11 @@ final class SelfTest {
         bot.snapTo(origin.getX() + baseX + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F);
         bot.setStyle(scenario.style());
         bot.setCustomName(Component.literal("TestBot"));
-        bot.equipLoadout();
+        if (scenario.kit() != null) {
+            bot.setKit(scenario.kit().get().stream().map(ItemStack::copy).toList(), false);
+        } else {
+            bot.equipLoadout();
+        }
         level.addFreshEntity(bot);
         spawned.add(bot);
         targets = scenario.targets().apply(level);
