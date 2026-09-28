@@ -25,3 +25,8 @@ config.json
 .DS_Store
 .idea/
 .vscode/
+
+# Gradle / Fabric mod build output
+minecraft-pvp-bot/.gradle/
+minecraft-pvp-bot/build/
+minecraft-pvp-bot/run/
