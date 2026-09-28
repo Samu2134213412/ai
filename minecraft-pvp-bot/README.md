@@ -14,6 +14,30 @@ Ein Bot, der wie ein Spieler aussieht und kämpft. Er ist auf **Mace**, **Speer*
 | **Nahkampf** | Speerstiche mit hoher Reichweite oder Mace-Schläge, dazu Strafing. |
 | **Überleben** | Netherite-Rüstung (Protection IV), Totem der Unsterblichkeit, goldene Äpfel bei wenig Leben und ein Windladungs-„Clutch“ gegen Fallschaden. |
 
+## Der Bot lernt dazu
+
+Der Bot hat **6 Angriffsmuster**: Mace-Nahkampf, Speer-Stiche, Windladungs-Smash,
+Speer-Ansturm, Elytra-Mace-Sturzflug und Elytra-Speerflug. Welches er nimmt, entscheidet er selbst:
+
+1. **Er erkennt die Situation**: im Freien, in einer Höhle (Decke niedriger als 10 Blöcke) oder
+   im Wasser, dazu die Entfernung (nah/mittel/fern), ob das Ziel am Boden ist oder fliegt
+   und ob es ein Spieler oder ein Mob ist.
+2. **Er bewertet jeden Versuch**: Schaden am Gegner (plus Bonus fürs Töten) minus eigener
+   Schaden, geteilt durch die Zeit, die es gedauert hat.
+3. **Er merkt sich das pro Situation.** Was gut lief, nimmt er öfter. Was schlecht lief, lässt er
+   erst einmal 10 Sekunden ganz weg und danach nur noch selten.
+4. **Etwas Zufall**: Ab und zu probiert er absichtlich etwas anderes aus, am Anfang öfter und
+   mit mehr Erfahrung seltener. So findet er auch Taktiken, die er noch nicht kannte.
+
+Das Gedächtnis teilen sich alle deine Bots. Es liegt in `.minecraft/config/pvpbot-memory.json`,
+bleibt also auch nach Neustarts und in neuen Welten erhalten. Wenn der Bot etwas Neues lernt,
+schreibt er dir das im Chat, zum Beispiel:
+*„[Killer] Gelernt: im Freien, nah, Ziel am Boden, gegen Mobs → Windladungs-Smash klappt am besten“*.
+
+In einem Testlauf hat er zum Beispiel selbst herausgefunden, dass der Windladungs-Smash im Freien
+gegen einen Eisengolem etwa dreimal so gut ist wie Nahkampf. In der Höhle bringt er dagegen nur
+halb so viel, weil er dort nicht hoch genug springen kann.
+
 ## Installation (einmalig, ca. 5 Minuten)
 
 1. **Fabric installieren**: Lade den Installer von <https://fabricmc.net/use/installer/>,
@@ -41,7 +65,10 @@ Das ist eine ZIP-Datei, in der die `.jar` liegt. Selbst bauen geht auch mit
 | `/pvpbot stop` | Kampf abbrechen, alle Ziele vergessen |
 | `/pvpbot follow` / `/pvpbot stay` | Dir folgen oder stehen bleiben |
 | `/pvpbot assist on\|off` | Wenn an (Standard): Der Bot greift alles an, was **du schlägst** und was **dich schlägt**. |
-| `/pvpbot weapon auto\|mace\|spear` | Kampfstil: beides gemischt, nur Mace oder nur Speer |
+| `/pvpbot weapon auto\|mace\|spear` | Welche Waffen er benutzen darf: beide (er entscheidet selbst), nur Mace oder nur Speer |
+| `/pvpbot brain` | Zeigt, was die Bots gelernt haben (Wert pro Taktik und Situation) |
+| `/pvpbot brain reset` | Gedächtnis löschen, die Bots lernen von vorne |
+| `/pvpbot chat on\|off` | Ob die Bots dir im Chat erzählen, was sie lernen |
 | `/pvpbot tp` | Holt deine Bots zu dir |
 | `/pvpbot list` | Zeigt Leben und aktuellen Zustand deiner Bots |
 | `/pvpbot remove` | Entfernt deine Bots |

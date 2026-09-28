@@ -205,7 +205,7 @@ public final class BotBrain {
         s.best = Math.max(s.best, score);
         this.dirty = true;
         Pattern after = favourite(ctx);
-        return new Lesson(after == p && before != p, score <= 0.0, score, s.value);
+        return new Lesson(after == p && before != p && score > 0.0, score <= 0.0, score, s.value);
     }
 
     // ------------------------------------------------------------------ display
