@@ -66,6 +66,8 @@ final class SelfTest {
                 level -> List.of(golem(level, 45, 5, true))));
         SCENARIOS.add(new Scenario("Elytra Speer: Ziel 45 Bloecke entfernt", PvpBotEntity.Style.SPEAR, 1800,
                 level -> List.of(golem(level, -40, 20, true))));
+        SCENARIOS.add(new Scenario("Elytra Speer vs laufender Zombie", PvpBotEntity.Style.SPEAR, 1800,
+                level -> List.of(zombie(level, 38, -20))));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
                 level -> List.of(zombie(level, 6, 6), zombie(level, -7, 5), zombie(level, 12, -9), zombie(level, -3, -14))));
 

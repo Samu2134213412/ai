@@ -6,6 +6,7 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
+import de.samu.pvpbot.PvpBotMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
@@ -78,6 +79,8 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private static final double CRUISE_HEIGHT = 26.0;
+    private static final double LANCE_HEIGHT = 12.0;
+    private static final boolean DEBUG = Boolean.getBoolean("pvpbot.selftest");
     private static final int WIND_COOLDOWN = 45;
     private static final int SPEAR_COOLDOWN = 50;
     private static final int FLIGHT_COOLDOWN = 60;
@@ -632,6 +635,11 @@ public class PvpBotEntity extends PathfinderMob {
         }
 
         double dist = this.distanceTo(target);
+        if (!this.isUsingItem() && this.modeTicks < 4) {
+            // Weapon swaps can cancel the use on the same tick; just try again.
+            this.startUsingItem(InteractionHand.MAIN_HAND);
+            return;
+        }
         if (!this.isUsingItem() || this.modeTicks > this.spearUseDuration() || dist < 1.3) {
             this.stopUsingItem();
             this.spearCooldown = SPEAR_COOLDOWN;
@@ -700,7 +708,7 @@ public class PvpBotEntity extends PathfinderMob {
         double speed = v.length();
         Vec3 toTarget = target.position().subtract(pos);
         double hDist = toTarget.horizontalDistance();
-        double cruiseY = target.getY() + CRUISE_HEIGHT;
+        double cruiseY = target.getY() + (this.lancePlan ? LANCE_HEIGHT : CRUISE_HEIGHT);
 
         switch (this.mode) {
             case CLIMB -> {
@@ -741,21 +749,27 @@ public class PvpBotEntity extends PathfinderMob {
             }
             case LANCE -> {
                 this.holdWeapon(this.spear);
-                Vec3 lead = target.getDeltaMovement().scale(Math.min(10.0, toTarget.length() / Math.max(0.8, speed)));
-                Vec3 aim = target.getBoundingBox().getCenter().add(lead).subtract(this.getEyePosition());
-                // Do not fly into the ground.
-                if (this.groundDistance(4) <= 3 && aim.y < 0 && !this.inSmashReach(target)) {
-                    aim = new Vec3(aim.x, Math.abs(aim.y) + 2.0, aim.z);
+                double dist = this.distanceTo(target);
+                Vec3 lead = target.getDeltaMovement().scale(Math.min(10.0, dist / Math.max(0.8, speed)));
+                Vec3 aimPoint = target.getBoundingBox().getCenter().add(lead);
+                // Glide path: come down gradually while far away, then fly level straight through the target.
+                double wantY = hDist > 14.0 ? target.getY() + 1.5 + (hDist - 14.0) * 0.35 : aimPoint.y;
+                Vec3 aim = new Vec3(aimPoint.x - this.getX(), wantY - this.getEyeY(), aimPoint.z - this.getZ());
+                if (this.groundDistance(3) <= 2 && aim.y < 0.0 && hDist > 2.0) {
+                    aim = new Vec3(aim.x, 0.4, aim.z);
                 }
                 this.face(aim, 25.0F);
-                if (speed < 1.5) {
+                if (speed < 1.6) {
                     this.fireRocket(level);
                 }
-                double dist = this.distanceTo(target);
-                if (dist < 22.0 && !this.isUsingItem() && !this.lancePassed) {
+                if (dist < 24.0 && !this.isUsingItem() && !this.lancePassed) {
                     this.startUsingItem(InteractionHand.MAIN_HAND);
                 }
-                if (dist < 3.0) {
+                if (DEBUG && dist < 7.0) {
+                    PvpBotMod.LOGGER.info(String.format("[SELFTEST]   lance dist=%.1f using=%s ticks=%d speed=%.2f pitch=%.0f ground=%d",
+                            dist, this.isUsingItem(), this.getTicksUsingItem(), speed, this.getXRot(), this.groundDistance(6)));
+                }
+                if (dist < 2.5) {
                     this.lancePassed = true;
                 }
                 if (this.lancePassed && dist > 8.0 || this.modeTicks > 240) {
