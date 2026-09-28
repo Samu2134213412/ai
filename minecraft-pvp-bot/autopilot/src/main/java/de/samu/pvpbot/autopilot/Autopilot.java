@@ -20,7 +20,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -140,7 +140,7 @@ public final class Autopilot {
             return;
         }
         this.ticks++;
-        if (mc.screen != null || !p.isAlive()) {
+        if (mc.gui.screen() != null || !p.isAlive()) {
             // Menu or chat open, or dead: hands off.
             this.releaseKeys(mc);
             return;
@@ -694,7 +694,7 @@ public final class Autopilot {
     }
 
     private void click(Minecraft mc, LocalPlayer p, int slot, int button) {
-        mc.gameMode.handleInventoryMouseClick(p.inventoryMenu.containerId, slot, button, ClickType.SWAP, p);
+        mc.gameMode.handleContainerInput(p.inventoryMenu.containerId, slot, button, ContainerInput.SWAP, p);
     }
 
     private int findInventory(LocalPlayer p, Role role) {

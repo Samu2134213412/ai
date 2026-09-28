@@ -1,6 +1,5 @@
 package de.samu.pvpbot.autopilot;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import de.samu.pvpbot.autopilot.brain.BotBrain;
 import net.fabricmc.api.ClientModInitializer;
@@ -18,9 +17,11 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.EntityHitResult;
-import org.lwjgl.glfw.GLFW;
 
 public class AutopilotClient implements ClientModInitializer {
+    // Key codes are SDL scancodes in this Minecraft version (W = 26, space = 44).
+    private static final int KEY_J = 13;
+    private static final int KEY_K = 14;
     private static KeyMapping toggleKey;
     private static KeyMapping targetKey;
 
@@ -28,9 +29,9 @@ public class AutopilotClient implements ClientModInitializer {
     public void onInitializeClient() {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("pvpbot_autopilot", "autopilot"));
         toggleKey = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.pvpbot_autopilot.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
+                new KeyMapping("key.pvpbot_autopilot.toggle", KEY_K, category));
         targetKey = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.pvpbot_autopilot.target", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
+                new KeyMapping("key.pvpbot_autopilot.target", KEY_J, category));
 
         BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-autopilot-memory.json"));
         ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> BotBrain.INSTANCE.save());

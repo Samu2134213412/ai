@@ -154,7 +154,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
                 }
             });
             ctx.waitTicks(40);
-            ctx.runOnClient(mc -> mc.setScreen(null));
+            ctx.runOnClient(mc -> mc.gui.setScreen(null));
         }
     }
 
