@@ -1,16 +1,51 @@
-name: PvP Bot - probe versions
+name: PvP Bot - probe API
 on:
-  push:
-    branches: [claude/minecraft-pvp-bot-26ty7h]
-    paths: ['.github/workflows/pvpbot-probe.yml']
   workflow_dispatch:
+    inputs:
+      classes:
+        description: 'Space separated class names (dots) to dump'
+        required: false
+        default: ''
+      mode:
+        description: 'javap or source'
+        required: false
+        default: 'javap'
+      grep:
+        description: 'Regex to search class names in the minecraft jar'
+        required: false
+        default: ''
 jobs:
   probe:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: minecraft-pvp-bot
     steps:
-      - run: |
-          echo "== game (top 25) =="; curl -s https://meta.fabricmc.net/v2/versions/game | jq -r '.[:25][] | "\(.version) stable=\(.stable)"'
-          echo "== loader =="; curl -s https://meta.fabricmc.net/v2/versions/loader | jq -r '.[:5][] | .version'
-          echo "== yarn 1.21.11 =="; curl -s https://meta.fabricmc.net/v2/versions/yarn/1.21.11 | jq -r '.[:3][] | .version'
-          echo "== loom =="; curl -s https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml | grep -o '<version>[^<]*</version>' | tail -15
-          echo "== fabric-api =="; curl -s https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml | grep -o '<version>[^<]*</version>' | tail -25
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Setup loom
+        run: ./gradlew --no-daemon dependencies --configuration compileClasspath -q > /dev/null || true
+      - name: Gen sources
+        if: ${{ inputs.mode == 'source' }}
+        run: ./gradlew --no-daemon genSources -q || true
+      - name: Probe
+        env:
+          CLASSES: ${{ inputs.classes }}
+          MODE: ${{ inputs.mode }}
+          GREP: ${{ inputs.grep }}
+        run: |
+          JAR=$(find ~/.gradle .gradle -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null | xargs ls -S | head -1)
+          echo "JAR=$JAR"
+          find ~/.gradle .gradle -name 'minecraft-*.jar' 2>/dev/null | head -20
+          if [ -n "$GREP" ]; then unzip -Z1 "$JAR" | grep -E "$GREP" | head -300; fi
+          for c in $CLASSES; do
+            echo "=================== $c"
+            if [ "$MODE" = "source" ]; then
+              SRC=$(find ~/.gradle .gradle -name 'minecraft-*sources*.jar' 2>/dev/null | head -1)
+              unzip -p "$SRC" "$(echo $c | tr . /).java"
+            else
+              javap -p -cp "$JAR" "$c"
+            fi
+          done
