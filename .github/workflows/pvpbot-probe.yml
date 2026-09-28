@@ -42,13 +42,13 @@ jobs:
           SRCGREP: ${{ inputs.srcgrep }}
           RANGES: ${{ inputs.ranges }}
         run: |
-          JAR=$(find ~/.gradle/caches/fabric-loom/minecraftMaven -name 'minecraft-merged-deobf-*.jar' ! -name '*sources*' | head -1)
-          CP="$JAR:$(find ~/.gradle/caches/modules-2 -name '*.jar' | tr '\n' ':')"
-          SRC=$(find ~/.gradle $PWD/.gradle -name 'minecraft-*sources*.jar' 2>/dev/null | head -1)
-          echo "JAR=$JAR SRC=$SRC"
-          if [ -n "$GREP" ]; then unzip -Z1 "$JAR" | grep -E "$GREP" | grep -v '\$' | head -400; fi
+          JARS=$(find ~/.gradle/caches/fabric-loom $PWD/.gradle -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null)
+          CP="$(echo $JARS | tr ' ' ':'):$(find ~/.gradle/caches/modules-2 -name '*.jar' | tr '\n' ':')"
+          SRCS=$(find ~/.gradle $PWD/.gradle -name 'minecraft-*sources*.jar' 2>/dev/null)
+          echo "JARS=$JARS SRCS=$SRCS"
+          if [ -n "$GREP" ]; then for j in $JARS; do unzip -Z1 "$j"; done | sort -u | grep -E "$GREP" | grep -v '\$' | head -400; fi
           for c in $JAVAP; do echo "=================== $c"; javap -p -cp "$CP" "$c" || true; done
-          if [ -n "$SOURCE$SRCGREP$RANGES" ]; then mkdir -p /tmp/src && (cd /tmp/src && unzip -q -o "$SRC"); fi
+          if [ -n "$SOURCE$SRCGREP$RANGES" ]; then mkdir -p /tmp/src && (cd /tmp/src && for j in $SRCS; do unzip -q -o "$j"; done); fi
           for c in $SOURCE; do echo "=================== $c"; cat -n "/tmp/src/$(echo $c | tr . /).java" || true; done
           if [ -n "$SRCGREP" ]; then (cd /tmp/src && grep -rnE "$SRCGREP" --include=*.java . | head -400); fi
           for r in $RANGES; do c=${r%%:*}; l=${r#*:}; echo "=================== $r"; sed -n "${l%-*},${l#*-}p" "/tmp/src/$(echo $c | tr . /).java" | cat -n | sed "s/^ *\([0-9]*\)/L\1+${l%-*}/" || true; done
