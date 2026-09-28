@@ -1,19 +1,6 @@
 name: PvP Bot - probe API
 on:
   workflow_dispatch:
-    inputs:
-      classes:
-        description: 'Space separated class names (dots) to dump'
-        required: false
-        default: ''
-      mode:
-        description: 'javap or source'
-        required: false
-        default: 'javap'
-      grep:
-        description: 'Regex to search class names in the minecraft jar'
-        required: false
-        default: ''
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -25,27 +12,20 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
       - uses: gradle/actions/setup-gradle@v4
-      - name: Setup loom
-        run: ./gradlew --no-daemon dependencies --configuration compileClasspath -q > /dev/null || true
       - name: Gen sources
-        if: ${{ inputs.mode == 'source' }}
-        run: ./gradlew --no-daemon genSources -q || true
-      - name: Probe
-        env:
-          CLASSES: ${{ inputs.classes }}
-          MODE: ${{ inputs.mode }}
-          GREP: ${{ inputs.grep }}
+        run: ./gradlew --no-daemon genSources || true
+      - name: Collect classpath
         run: |
-          JAR=$(find ~/.gradle .gradle -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null | xargs ls -S | head -1)
-          echo "JAR=$JAR"
-          find ~/.gradle .gradle -name 'minecraft-*.jar' 2>/dev/null | head -20
-          if [ -n "$GREP" ]; then unzip -Z1 "$JAR" | grep -E "$GREP" | head -300; fi
-          for c in $CLASSES; do
-            echo "=================== $c"
-            if [ "$MODE" = "source" ]; then
-              SRC=$(find ~/.gradle .gradle -name 'minecraft-*sources*.jar' 2>/dev/null | head -1)
-              unzip -p "$SRC" "$(echo $c | tr . /).java"
-            else
-              javap -p -cp "$JAR" "$c"
-            fi
-          done
+          mkdir -p /tmp/cp
+          cat > /tmp/cp.gradle <<'G'
+          allprojects { tasks.register('dumpCp') { doLast { file('/tmp/cp/classpath.txt').text = configurations.compileClasspath.files.join('\n') + '\n' + configurations.findByName('clientCompileClasspath')?.files?.join('\n') } } }
+          G
+          ./gradlew --no-daemon -I /tmp/cp.gradle dumpCp || true
+          cat /tmp/cp/classpath.txt
+          while read f; do [ -f "$f" ] && cp "$f" /tmp/cp/; done < /tmp/cp/classpath.txt
+          find ~/.gradle .gradle -name '*sources*.jar' -path '*minecraft*' -exec cp {} /tmp/cp/ \;
+          ls -la /tmp/cp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: classpath
+          path: /tmp/cp
