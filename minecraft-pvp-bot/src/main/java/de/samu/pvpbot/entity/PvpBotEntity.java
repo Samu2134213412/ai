@@ -758,14 +758,19 @@ public class PvpBotEntity extends PathfinderMob {
                 if (this.groundDistance(3) <= 2 && aim.y < 0.0 && hDist > 2.0) {
                     aim = new Vec3(aim.x, 0.4, aim.z);
                 }
+                if (this.lancePassed) {
+                    // Went through the target: pull up and away, then loop around for the next pass.
+                    Vec3 flat = v.multiply(1.0, 0.0, 1.0);
+                    aim = (flat.lengthSqr() < 1.0E-3 ? this.getLookAngle().multiply(1.0, 0.0, 1.0) : flat.normalize()).add(0.0, 0.7, 0.0);
+                }
                 this.face(aim, 25.0F);
-                if (speed < 1.6) {
+                if (speed < 1.6 || this.lancePassed && this.groundDistance(3) <= 2) {
                     this.fireRocket(level);
                 }
                 if (dist < 24.0 && !this.isUsingItem() && !this.lancePassed) {
                     this.startUsingItem(InteractionHand.MAIN_HAND);
                 }
-                if (DEBUG && dist < 7.0) {
+                if (DEBUG && dist < 4.0) {
                     PvpBotMod.LOGGER.info(String.format("[SELFTEST]   lance dist=%.1f using=%s ticks=%d speed=%.2f pitch=%.0f ground=%d",
                             dist, this.isUsingItem(), this.getTicksUsingItem(), speed, this.getXRot(), this.groundDistance(6)));
                 }
