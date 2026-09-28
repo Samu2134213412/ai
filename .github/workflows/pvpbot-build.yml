@@ -55,11 +55,17 @@ jobs:
           path: minecraft-pvp-bot/autopilot/build/libs/pvpbot-autopilot-*.jar
           if-no-files-found: error
       - name: In-game test with a real client
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MESA_GL_VERSION_OVERRIDE: '4.5'
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri > /dev/null
-          timeout 1500 xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew --no-daemon :autopilot:runClientGameTest > clienttest.log 2>&1 || true
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 libglx-mesa0 libgl1-mesa-dri libegl1 mesa-utils > /dev/null
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset > /dev/null 2>&1 &
+          sleep 3
+          DISPLAY=:99 glxinfo -B | head -12 || true
+          DISPLAY=:99 timeout 1200 ./gradlew --no-daemon :autopilot:runClientGameTest > clienttest.log 2>&1 || true
           grep -E "AUTOPILOT|Exception|FATAL|at de\.samu|Caused by" clienttest.log | grep -v "^\[SHOT" | head -1500
-          grep -c "^\[SHOT" clienttest.log || true
+          grep -q "AUTOPILOT-TEST\] DONE" clienttest.log || tail -80 clienttest.log
           grep -q "AUTOPILOT-TEST\] DONE" clienttest.log
       - name: Screenshots (base64)
         if: always()
