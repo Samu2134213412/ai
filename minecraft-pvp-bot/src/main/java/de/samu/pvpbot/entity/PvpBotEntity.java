@@ -230,7 +230,7 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     @Override
-    public boolean isAlliedTo(Entity other) {
+    protected boolean considersEntityAsAlly(Entity other) {
         if (this.ownerId != null) {
             if (this.ownerId.equals(other.getUUID())) {
                 return true;
@@ -239,7 +239,7 @@ public class PvpBotEntity extends PathfinderMob {
                 return true;
             }
         }
-        return super.isAlliedTo(other);
+        return super.considersEntityAsAlly(other);
     }
 
     @Override
@@ -414,7 +414,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     private void windBurst(ServerLevel level, Vec3 motion) {
         this.setDeltaMovement(motion);
-        this.hurtMarked = true;
+        this.needsSync = true;
         level.sendParticles(ParticleTypes.GUST_EMITTER_SMALL, this.getX(), this.getY(), this.getZ(), 1, 0.0, 0.0, 0.0, 0.0);
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.WIND_CHARGE_BURST, this.getSoundSource(), 1.0F, 1.0F);
     }
@@ -469,10 +469,14 @@ public class PvpBotEntity extends PathfinderMob {
         return reach.intersects(target.getBoundingBox());
     }
 
+    private void swingMainHand() {
+        this.swing(InteractionHand.MAIN_HAND, this.getMainHandItem().getAttackAnimation());
+    }
+
     private boolean trySmash(ServerLevel level, LivingEntity target) {
         if (this.getMainHandItem() == this.mace && MaceItem.canSmashAttack(this) && this.inSmashReach(target)) {
             this.faceEntity(target, 180.0F);
-            this.swing(InteractionHand.MAIN_HAND);
+            this.swingMainHand();
             this.doHurtTarget(level, target);
             return true;
         }
@@ -547,7 +551,7 @@ public class PvpBotEntity extends PathfinderMob {
                 this.meleeCooldown = 12;
             } else if (!this.holdingSpear() && dist <= 3.2) {
                 this.faceEntity(target, 180.0F);
-                this.swing(InteractionHand.MAIN_HAND);
+                this.swingMainHand();
                 this.doHurtTarget(level, target);
                 this.meleeCooldown = 16;
             }
@@ -560,7 +564,7 @@ public class PvpBotEntity extends PathfinderMob {
         if (piercing != null) {
             piercing.attack(this, EquipmentSlot.MAINHAND);
         } else if (this.level() instanceof ServerLevel level) {
-            this.swing(InteractionHand.MAIN_HAND);
+            this.swingMainHand();
             this.doHurtTarget(level, target);
         }
     }
@@ -593,7 +597,7 @@ public class PvpBotEntity extends PathfinderMob {
             wantH = wantH.normalize().scale(maxH);
         }
         this.setDeltaMovement(v.x * 0.5 + wantH.x * 0.5, v.y, v.z * 0.5 + wantH.z * 0.5);
-        this.hurtMarked = true;
+        this.needsSync = true;
 
         this.trySmash(level, target);
 
@@ -729,7 +733,7 @@ public class PvpBotEntity extends PathfinderMob {
                 if (hDist < releaseDist) {
                     this.stopFallFlying();
                     this.setDeltaMovement(v.x * 0.6, Math.min(v.y, -0.6), v.z * 0.6);
-                    this.hurtMarked = true;
+                    this.needsSync = true;
                     this.setMode(Mode.DIVE);
                 } else if (this.getY() < target.getY() + 12.0 || this.modeTicks > 400) {
                     this.setMode(Mode.CLIMB);
