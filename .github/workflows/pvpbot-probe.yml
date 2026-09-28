@@ -14,6 +14,9 @@ on:
       srcgrep:
         description: 'Regex to grep across all decompiled sources (prints file:line)'
         default: ''
+      fabgrep:
+        description: 'Regex over class names inside all non-minecraft jars'
+        default: ''
       ranges:
         description: 'Space separated Class:start-end line ranges of decompiled sources'
         default: ''
@@ -41,12 +44,14 @@ jobs:
           GREP: ${{ inputs.grep }}
           SRCGREP: ${{ inputs.srcgrep }}
           RANGES: ${{ inputs.ranges }}
+          FABGREP: ${{ inputs.fabgrep }}
         run: |
           JARS=$(find ~/.gradle/caches/fabric-loom $PWD/.gradle -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null)
           CP="$(echo $JARS | tr ' ' ':'):$(find ~/.gradle/caches/modules-2 ~/.gradle/caches/fabric-loom $PWD/.gradle -name "*.jar" | tr '\n' ':')"
           SRCS=$(find ~/.gradle $PWD/.gradle -name 'minecraft-*sources*.jar' 2>/dev/null)
           echo "JARS=$JARS SRCS=$SRCS"
           if [ -n "$GREP" ]; then for j in $JARS; do unzip -Z1 "$j"; done | sort -u | grep -E "$GREP" | grep -v '\$' | head -400; fi
+          if [ -n "$FABGREP" ]; then for j in $(find ~/.gradle/caches/modules-2 ~/.gradle/caches/fabric-loom $PWD/.gradle -name '*.jar' | grep -v minecraft-); do unzip -Z1 "$j" 2>/dev/null | grep -E "$FABGREP" | sed "s|^|$(basename $j): |"; done | head -200; fi
           for c in $JAVAP; do echo "=================== $c"; javap -p -cp "$CP" "$c" || true; done
           if [ -n "$SOURCE$SRCGREP$RANGES" ]; then mkdir -p /tmp/src && (cd /tmp/src && for j in $SRCS; do unzip -q -o "$j"; done); fi
           for c in $SOURCE; do echo "=================== $c"; cat -n "/tmp/src/$(echo $c | tr . /).java" || true; done
