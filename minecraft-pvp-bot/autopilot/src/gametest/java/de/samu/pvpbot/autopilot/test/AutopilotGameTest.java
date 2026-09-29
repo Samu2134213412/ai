@@ -46,6 +46,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext ctx) {
+        if (Boolean.getBoolean("pvpbot.survivaltest")) {
+            survivalTest(ctx);
+            return;
+        }
         try (TestSingleplayerContext sp = ctx.worldBuilder().create()) {
             ctx.waitTicks(60);
             run(sp, "difficulty normal");
@@ -392,6 +396,71 @@ public class AutopilotGameTest implements FabricClientGameTest {
             System.out.println(TAG + "recording failed: " + e);
             this.clip = null;
         }
+    }
+
+    /**
+     * Full control in a normal world, starting with empty hands: the autopilot has to gear up on its
+     * own. Logs the gear every 20 seconds and records a timelapse (one frame every 2 seconds).
+     */
+    private void survivalTest(ClientGameTestContext ctx) {
+        long minutes = Long.getLong("pvpbot.survivalminutes", 25L);
+        try (TestSingleplayerContext sp = ctx.worldBuilder()
+                .setUseConsistentSettings(false)
+                .adjustSettings(s -> s.setSeed("pvpbot"))
+                .create()) {
+            ctx.waitTicks(100);
+            run(sp, "difficulty easy");
+            run(sp, "gamemode survival @a");
+            run(sp, "time set 0");
+            run(sp, "clear @a");
+            logWorld(ctx, sp);
+            ctx.runOnClient(mc -> Autopilot.INSTANCE.setFullControl(mc, true));
+            startClip("11_autopilot_ausruestung_zeitraffer", 15);
+            String[] goals = {"wooden_pickaxe", "crafting_table", "stone_pickaxe", "stone_sword", "furnace", "iron_ingot",
+                    "iron_pickaxe", "iron_sword", "iron_chestplate", "iron_leggings", "iron_helmet", "iron_boots", "shield",
+                    "diamond", "diamond_pickaxe"};
+            java.util.Set<String> reached = new java.util.LinkedHashSet<>();
+            long ticks = minutes * 60 * 20;
+            for (long t = 0; t < ticks; t += 40) {
+                ctx.waitTicks(40);
+                capture(ctx);
+                String[] info = new String[2];
+                ctx.runOnClient(mc -> {
+                    if (mc.player == null) {
+                        return;
+                    }
+                    StringBuilder inv = new StringBuilder();
+                    java.util.Map<String, Integer> counts = new java.util.TreeMap<>();
+                    for (var st : mc.player.getInventory().getNonEquipmentItems()) {
+                        if (!st.isEmpty()) {
+                            counts.merge(st.getItem().toString().replace("minecraft:", ""), st.getCount(), Integer::sum);
+                        }
+                    }
+                    for (var slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.OFFHAND}) {
+                        var st = mc.player.getItemBySlot(slot);
+                        if (!st.isEmpty()) {
+                            counts.merge(st.getItem().toString().replace("minecraft:", ""), st.getCount(), Integer::sum);
+                        }
+                    }
+                    counts.forEach((k, v) -> inv.append(v).append('x').append(k).append(' '));
+                    info[0] = inv.toString();
+                    info[1] = String.format("hp=%.1f food=%d pos=%s | %s", mc.player.getHealth(), mc.player.getFoodData().getFoodLevel(),
+                            mc.player.blockPosition().toShortString(), Autopilot.INSTANCE.status().replaceAll("§.", ""));
+                });
+                for (String g : goals) {
+                    if (info[0] != null && info[0].contains("x" + g + " ") && reached.add(g)) {
+                        System.out.println(TAG + "GOAL " + g + " nach " + (t + 40) / 20 + "s");
+                    }
+                }
+                if (t % 400 == 0) {
+                    System.out.println(TAG + "t=" + t / 20 + "s " + info[1] + " | " + info[0]);
+                }
+            }
+            clip = null;
+            ctx.runOnClient(mc -> Autopilot.INSTANCE.setFullControl(mc, false));
+            System.out.println(TAG + "SURVIVAL erreicht: " + reached);
+        }
+        System.out.println(TAG + "DONE");
     }
 
     /** Saves one video frame of the current clip. */

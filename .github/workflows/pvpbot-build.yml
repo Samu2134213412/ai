@@ -130,3 +130,67 @@ jobs:
             n=$(basename "$f" .mp4)
             base64 -w 4000 "$f" | awk -v n="$n" '{print "[VID " n " " NR "] " $0}'
           done
+  survival:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: minecraft-pvp-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build autopilot
+        run: ./gradlew --no-daemon :autopilot:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pvpbot-autopilot-survival-build
+          path: minecraft-pvp-bot/autopilot/build/libs/pvpbot-autopilot-*.jar
+          if-no-files-found: error
+      - name: Autopilot gears up on its own (normal world, timelapse)
+        env:
+          JAVA_TOOL_OPTIONS: '-Dpvpbot.survivaltest=true -Dpvpbot.survivalminutes=25'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MESA_GL_VERSION_OVERRIDE: '4.5'
+          SDL_VIDEO_DRIVER: x11
+          SDL_VIDEO_FORCE_EGL: '1'
+          SDL_VIDEO_X11_FORCE_EGL: '1'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 libglx-mesa0 libgl1-mesa-dri libegl1 libegl-mesa0 mesa-vulkan-drivers vulkan-tools mesa-utils ffmpeg > /dev/null
+          Xvfb :99 -screen 0 1280x720x24+32 +extension GLX +render -noreset > /dev/null 2>&1 &
+          sleep 3
+          DISPLAY=:99 glxinfo -B | head -12 || true
+          DISPLAY=:99 vulkaninfo --summary 2>/dev/null | head -20 || true
+          DISPLAY=:99 timeout 2400 ./gradlew --no-daemon :autopilot:runClientGameTest > clienttest.log 2>&1 || true
+          grep -E "AUTOPILOT|Exception|FATAL|at de\.samu|Caused by" clienttest.log | grep -v "^\[SHOT" | head -1500
+          grep -q "AUTOPILOT-TEST\] DONE" clienttest.log || tail -80 clienttest.log
+          grep -q "AUTOPILOT-TEST\] DONE" clienttest.log
+      - name: Screenshots (base64)
+        if: always()
+        run: grep "SHOT" clienttest.log | sed 's/^.*\[SHOT/[SHOT/' || true
+      - name: Encode videos
+        if: always()
+        run: |
+          mkdir -p videos
+          for d in $(find . -type d -path '*pvpbot-frames/*' | sort); do
+            n=$(basename "$d"); fps=$(cat "$d/fps"); count=$(ls "$d"/*.png 2>/dev/null | wc -l)
+            echo "$n: $count frames @ $fps fps"
+            [ "$count" -gt 0 ] || continue
+            ffmpeg -loglevel error -y -framerate "$fps" -i "$d/%05d.png" -vf "scale=640:-2" \
+              -c:v libx264 -preset slow -crf 30 -pix_fmt yuv420p -movflags +faststart "videos/$n.mp4"
+          done
+          ls -la videos
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pvpbot-survival-video
+          path: minecraft-pvp-bot/videos/*.mp4
+          if-no-files-found: warn
+      - name: Videos (base64)
+        if: always()
+        run: |
+          for f in videos/*.mp4; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .mp4)
+            base64 -w 4000 "$f" | awk -v n="$n" '{print "[VID " n " " NR "] " $0}'
+          done

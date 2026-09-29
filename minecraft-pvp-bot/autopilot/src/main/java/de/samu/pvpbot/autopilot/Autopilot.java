@@ -86,9 +86,10 @@ public final class Autopilot {
     private int unstuckMode;
 
     // Desired key states for this tick.
-    private boolean kForward, kBack, kLeft, kRight, kJump, kSprint, kSneak, kUse, kAttack;
+    boolean kForward, kBack, kLeft, kRight, kJump, kSprint, kSneak, kUse, kAttack;
     private boolean wasJump;
     private boolean keysHeld;
+    private final Survival survival = new Survival(this);
     private float strafe = 1.0F;
     private String lastStatus = "";
 
@@ -178,12 +179,20 @@ public final class Autopilot {
             return;
         }
         this.ticks++;
-        if (mc.gui.screen() != null || !p.isAlive()) {
+        boolean survivalScreen = this.survival.ownsScreen()
+                && mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>;
+        if (mc.gui.screen() != null && !survivalScreen || !p.isAlive()) {
             // Menu or chat open, or dead: hands off.
             this.releaseKeys(mc);
             return;
         }
         this.clearKeys();
+        if (this.targetMode == TargetMode.FULL && this.survival.ownsScreen()) {
+            // In the middle of crafting or smelting: finish the clicks first.
+            this.survival.tick(mc, p);
+            this.applyKeys(mc);
+            return;
+        }
         if (this.windCooldown > 0) this.windCooldown--;
         if (this.rocketCooldown > 0) this.rocketCooldown--;
         if (this.spearCooldown > 0) this.spearCooldown--;
@@ -214,6 +223,16 @@ public final class Autopilot {
             this.applyKeys(mc);
             return;
         }
+        if (t != null && AutopilotSettings.INSTANCE.autoEat && p.getHealth() <= 8.0F && !this.has(p, Role.GAPPLE)
+                && p.distanceTo(t) > 5.0F && !p.isFallFlying() && this.eatWhenHungry(mc, p)) {
+            // Low and no golden apple: back off and eat something while the enemy is not right here.
+            this.finishAttempt(mc);
+            this.faceEntity(p, t, 30.0F);
+            this.kBack = true;
+            this.status(p, "§7isst (wenig Leben)");
+            this.applyKeys(mc);
+            return;
+        }
         if (t == null) {
             this.finishAttempt(mc);
             this.landIfFlying(mc, p);
@@ -228,6 +247,10 @@ public final class Autopilot {
                 return;
             }
             if (this.targetMode == TargetMode.FULL) {
+                if (this.survival.tick(mc, p)) {
+                    this.applyKeys(mc);
+                    return;
+                }
                 this.roam(p);
                 this.status(p, "§6volle Kontrolle §7– zieht umher");
                 this.applyKeys(mc);
@@ -1113,13 +1136,15 @@ public final class Autopilot {
     }
 
     /** Out of combat: eat normal food when hungry, so health keeps regenerating. */
-    private boolean eatWhenHungry(Minecraft mc, LocalPlayer p) {
+    boolean eatWhenHungry(Minecraft mc, LocalPlayer p) {
         if (this.hungerEatTicks > 0) {
             this.hungerEatTicks--;
             this.kUse = true;
             return true;
         }
-        if (p.getFoodData().getFoodLevel() >= 14) {
+        int food = p.getFoodData().getFoodLevel();
+        boolean hurt = p.getHealth() < p.getMaxHealth() - 3.0F && food < 18;
+        if (food >= 14 && !hurt) {
             return false;
         }
         List<ItemStack> items = p.getInventory().getNonEquipmentItems();
@@ -1141,7 +1166,7 @@ public final class Autopilot {
     }
 
     /** Out of combat: walk over dropped items nearby (loot of kills) to pick them up. */
-    private boolean collectLoot(Minecraft mc, LocalPlayer p) {
+    boolean collectLoot(Minecraft mc, LocalPlayer p) {
         net.minecraft.world.entity.item.ItemEntity closest = null;
         double best = 12.0 * 12.0;
         for (net.minecraft.world.entity.item.ItemEntity item : p.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
@@ -1361,7 +1386,7 @@ public final class Autopilot {
     }
 
     /** Makes sure an item of that role is in the hotbar and returns its hotbar slot (or -1). */
-    private int toHotbar(Minecraft mc, LocalPlayer p, int inventoryIndex) {
+    int toHotbar(Minecraft mc, LocalPlayer p, int inventoryIndex) {
         if (inventoryIndex < 0) {
             return -1;
         }
@@ -1444,7 +1469,7 @@ public final class Autopilot {
      * Turns towards the target at a human speed and only swings when the crosshair is really on it
      * (spear jabs: when looking straight at it). No snapping, no hits around corners.
      */
-    private boolean attack(Minecraft mc, LocalPlayer p, LivingEntity t) {
+    boolean attack(Minecraft mc, LocalPlayer p, LivingEntity t) {
         this.faceEntity(p, t, 40.0F);
         HitResult hit = p.raycastHitResult(1.0F, p);
         boolean piercing = p.getMainHandItem().has(DataComponents.PIERCING_WEAPON);
@@ -1556,7 +1581,7 @@ public final class Autopilot {
         this.face(p, aim.subtract(p.getEyePosition()), maxTurn);
     }
 
-    private void face(LocalPlayer p, Vec3 dir, float maxTurn) {
+    void face(LocalPlayer p, Vec3 dir, float maxTurn) {
         if (dir.lengthSqr() < 1.0E-6) {
             return;
         }
@@ -1565,7 +1590,7 @@ public final class Autopilot {
         this.lookAt(p, yaw, pitch, maxTurn);
     }
 
-    private void lookAt(LocalPlayer p, float yaw, float pitch, float maxTurn) {
+    void lookAt(LocalPlayer p, float yaw, float pitch, float maxTurn) {
         float dy = Mth.wrapDegrees(yaw - p.getYRot());
         float dp = Mth.clamp(pitch, -90.0F, 90.0F) - p.getXRot();
         p.setYRot(p.getYRot() + Mth.clamp(dy, -maxTurn, maxTurn));
@@ -1611,7 +1636,7 @@ public final class Autopilot {
         this.keysHeld = false;
     }
 
-    private void status(LocalPlayer p, String text) {
+    void status(LocalPlayer p, String text) {
         this.lastStatus = text;
         if (this.ticks % 10 == 0) {
             p.sendOverlayMessage(Component.literal(text));
