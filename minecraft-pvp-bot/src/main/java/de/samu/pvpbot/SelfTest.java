@@ -553,7 +553,7 @@ final class SelfTest {
 
     private static List<ItemStack> stage3Kit() {
         List<ItemStack> kit = new ArrayList<>(stage2Kit());
-        kit.add(new ItemStack(Items.ENDER_EYE, 14));
+        kit.add(new ItemStack(Items.ENDER_EYE, 16));
         return kit;
     }
 

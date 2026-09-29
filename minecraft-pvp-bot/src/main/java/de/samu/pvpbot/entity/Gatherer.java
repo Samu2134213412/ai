@@ -342,7 +342,7 @@ final class Gatherer {
     private Direction portalAlong = Direction.EAST;
     private final java.util.Set<Long> forcedChunks = new java.util.HashSet<>();
     // Stage 2: the nether (blaze rods, ender pearls, eyes of ender).
-    static final int EYES_WANTED = 14;
+    static final int EYES_WANTED = 16;
     private @Nullable BlockPos overworldPortal;
     private @Nullable BlockPos netherPortal;
     private boolean stage2Done;
@@ -1873,7 +1873,7 @@ final class Gatherer {
      * fortress blocks and spawners once they are in sight.
      */
     private void doExploreNether(ServerLevel level) {
-        if (this.bot.getY() < 40.0 && this.nearest(Ore.FORTRESS) == null) {
+        if (this.bot.getY() < 40.0) {
             // Down at the lava sea (y 31): climb back up before going on.
             this.doDigUp(level);
             this.step = null;
@@ -1928,7 +1928,7 @@ final class Gatherer {
                 // No path: tunnel towards it.
                 Vec3 to = Vec3.atCenterOf(goal).subtract(this.bot.position());
                 this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
-                this.doDig(level, to.y < -2.0 && this.bot.getY() > 45.0);
+                this.doDig(level, false); // (never down towards the lava sea)
             }
             this.step = null;
             return;
@@ -2027,7 +2027,7 @@ final class Gatherer {
             Vec3 dir = toTarget.normalize();
             if (this.eyeDir != null && dir.dot(this.eyeDir) < 0.0) {
                 // The eye points back: we walked past it. Shorter legs from now on.
-                this.eyeLeg = Math.max(16.0, this.eyeLeg / 2.0);
+                this.eyeLeg = Math.max(24.0, this.eyeLeg / 2.0);
             }
             this.eyeDir = dir;
             this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
@@ -2388,9 +2388,11 @@ final class Gatherer {
         Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
         double h = away.length();
         boolean stuck = this.noProgress();
-        if (h > 20.0 && !(stuck && h < 40.0)) {
-            // Closer shots miss less: walk to a spot about 14 blocks from the pillar (not into it).
-            Vec3 spot = crystal.position().add(away.normalize().scale(14.0));
+        boolean los = this.bot.hasLineOfSight(crystal);
+        if (!los || h > 30.0 && !(stuck && h < 44.0)) {
+            // Closer shots miss less, but right below the pillar its edge is in the way: about 24
+            // blocks out, further when the pillar still hides it.
+            Vec3 spot = crystal.position().add(away.normalize().scale(los ? 24.0 : Math.min(h + 8.0, 40.0)));
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
             if (this.bot.getNavigation().isDone() || stuck) {
                 this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
