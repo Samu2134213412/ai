@@ -2,6 +2,6 @@
   "required": true,
   "package": "de.samu.pvpbot.autopilot.mixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["MinecraftInvoker"],
+  "client": ["MinecraftInvoker", "MouseHandlerMixin"],
   "injectors": { "defaultRequire": 1 }
 }
