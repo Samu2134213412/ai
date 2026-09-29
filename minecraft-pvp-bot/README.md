@@ -44,6 +44,32 @@ Welches er nimmt, entscheidet er selbst:
 5. **Etwas Zufall**: Ab und zu probiert er absichtlich etwas anderes aus, am Anfang öfter und
    mit mehr Erfahrung seltener.
 
+## Ressourcen selbst beschaffen (Survival-Bot)
+
+Mit `/pvpbot survival [Name]` erschaffst du einen Bot mit **leerem Inventar**. Fehlt ihm etwas
+zum Kämpfen, geht er selbst los und besorgt es sich (auch Bots mit `/pvpbot kit give`):
+
+1. **Er prüft, was fehlt** – der Reihe nach: eine Waffe (erst Steinschwert, dann Eisenschwert),
+   Eisenrüstung, ein Schild (wenn er kein Totem hat), Essen (4 gebratenes Fleisch, wenn er keine
+   goldenen Äpfel hat) und – sobald er Diamanten kennt – Diamant-Ausrüstung.
+2. **Er plant rückwärts**: Für ein Eisenschwert braucht er Eisen → Eisenerz abbauen → dafür
+   eine Steinspitzhacke → Stein → Holzspitzhacke → Stöcke und Bretter → Holz.
+3. **Er sucht die Blöcke** in der Umgebung (Bäume, Stein, Kohle-, Eisen- und Diamanterz),
+   läuft hin, baut sie mit der richtigen Spitzhacke ab (echte Abbauzeiten) und gräbt sich
+   notfalls einen Tunnel. Findet er nichts, erkundet er die Gegend. Lava meidet er.
+4. **Er jagt** Kühe, Schweine, Schafe, Hühner und Hasen für Essen und sammelt Drops ein.
+5. **Er stellt her und schmilzt** (Werkzeuge, Waffen, Rüstung, Schild, Erz mit Kohle oder Holz)
+   und zieht sich das Beste gleich an.
+
+Wird er oder du angegriffen, hört er sofort auf und kämpft. Danach sammelt er weiter.
+Er schreibt dir im Chat, was er gerade holt.
+
+Vereinfachungen: Er braucht keine Werkbank und keinen Ofen (stellt „aus dem Rucksack“ her) und
+schmilzt etwas schneller als ein Ofen. Mit `/pvpbot gather off` schaltest du das Sammeln aus.
+
+**Autopilot**: Ohne Ziel sammelt er herumliegende Items in der Nähe ein (z. B. die Beute nach
+einem Kampf) und isst, wenn er Hunger hat. Richtig abbauen und herstellen tut nur der Bot.
+
 Das Gedächtnis liegt in `.minecraft/config/pvpbot-memory.json` (Bot) bzw.
 `pvpbot-autopilot-memory.json` (Autopilot). Es bleibt also auch nach Neustarts erhalten. Wenn er etwas
 Neues lernt, schreibt er es in den Chat.
@@ -71,6 +97,9 @@ Selbst bauen geht auch mit `./gradlew build` (Java 25 nötig).
 | Befehl | Wirkung |
 |---|---|
 | `/pvpbot spawn [Name]` | Erschafft einen Bot mit Standard-Kit bei dir. Du bist sein Besitzer. |
+| `/pvpbot survival [Name]` | Bot mit leerem Inventar, der sich seine Ausrüstung selbst besorgt |
+| `/pvpbot gather on\|off` | Selbst Ressourcen beschaffen an (Standard) / aus |
+| `/pvpbot needs` | Zeigt, was deinen Bots noch fehlt und was sie als Nächstes holen |
 | `/pvpbot attack <Ziel>` | **Greif an!** Ein Selektor wie `@e[type=zombie,distance=..50]` oder ein Spielername. Mehrere Ziele werden der Reihe nach erledigt. `@s` = **du selbst** (Duell). |
 | `/pvpbot duel` | **Duell gegen dich.** Deine Bots kämpfen gegen dich, bis einer am Boden liegt (du musst im Survival sein). Aufgeben mit `/pvpbot stop`. |
 | `/pvpbot kit` | Zeigt das Kit deiner Bots |
@@ -115,6 +144,9 @@ erkannt. Nimm ihn nur auf eigenen oder privaten Servern, wo alle einverstanden s
 
 Jede Änderung wird automatisch in echtem Minecraft 26.3 getestet (siehe unten). Stand der letzten Tests:
 
+- **Survival-Bot** mit leerem Inventar: Holz → Bretter → Stöcke → Holzspitzhacke → Stein →
+  Steinschwert → Steinspitzhacke → Eisenerz + Kohle → schmelzen → Eisenschwert, komplette
+  Eisenrüstung und Schild in ca. 2,5 Minuten, ganz allein.
 - **Bot** auf einem echten Server: 17 von 17 Kämpfen gewonnen, z. B. Elytra-Mace-Sturzflug auf einen
   45 Blöcke entfernten Eisengolem (bis zu 96 Schaden mit einem Treffer), Speer-Flugangriff (46 Schaden),
   Schwert-Kit gegen 3 Zombies, Bogen-Kit, und aus einer 1×1-Steingrube hat er sich selbst freigebaut.
