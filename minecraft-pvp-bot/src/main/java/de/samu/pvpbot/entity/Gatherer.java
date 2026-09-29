@@ -322,6 +322,7 @@ final class Gatherer {
     private @Nullable Vec3 legStart;
     private boolean eyeWentDown;
     private int legTicks;
+    private @Nullable BlockPos lastSafe;
     private double legBest;
     private int legStuckTicks;
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
@@ -846,6 +847,9 @@ final class Gatherer {
 
     void tick() {
         ServerLevel level = this.level();
+        if (this.escapeLava(level)) {
+            return;
+        }
         if (this.speedrun && this.inNether() && this.netherPortal == null) {
             // Just arrived: remember the way home.
             for (BlockPos p : BlockPos.betweenClosed(this.bot.blockPosition().offset(-2, -1, -2), this.bot.blockPosition().offset(2, 3, 2))) {
@@ -1375,6 +1379,43 @@ final class Gatherer {
         this.step = null;
     }
 
+    /**
+     * In lava: bucket of water at its feet like a player would (the lava around turns to stone), jump
+     * and head back to the last safe block. Remembers safe ground while all is well.
+     */
+    private boolean escapeLava(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        if (!this.bot.isInLava()) {
+            if (this.bot.onGround() && !this.nearLava(level, feet) && !this.nearLava(level, feet.below())) {
+                this.lastSafe = feet;
+            }
+            return false;
+        }
+        this.stopBreaking();
+        this.bot.getNavigation().stop();
+        if (this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0 && level.getBlockState(feet).getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
+            level.setBlock(feet, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+            level.playSound(null, feet, SoundEvents.BUCKET_EMPTY, this.bot.getSoundSource(), 1.0F, 1.0F);
+            if (!this.kit().isInfinite()) {
+                this.kit().remove(st -> st.is(Items.WATER_BUCKET), 1);
+                this.kit().insert(new ItemStack(Items.BUCKET));
+                this.bot.onKitChanged();
+            }
+            this.bot.tellOwner("§6Lava! §7Wassereimer drauf und raus.", false);
+        }
+        this.bot.getJumpControl().jump();
+        if (this.lastSafe != null) {
+            this.bot.getMoveControl().setWantedPosition(this.lastSafe.getX() + 0.5, this.lastSafe.getY(), this.lastSafe.getZ() + 0.5, 1.3);
+        }
+        // Whatever it was doing there is not worth it: forget that spot.
+        if (this.mineTarget != null) {
+            this.blacklist.add(this.mineTarget);
+            this.mineTarget = null;
+        }
+        this.step = null;
+        return true;
+    }
+
     private boolean noProgress() {
         Vec3 pos = this.bot.position();
         if (this.lastPos != null && pos.distanceToSqr(this.lastPos) < 0.01) {
@@ -1620,6 +1661,12 @@ final class Gatherer {
         BlockPos target = this.mineTarget;
         Vec3 center = Vec3.atCenterOf(target);
         double dist = this.bot.getEyePosition().distanceTo(center);
+        BlockPos under = this.bot.blockPosition().below();
+        if (target.equals(under) && ore != Ore.STONE && this.lastSafe != null && !this.lastSafe.equals(this.bot.blockPosition())) {
+            // Never dig out the block it stands on (obsidian sits on lava): step off first.
+            this.bot.getNavigation().moveTo(this.lastSafe.getX() + 0.5, this.lastSafe.getY(), this.lastSafe.getZ() + 0.5, 1.0);
+            return;
+        }
         if (dist <= 4.5 && this.canSee(target)) {
             this.bot.getNavigation().stop();
             if (this.breakBlock(level, target)) {
