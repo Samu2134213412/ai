@@ -1858,7 +1858,19 @@ final class Gatherer {
         }
         BlockPos goal = this.nearest(Ore.SPAWNER);
         if (goal == null) {
-            goal = this.nearest(Ore.FORTRESS);
+            // In the fortress: go through its halls and bridges, to parts it has not been to yet.
+            this.fortressVisited.add(cellKey(this.bot.blockPosition()));
+            double bestDist = Double.MAX_VALUE;
+            for (BlockPos p : this.known.getOrDefault(Ore.FORTRESS, List.of())) {
+                if (this.fortressVisited.contains(cellKey(p)) || this.blacklist.contains(p)) {
+                    continue;
+                }
+                double d = this.bot.blockPosition().distSqr(p);
+                if (d < bestDist) {
+                    goal = p;
+                    bestDist = d;
+                }
+            }
         }
         if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
             // Getting closer? If not for a long while (behind lava, up a cliff), forget that block.
@@ -1870,11 +1882,13 @@ final class Gatherer {
             } else if (++this.netherGoalTicks > 600) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   nether: gives up on {} at {} (no way there)", goal.toShortString(), this.bot.blockPosition().toShortString());
                 this.blacklist.add(goal);
+                this.fortressVisited.add(cellKey(goal));
                 this.netherGoal = null;
                 this.step = null;
                 return;
             }
-            this.bot.getNavigation().moveTo(goal.getX() + 0.5, goal.getY() + 1, goal.getZ() + 0.5, 1.1);
+            BlockPos stand = standBeside(level, goal);
+            this.bot.getNavigation().moveTo(stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 1.1);
             if (this.bot.getNavigation().isDone()) {
                 // No path: tunnel towards it.
                 Vec3 to = Vec3.atCenterOf(goal).subtract(this.bot.position());
@@ -1939,6 +1953,7 @@ final class Gatherer {
     private int dragonLogTicks;
     private double eyeLeg = 180.0;
     private int strongholdLogTicks;
+    private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
@@ -2205,18 +2220,7 @@ final class Gatherer {
             return;
         }
         // Walk along the corridor next to the wall (not into the wall: that is slow and wakes silverfish).
-        BlockPos stand = best.above();
-        for (Direction d : Direction.Plane.HORIZONTAL) {
-            BlockPos side = best.relative(d);
-            if (level.getBlockState(side).getCollisionShape(level, side).isEmpty() && level.getBlockState(side.above()).getCollisionShape(level, side.above()).isEmpty()) {
-                stand = side;
-                while (stand.getY() > level.getMinY() && level.getBlockState(stand.below()).getCollisionShape(level, stand.below()).isEmpty()
-                        && best.getY() - stand.getY() < 4) {
-                    stand = stand.below();
-                }
-                break;
-            }
-        }
+        BlockPos stand = standBeside(level, best);
         if (this.strongholdTicks > 200 || !this.bot.getNavigation().moveTo(stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 1.0) || this.noProgress()) {
             this.mineTarget = best;
             this.tunnelTowards(level, best);
@@ -2226,6 +2230,28 @@ final class Gatherer {
             }
         }
         this.step = null;
+    }
+
+    /** Where to stand to be at this block: on top of it (a floor) or in the free space next to it (a wall). */
+    private static BlockPos standBeside(ServerLevel level, BlockPos block) {
+        if (free(level, block.above()) && free(level, block.above(2))) {
+            return block.above();
+        }
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos side = block.relative(d);
+            if (free(level, side) && free(level, side.above())) {
+                BlockPos stand = side;
+                while (stand.getY() > level.getMinY() && free(level, stand.below()) && block.getY() - stand.getY() < 4) {
+                    stand = stand.below();
+                }
+                return stand;
+            }
+        }
+        return block.above();
+    }
+
+    private static boolean free(ServerLevel level, BlockPos p) {
+        return level.getBlockState(p).getCollisionShape(level, p).isEmpty() && level.getFluidState(p).isEmpty();
     }
 
     private static long cellKey(BlockPos p) {
