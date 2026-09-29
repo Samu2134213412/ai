@@ -269,6 +269,11 @@ final class Survival {
         }
         if (this.unstickTicks > 0) {
             this.unstickTicks--;
+            int surface = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ());
+            if (p.getBlockY() < surface - 1 && !level.getFluidState(p.blockPosition().above(2)).is(net.minecraft.tags.FluidTags.WATER)) {
+                // Stuck in a pit (its own stairs, a flooded hole): build up and out.
+                return this.digUp(mc, p, level);
+            }
             return this.explore(mc, p, level, "läuft woanders hin (hing fest)");
         }
         if (this.ap.collectLoot(mc, p)) {
