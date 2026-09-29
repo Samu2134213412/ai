@@ -639,7 +639,7 @@ public final class Autopilot {
                     double height = p.getY() - (t.getY() + t.getBbHeight());
                     Vec3 hVel = p.getDeltaMovement().multiply(1.0, 0.0, 1.0);
                     boolean heading = hVel.dot(toTarget.multiply(1.0, 0.0, 1.0).normalize()) > 0.3 * Math.max(0.1, hVel.length());
-                    if (hDist < Math.max(4.0, height * 0.6) && heading) {
+                    if (hDist < 4.0 && heading && height > 8.0) {
                         // Tip over into a steep dive with the elytra still on: while diving the fall
                         // distance keeps growing (smash damage), and a miss just means pulling up.
                         this.nextPhase();
@@ -670,24 +670,18 @@ public final class Autopilot {
                         this.finishAttempt(mc);
                     }
                 } else if (p.isFallFlying() && this.phase < 10) {
-                    // Steep elytra dive straight onto the target, smash on contact.
+                    // Right above the target: pull up hard to bleed off speed, then drop the elytra and
+                    // fall straight down onto it (a fast diagonal dive tends to overshoot or arrive too
+                    // late for the hit to register).
                     this.select(mc, p, Role.MACE);
-                    Vec3 aim = t.position().add(t.getDeltaMovement().scale(3.0)).add(0.0, t.getBbHeight() * 0.5, 0.0)
-                            .subtract(p.getEyePosition());
-                    this.face(p, aim, 30.0F);
-                    double above = p.getY() - (t.getY() + t.getBbHeight());
-                    // Reach is measured like the game does: from the eyes to the target's hitbox.
-                    double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
-                    boolean hit = false;
-                    if (reach <= 3.0 && p.fallDistance > 1.5) {
-                        this.attack(mc, p, t);
-                        hit = true;
-                    }
-                    boolean willMiss = above < 1.0 && reach > 3.0;
-                    if (hit || willMiss || this.phaseTicks > 80) {
-                        LOGGER.info("[AUTOPILOT] dive ends: hit={} willMiss={} height={} dist={}", hit, willMiss,
-                                String.format("%.1f", above), String.format("%.1f", p.distanceTo(t)));
-                        this.phase = 20;
+                    float yaw = (float) (Mth.atan2(toTarget.z, toTarget.x) * (180.0 / Math.PI)) - 90.0F;
+                    this.lookAt(p, yaw, -55.0F, 30.0F);
+                    double hSpeed = p.getDeltaMovement().horizontalDistance();
+                    if (hSpeed < 0.3 || this.phaseTicks > 30) {
+                        LOGGER.info("[AUTOPILOT] drop: hSpeed={} hDist={} height={}", String.format("%.2f", hSpeed),
+                                String.format("%.1f", hDist), String.format("%.1f", p.getY() - t.getY()));
+                        this.wearChest(mc, p, Role.ARMOR);
+                        this.phase = 6;
                         this.phaseTicks = 0;
                     }
                 } else if (this.phase >= 10) {
@@ -712,7 +706,8 @@ public final class Autopilot {
                     this.select(mc, p, Role.MACE);
                     this.faceEntity(p, t, 60.0F);
                     this.kForward = hDist > 0.8;
-                    if (p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && p.distanceTo(t) <= 3.3) {
+                    double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
+                    if (p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && (reach <= 3.0 || p.distanceTo(t) <= 3.3)) {
                         this.attack(mc, p, t);
                     }
                     double above = p.getY() - (t.getY() + t.getBbHeight());
