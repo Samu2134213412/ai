@@ -74,6 +74,10 @@ public class AutopilotClient implements ClientModInitializer {
                             Autopilot.INSTANCE.setEnabled(ctx.getSource().getClient(), false);
                             return 1;
                         }))
+                        .then(ClientCommands.literal("full").executes(ctx -> {
+                            Autopilot.INSTANCE.setFullControl(ctx.getSource().getClient(), !Autopilot.INSTANCE.isFullControl());
+                            return 1;
+                        }))
                         .then(ClientCommands.literal("stop").executes(ctx -> {
                             Autopilot.INSTANCE.setTarget(ctx.getSource().getClient(), null);
                             return 1;
@@ -153,7 +157,7 @@ public class AutopilotClient implements ClientModInitializer {
         Autopilot ap = Autopilot.INSTANCE;
         source.sendFeedback(Component.literal("§6PvP-Autopilot §7– " + (ap.isEnabled() ? "§aAN" : "§cAUS") + " §7Ziel: §f" + ap.describeTarget()));
         source.sendFeedback(Component.literal("§7Taste §fK§7: an/aus · Taste §fJ§7: Ziel = was du anschaust"));
-        source.sendFeedback(Component.literal("§f/autopilot on|off|stop · target <Spieler>|nearest|mobs|look · brain [reset]"));
+        source.sendFeedback(Component.literal("§f/autopilot on|off|full|stop · target <Spieler>|nearest|mobs|look · brain [reset]"));
         return 1;
     }
 

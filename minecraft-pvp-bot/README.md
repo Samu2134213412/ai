@@ -97,6 +97,7 @@ Selbst bauen geht auch mit `./gradlew build` (Java 25 nötig).
 - **Taste O**: PvP-Bot-Menü (Bot erschaffen, angreifen, Duell, folgen, Kit, Sammeln, Durchspielen, Tricks, Gelerntes …).
   Jeder Button führt einfach den passenden `/pvpbot`-Befehl aus.
 - **Taste N**: Autopilot-Menü (an/aus, Ziel, Tricks) und Schalter für jede Taktik
+- **Volle Kontrolle** (ganz oben im Menü oder `/autopilot full`): der Autopilot übernimmt den ganzen Account – kämpft gegen Monster und Spieler, die er sieht, isst, sammelt Beute und zieht sonst umher (weicht Abgründen, Lava und Wasser aus). Taste K schaltet wieder aus.
   (Elytra, Windladungen, Speer, Bogen, Attribute-Swap, Schild, W-Tap, Enderperlen, Wassereimer, Tränke, Essen, Beute, Chat).
   Die Schalter werden in `config/pvpbot-autopilot.properties` gespeichert.
 
@@ -149,6 +150,7 @@ Netherportal bauen und anzünden. Die nächsten Etappen (Nether, Stronghold, Dra
 | **K** | Autopilot an/aus (ohne Ziel nimmt er, was du gerade anschaust) |
 | **J** | Ziel = das, was du anschaust |
 | `/autopilot on` / `off` | An/aus |
+| `/autopilot full` | Volle Kontrolle an/aus |
 | `/autopilot target <Spieler>` | Einen bestimmten Spieler jagen |
 | `/autopilot target nearest` | Immer den nächsten Spieler angreifen |
 | `/autopilot target mobs` | Monster in der Nähe bekämpfen |

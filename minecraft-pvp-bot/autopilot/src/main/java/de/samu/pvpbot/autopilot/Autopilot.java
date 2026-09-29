@@ -41,7 +41,7 @@ public final class Autopilot {
     public static final Autopilot INSTANCE = new Autopilot();
     static final Logger LOGGER = LoggerFactory.getLogger("pvpbot-autopilot");
 
-    public enum TargetMode { MANUAL, NEAREST_PLAYER, MOBS }
+    public enum TargetMode { MANUAL, NEAREST_PLAYER, MOBS, FULL }
 
     private boolean enabled;
     private TargetMode targetMode = TargetMode.MANUAL;
@@ -124,6 +124,25 @@ public final class Autopilot {
         }
     }
 
+    /** Full control: the autopilot plays the account on its own - fights, eats, loots and roams. */
+    public boolean isFullControl() {
+        return this.enabled && this.targetMode == TargetMode.FULL;
+    }
+
+    public void setFullControl(Minecraft mc, boolean on) {
+        if (on) {
+            this.targetMode = TargetMode.FULL;
+            this.target = null;
+            this.finishAttempt(mc);
+            this.setEnabled(mc, true);
+            this.say(mc, "§6Volle Kontrolle: §fder Autopilot spielt jetzt selbst. §7(Taste K oder Menü: aus)");
+        } else {
+            this.targetMode = TargetMode.MANUAL;
+            this.target = null;
+            this.setEnabled(mc, false);
+        }
+    }
+
     public void setTargetMode(Minecraft mc, TargetMode mode) {
         this.targetMode = mode;
         this.target = null;
@@ -139,6 +158,7 @@ public final class Autopilot {
         return switch (this.targetMode) {
             case NEAREST_PLAYER -> "nächster Spieler";
             case MOBS -> "Monster in der Nähe";
+            case FULL -> "alles (volle Kontrolle)";
             case MANUAL -> this.target == null ? "keins" : this.target.getName().getString();
         };
     }
@@ -204,6 +224,12 @@ public final class Autopilot {
             }
             if (AutopilotSettings.INSTANCE.lootPickup && this.collectLoot(mc, p)) {
                 this.status(p, "§7sammelt Beute ein");
+                this.applyKeys(mc);
+                return;
+            }
+            if (this.targetMode == TargetMode.FULL) {
+                this.roam(p);
+                this.status(p, "§6volle Kontrolle §7– zieht umher");
                 this.applyKeys(mc);
                 return;
             }
@@ -303,9 +329,13 @@ public final class Autopilot {
             Entity best = null;
             double bestDist = Double.MAX_VALUE;
             for (Entity e : mc.level.getEntities(p, box)) {
-                boolean fits = this.targetMode == TargetMode.MOBS
-                        ? e instanceof Enemy && e instanceof LivingEntity
-                        : e instanceof Player other && !other.isSpectator() && !other.isCreative();
+                boolean mob = e instanceof Enemy && e instanceof LivingEntity && p.distanceToSqr(e) < 24.0 * 24.0;
+                boolean player = e instanceof Player other && !other.isSpectator() && !other.isCreative();
+                boolean fits = switch (this.targetMode) {
+                    case MOBS -> mob;
+                    case FULL -> mob || player;
+                    default -> player;
+                };
                 // Only what we can actually see: no finding players through walls.
                 if (fits && e.isAlive() && p.distanceToSqr(e) < bestDist && p.hasLineOfSight(e)) {
                     best = e;
@@ -1145,6 +1175,42 @@ public final class Autopilot {
         } else if (p.getItemBySlot(EquipmentSlot.OFFHAND).isEmpty() && (slot = this.findInventory(p, Role.SHIELD)) >= 0) {
             // No totem: a shield in the off hand for blocking.
             this.click(mc, p, menuSlot(slot), 40);
+        }
+    }
+
+    private float roamYaw = Float.NaN;
+    private int roamTicks;
+
+    /**
+     * Nothing to fight: walk around like a player exploring - one direction for a while, turning at
+     * walls, drops, lava and water, jumping up single blocks. Only uses what the player sees.
+     */
+    private void roam(LocalPlayer p) {
+        if (Float.isNaN(this.roamYaw) || --this.roamTicks <= 0) {
+            this.roamYaw = p.getYRot() + (p.getRandom().nextFloat() - 0.5F) * 120.0F;
+            this.roamTicks = 100 + p.getRandom().nextInt(200);
+        }
+        Vec3 dir = Vec3.directionFromRotation(0.0F, this.roamYaw);
+        BlockPos ahead = BlockPos.containing(p.position().add(dir.scale(1.5)));
+        var level = p.level();
+        boolean drop = true;
+        for (int i = 1; i <= 3; i++) {
+            if (!level.getBlockState(ahead.below(i)).getCollisionShape(level, ahead.below(i)).isEmpty()) {
+                drop = false;
+                break;
+            }
+        }
+        boolean wet = !level.getFluidState(ahead).isEmpty() || !level.getFluidState(ahead.below()).isEmpty();
+        boolean wall = p.horizontalCollision && !level.getBlockState(ahead.above(2)).isAir();
+        if (p.onGround() && (drop || wet || wall)) {
+            this.roamYaw += (p.getRandom().nextBoolean() ? 1 : -1) * (60.0F + p.getRandom().nextFloat() * 90.0F);
+            this.roamTicks = 60 + p.getRandom().nextInt(120);
+            return;
+        }
+        this.lookAt(p, this.roamYaw, 0.0F, 8.0F);
+        this.kForward = Math.abs(Mth.wrapDegrees(this.roamYaw - p.getYRot())) < 30.0F;
+        if (p.horizontalCollision && p.onGround() || p.isInWater()) {
+            this.kJump = true;
         }
     }
 

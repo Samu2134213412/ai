@@ -46,6 +46,9 @@ public class AutopilotScreen extends Screen {
         AutopilotSettings s = AutopilotSettings.INSTANCE;
         switch (page) {
             case 0 -> {
+                place.accept(this.button(() -> ap.isFullControl() ? "§6Volle Kontrolle: §aAN" : "§6Volle Kontrolle: §cAUS",
+                        () -> ap.setFullControl(this.minecraft, !ap.isFullControl()),
+                        "Der Autopilot übernimmt den ganzen Account: kämpft gegen Monster und Spieler, die er sieht, isst, sammelt Beute und zieht umher. Taste K schaltet aus."));
                 place.accept(this.button(() -> ap.isEnabled() ? "Autopilot: §aAN" : "Autopilot: §cAUS",
                         () -> ap.setEnabled(this.minecraft, !ap.isEnabled()), "Taste K"));
                 place.accept(this.button(() -> "Ziel: was ich anschaue", () -> AutopilotClient.lookTarget(this.minecraft), "Taste J"));
