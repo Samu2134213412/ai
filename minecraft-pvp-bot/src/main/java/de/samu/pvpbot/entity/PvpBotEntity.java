@@ -1335,12 +1335,71 @@ public class PvpBotEntity extends PathfinderMob {
         double zd = point.z - this.getZ();
         double yd = point.y - arrow.getY();
         double horizontal = Math.sqrt(xd * xd + zd * zd);
+        double pitch = ballisticPitch(horizontal, yd);
         this.getLookControl().setLookAt(point.x, point.y, point.z);
-        Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, yd + horizontal * horizontal / 330.0, zd, 3.0F, 0.5F);
+        Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, Math.tan(pitch) * horizontal, zd, 3.0F, 0.5F);
         this.swingMainHand();
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(), 1.0F, 1.0F);
         return true;
     }
+
+    /**
+     * The flattest bow angle (radians) that reaches a point {@code h} blocks away and {@code dy} higher,
+     * by flying a full-power arrow tick by tick (speed 3, drag 0.99, gravity 0.05) - a player learns
+     * the same arc by feel.
+     */
+    static double ballisticPitch(double h, double dy) {
+        double best = Math.atan2(dy, h);
+        double bestErr = Double.MAX_VALUE;
+        for (double a = -0.6; a < 1.45; a += 0.005) {
+            double vx = Math.cos(a) * 3.0;
+            double vy = Math.sin(a) * 3.0;
+            double x = 0.0;
+            double y = 0.0;
+            for (int t = 0; t < 200 && x < h; t++) {
+                double px = x;
+                double py = y;
+                x += vx;
+                y += vy;
+                vx *= 0.99;
+                vy = vy * 0.99 - 0.05;
+                if (x >= h) {
+                    double yAt = py + (y - py) * (h - px) / (x - px);
+                    double err = Math.abs(yAt - dy);
+                    if (err < bestErr) {
+                        bestErr = err;
+                        best = a;
+                    }
+                }
+            }
+            if (bestErr < 0.3) {
+                break;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Melee hit on a part of the ender dragon. Vanilla only lets players (and explosions) hurt the
+     * dragon, so the bot's hit uses its own damage type from the always_hurts_ender_dragons tag; the
+     * damage is the plain weapon damage, the head takes it in full, the other parts a quarter.
+     */
+    void hitDragonPart(ServerLevel level, Entity part) {
+        ItemStack blade = this.kit.find(Role.SWORD);
+        if (blade.isEmpty()) {
+            blade = this.kit.find(Role.AXE);
+        }
+        if (!blade.isEmpty()) {
+            this.holdWeapon(blade);
+        }
+        float damage = (float) this.getAttributeValue(Attributes.ATTACK_DAMAGE);
+        var type = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(BOT_ATTACK);
+        this.swingMainHand();
+        part.hurtServer(level, new net.minecraft.world.damagesource.DamageSource(type, this), damage);
+    }
+
+    private static final net.minecraft.resources.ResourceKey<net.minecraft.world.damagesource.DamageType> BOT_ATTACK = net.minecraft.resources.ResourceKey.create(
+            net.minecraft.core.registries.Registries.DAMAGE_TYPE, net.minecraft.resources.Identifier.fromNamespaceAndPath("pvpbot", "bot_attack"));
 
     private void jab(LivingEntity target) {
         this.faceEntity(target, 180.0F);

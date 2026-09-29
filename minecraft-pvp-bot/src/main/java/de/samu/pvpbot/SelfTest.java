@@ -347,13 +347,18 @@ final class SelfTest {
         if (stage && scenario.name().startsWith("Etappe 2")) {
             // Start next to a lit portal (what stage 1 leaves behind).
             BlockPos base = bot.blockPosition().offset(2, 0, 0);
-            for (int i = 0; i < 4; i++) {
-                for (int j = 0; j < 5; j++) {
-                    BlockPos p = base.offset(0, j, i);
-                    boolean frame = i == 0 || i == 3 || j == 0 || j == 4;
-                    level.setBlock(p, frame ? Blocks.OBSIDIAN.defaultBlockState()
-                            : Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
-                            net.minecraft.core.Direction.Axis.Z), frame ? 3 : 18);
+            // Frame first, then the portal blocks (a portal block next to an unfinished frame breaks).
+            for (int pass = 0; pass < 2; pass++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 5; j++) {
+                        BlockPos p = base.offset(0, j, i);
+                        boolean frame = i == 0 || i == 3 || j == 0 || j == 4;
+                        if (frame == (pass == 0)) {
+                            level.setBlock(p, frame ? Blocks.OBSIDIAN.defaultBlockState()
+                                    : Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
+                                    net.minecraft.core.Direction.Axis.Z), 18);
+                        }
+                    }
                 }
             }
             bot.startAtStage2(base.offset(0, 1, 1));

@@ -151,7 +151,7 @@ final class Gatherer {
 
     /** The next thing to do. */
     sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
-            UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal {
+            UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon {
         String describe();
     }
 
@@ -257,6 +257,12 @@ final class Gatherer {
         }
     }
 
+    record FightDragon() implements Step {
+        public String describe() {
+            return "kämpft gegen den Enderdrachen";
+        }
+    }
+
     record ShootCrystal() implements Step {
         public String describe() {
             return "schießt Endkristalle ab";
@@ -319,6 +325,7 @@ final class Gatherer {
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
     private boolean seenDragon;
     private boolean gameBeaten;
+    private final java.util.Map<java.util.UUID, Integer> crystalShots = new java.util.HashMap<>();
 
     Gatherer(PvpBotEntity bot) {
         this.bot = bot;
@@ -720,10 +727,7 @@ final class Gatherer {
         if (this.visibleCrystal() != null && this.kit().count(st -> st.is(Items.ARROW)) > 0) {
             return new ShootCrystal();
         }
-        if (dragon != null) {
-            return new HuntMob("den Enderdrachen", EntityTypes.ENDER_DRAGON);
-        }
-        return new Explore("den Drachen");
+        return new FightDragon();
     }
 
     private net.minecraft.world.entity.boss.enderdragon.@Nullable EndCrystal visibleCrystal() {
@@ -731,7 +735,8 @@ final class Gatherer {
         double bestDist = Double.MAX_VALUE;
         for (var c : this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class,
                 this.bot.getBoundingBox().inflate(160.0))) {
-            if (c.isAlive() && this.bot.hasLineOfSight(c) && this.bot.distanceToSqr(c) < bestDist) {
+            if (c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 12 && this.bot.hasLineOfSight(c)
+                    && this.bot.distanceToSqr(c) < bestDist) {
                 best = c;
                 bestDist = this.bot.distanceToSqr(c);
             }
@@ -885,6 +890,7 @@ final class Gatherer {
             case FillEndPortal fp -> this.doFillEndPortal(level);
             case UseEndPortal ue -> this.doUseEndPortal();
             case ShootCrystal sc -> this.doShootCrystal();
+            case FightDragon fd -> this.doFightDragon(level);
         }
     }
 
@@ -1460,14 +1466,68 @@ final class Gatherer {
             return;
         }
         double h = this.bot.position().subtract(crystal.position()).horizontalDistance();
-        if (h > 48.0) {
+        if (h > 28.0) {
+            // Closer shots miss less; the pillars are tall.
             this.bot.getNavigation().moveTo(crystal.getX(), this.bot.getY(), crystal.getZ(), 1.1);
         } else {
             this.bot.getNavigation().stop();
             if (++this.actionTicks >= 25) {
                 this.actionTicks = 0;
-                this.bot.shootAt(crystal.position().add(0.0, 1.0, 0.0));
+                if (this.bot.shootAt(crystal.position().add(0.0, 1.0, 0.0))) {
+                    this.crystalShots.merge(crystal.getUUID(), 1, Integer::sum);
+                }
             }
+        }
+        this.step = null;
+    }
+
+    /**
+     * The dragon only lands on the exit fountain now and then; wait next to it, and hit the dragon
+     * (head first) while it sits there.
+     */
+    private void doFightDragon(ServerLevel level) {
+        net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon = null;
+        for (var d : level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, this.bot.getBoundingBox().inflate(300.0))) {
+            if (d.isAlive()) {
+                dragon = d;
+            }
+        }
+        if (dragon == null) {
+            this.step = null;
+            return;
+        }
+        Vec3 eye = this.bot.getEyePosition();
+        Entity reachable = null;
+        Entity nearest = null;
+        double nearestDist = Double.MAX_VALUE;
+        for (var part : dragon.getSubEntities()) {
+            double d = part.getBoundingBox().distanceToSqr(eye);
+            if (d < nearestDist) {
+                nearest = part;
+                nearestDist = d;
+            }
+            if (d < 3.2 * 3.2 && this.bot.hasLineOfSight(part) && (reachable == null || part == dragon.head)) {
+                reachable = part;
+            }
+        }
+        if (reachable != null) {
+            this.bot.getNavigation().stop();
+            this.bot.getLookControl().setLookAt(reachable.getX(), reachable.getY() + reachable.getBbHeight() / 2, reachable.getZ());
+            if (++this.actionTicks >= 12) {
+                this.actionTicks = 0;
+                this.bot.hitDragonPart(level, reachable);
+            }
+            this.step = null;
+            return;
+        }
+        BlockPos fountain = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
+        boolean low = nearest != null && nearest.getY() < fountain.getY() + 8 && nearestDist < 24 * 24;
+        Vec3 goal = low ? nearest.position() : new Vec3(fountain.getX() + 4.5, fountain.getY(), fountain.getZ() + 4.5);
+        if (this.bot.position().distanceToSqr(goal) > 4.0 && (this.bot.getNavigation().isDone() || low)) {
+            this.bot.getNavigation().moveTo(goal.x, goal.y, goal.z, low ? 1.3 : 1.0);
+        }
+        if (!low) {
+            this.bot.getLookControl().setLookAt(dragon);
         }
         this.step = null;
     }
