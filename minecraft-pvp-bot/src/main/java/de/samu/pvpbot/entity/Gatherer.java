@@ -349,6 +349,9 @@ final class Gatherer {
     private @Nullable BlockPos lastSafe;
     private double legBest;
     private int legStuckTicks;
+    private @Nullable BlockPos netherGoal;
+    private double netherGoalBest;
+    private int netherGoalTicks;
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
     private boolean seenDragon;
     private boolean gameBeaten;
@@ -1739,9 +1742,25 @@ final class Gatherer {
             goal = this.nearest(Ore.FORTRESS);
         }
         if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
+            // Getting closer? If not for a long while (behind lava, up a cliff), forget that block.
+            double dist = Math.sqrt(this.bot.blockPosition().distSqr(goal));
+            if (!goal.equals(this.netherGoal) || dist < this.netherGoalBest - 1.0) {
+                this.netherGoalTicks = 0;
+                this.netherGoal = goal;
+                this.netherGoalBest = dist;
+            } else if (++this.netherGoalTicks > 600) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   nether: gives up on {} at {} (no way there)", goal.toShortString(), this.bot.blockPosition().toShortString());
+                this.blacklist.add(goal);
+                this.netherGoal = null;
+                this.step = null;
+                return;
+            }
             this.bot.getNavigation().moveTo(goal.getX() + 0.5, goal.getY() + 1, goal.getZ() + 0.5, 1.1);
             if (this.bot.getNavigation().isDone()) {
-                this.doDig(level, false);
+                // No path: tunnel towards it.
+                Vec3 to = Vec3.atCenterOf(goal).subtract(this.bot.position());
+                this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
+                this.doDig(level, to.y < -2.0 && this.bot.getY() > 45.0);
             }
             this.step = null;
             return;
@@ -2159,7 +2178,10 @@ final class Gatherer {
             return;
         }
         BlockPos fountain = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
-        boolean sitting = dragon.getPhaseManager().getCurrentPhase().isSitting();
+        // Sitting on the fountain, or down on the ground while landing: that is the time to hit it.
+        boolean sitting = dragon.getPhaseManager().getCurrentPhase().isSitting()
+                || dragon.getY() < fountain.getY() + 4.0 && dragon.getPhaseManager().getCurrentPhase().getPhase()
+                        == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING;
         if (!sitting && nearest != null && nearestDist < 10 * 10) {
             // Only close in while it sits: flying or landing, its head and wings hit hard.
             Vec3 away = this.bot.position().subtract(nearest.position()).multiply(1.0, 0.0, 1.0).normalize().scale(8.0);
@@ -2170,7 +2192,7 @@ final class Gatherer {
         boolean low = sitting && nearest != null && nearestDist < 24 * 24;
         // Sitting: run straight to the head (it only sits a few seconds). Otherwise wait close to the
         // middle of the island, where it lands.
-        Vec3 goal = low ? dragon.head.position() : new Vec3(fountain.getX() + 3.5, fountain.getY(), fountain.getZ() + 3.5);
+        Vec3 goal = low ? nearest.position() : new Vec3(fountain.getX() + 3.5, fountain.getY(), fountain.getZ() + 3.5);
         if (low) {
             this.bot.getNavigation().stop();
             this.bot.getMoveControl().setWantedPosition(goal.x, this.bot.getY(), goal.z, 1.4);
