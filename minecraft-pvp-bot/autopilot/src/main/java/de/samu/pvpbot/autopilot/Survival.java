@@ -775,7 +775,12 @@ final class Survival {
         Vec3 c = Vec3.atCenterOf(pos);
         this.ap.face(p, c.subtract(p.getEyePosition()), 30.0F);
         if (mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) {
+            // What the game does every tick while left-click is held on a block (holding the key
+            // alone only mines while the window has mouse focus).
             this.ap.kAttack = true;
+            if (!p.isUsingItem()) {
+                mc.gameMode.continueDestroyBlock(hit.getBlockPos(), hit.getDirection());
+            }
             if (!hit.getBlockPos().equals(pos) && ++this.blockedTicks > 60) {
                 // Something else is in the way and it keeps hitting that: fine, mine that first.
                 this.blockedTicks = 0;
