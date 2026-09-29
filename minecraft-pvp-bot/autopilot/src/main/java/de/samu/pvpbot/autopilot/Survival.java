@@ -819,6 +819,14 @@ final class Survival {
             this.path = null;
             return false;
         }
+        // In water or in the air, digging takes 5 to 25 times as long: stand on dry ground first.
+        boolean slow = p.isInWater() || !p.onGround();
+        this.wetTicks = slow ? this.wetTicks + 1 : 0;
+        if (slow && this.wetTicks > 20) {
+            Vec3 c0 = Vec3.atCenterOf(pos);
+            return this.walk(mc, p, level, pos, feet -> Vec3.atBottomCenterOf(feet).add(0.0, 1.62, 0.0).distanceTo(c0) < 4.0
+                    && level.getFluidState(feet).isEmpty() && PathFinder.solidGround(level, feet.below()));
+        }
         if (!this.reach(p, pos)) {
             return this.walkNear(mc, p, level, pos);
         }
@@ -842,6 +850,7 @@ final class Survival {
     }
 
     private int blockedTicks;
+    private int wetTicks;
 
     private boolean reach(LocalPlayer p, BlockPos pos) {
         return p.getEyePosition().distanceTo(Vec3.atCenterOf(pos)) < 4.2;
