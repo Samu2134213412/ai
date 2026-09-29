@@ -226,6 +226,10 @@ final class Survival {
     // ------------------------------------------------------------------ main loop
 
     private String doing = "";
+    private @Nullable Vec3 watchPos;
+    private int watchItems;
+    private int watchTicks;
+    private int unstickTicks;
     private int tick;
 
     /** Returns true while it is busy with something (keys are set on the autopilot). */
@@ -243,6 +247,28 @@ final class Survival {
             this.ap.kJump = true;
             this.ap.kForward = true;
             return true;
+        }
+        // Watchdog: no movement and nothing new in the inventory for a minute -> something loops.
+        int items = 0;
+        for (ItemStack st : p.getInventory().getNonEquipmentItems()) {
+            items += st.getCount();
+        }
+        if (this.watchPos == null || p.position().distanceToSqr(this.watchPos) > 4.0 || items != this.watchItems) {
+            this.watchPos = p.position();
+            this.watchItems = items;
+            this.watchTicks = 0;
+        } else if (++this.watchTicks > 1200) {
+            Autopilot.LOGGER.info("[AUTOPILOT] survival: WATCHDOG - no progress for 60 s while '{}' at {} -> walks elsewhere",
+                    this.doing, p.blockPosition().toShortString());
+            this.watchTicks = 0;
+            this.unstickTicks = 200;
+            this.path = null;
+            this.stairStep = null;
+            this.exploreYaw = Float.NaN;
+        }
+        if (this.unstickTicks > 0) {
+            this.unstickTicks--;
+            return this.explore(mc, p, level, "läuft woanders hin (hing fest)");
         }
         if (this.ap.collectLoot(mc, p)) {
             this.say(p, "sammelt Beute auf");
