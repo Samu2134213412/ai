@@ -36,6 +36,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
     /** Name of the clip being recorded, or null. */
     private String clip;
     private String recordNext;
+    private de.samu.pvpbot.autopilot.brain.BotBrain.Pattern forceNext;
     private int frame;
 
     private static final String ARMOR = "item replace entity @a armor.head with minecraft:netherite_helmet;"
@@ -66,6 +67,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             fight(ctx, sp, "Bogen vs Golem", ARMOR + ";give @a minecraft:bow;give @a minecraft:arrow 64",
                     "summon minecraft:iron_golem 16 ~ 0 {NoAI:1b}", 900);
             recordNext = "07_combo_wind_lunge_mace";
+            forceNext = de.samu.pvpbot.autopilot.brain.BotBrain.Pattern.WIND_LUNGE_SMASH;
             fight(ctx, sp, "Windladung -> Lunge -> Mace vs Golem",
                     ARMOR + ";give @a minecraft:mace;give @a minecraft:netherite_spear[enchantments={lunge:3}];give @a minecraft:wind_charge 32;"
                             + "give @a minecraft:netherite_axe",
@@ -231,6 +233,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
         run(sp, "execute as @p at @p run pvpbot spawn Kombo");
         run(sp, "execute as @p run pvpbot assist off");
         run(sp, "execute at @p run summon minecraft:iron_golem ~9 ~ ~0 {NoAI:1b}");
+        run(sp, "execute as @p run pvpbot trick kombo");
         run(sp, "execute as @p run pvpbot attack @e[type=minecraft:iron_golem]");
         run(sp, "gamemode spectator @a");
         ctx.waitTicks(4);
@@ -373,6 +376,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
             LivingEntity enemy = nearestEnemy(mc);
             if (enemy == null) {
                 return false;
+            }
+            if (forceNext != null) {
+                Autopilot.INSTANCE.forcePattern(forceNext);
+                forceNext = null;
             }
             if (mobsMode) {
                 Autopilot.INSTANCE.setTargetMode(mc, Autopilot.TargetMode.MOBS);

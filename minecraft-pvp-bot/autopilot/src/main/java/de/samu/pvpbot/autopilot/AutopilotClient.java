@@ -105,6 +105,24 @@ public class AutopilotClient implements ClientModInitializer {
                                             ctx.getSource().sendError(Component.literal("Spieler " + name + " ist nicht in Sichtweite."));
                                             return 0;
                                         })))
+                        .then(ClientCommands.literal("trick")
+                                .then(ClientCommands.argument("name", StringArgumentType.word())
+                                        .suggests((c, sb) -> {
+                                            for (BotBrain.Pattern p : BotBrain.Pattern.values()) {
+                                                sb.suggest(p.trickName());
+                                            }
+                                            return sb.buildFuture();
+                                        })
+                                        .executes(ctx -> {
+                                            BotBrain.Pattern pattern = BotBrain.Pattern.byTrickName(StringArgumentType.getString(ctx, "name"));
+                                            if (pattern == null) {
+                                                ctx.getSource().sendFeedback(Component.literal("§cUnbekannter Trick. Möglich: kombo, smash, ansturm, stiche, sturzflug, speerflug, mace, schwert, bogen"));
+                                                return 0;
+                                            }
+                                            Autopilot.INSTANCE.forcePattern(pattern);
+                                            ctx.getSource().sendFeedback(Component.literal("§aNächster Angriff: §f" + pattern.label));
+                                            return 1;
+                                        })))
                         .then(ClientCommands.literal("brain")
                                 .executes(ctx -> {
                                     var lines = BotBrain.INSTANCE.summary(12);

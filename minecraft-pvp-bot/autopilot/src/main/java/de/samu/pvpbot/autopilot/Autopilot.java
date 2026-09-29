@@ -66,6 +66,11 @@ public final class Autopilot {
     private int rocketCooldown;
     private int spearCooldown;
     private int useTicks;
+    /** Trick asked for with /autopilot trick: used as soon as it is possible. */
+    private @Nullable Pattern forcedPattern;
+    private int forcedTicks;
+    /** The smash of this attempt was already swung (no more attribute swaps back and forth). */
+    private boolean smashed;
     private int flightCooldown;
     private int eatTicks;
 
@@ -86,6 +91,11 @@ public final class Autopilot {
     }
 
     // ------------------------------------------------------------------ public control
+
+    public void forcePattern(Pattern pattern) {
+        this.forcedPattern = pattern;
+        this.forcedTicks = 0;
+    }
 
     public boolean isEnabled() {
         return this.enabled;
@@ -313,6 +323,16 @@ public final class Autopilot {
             return;
         }
         Pattern chosen = BotBrain.INSTANCE.choose(ctx, options, p.getRandom());
+        if (this.forcedPattern != null) {
+            if (options.contains(this.forcedPattern)) {
+                chosen = this.forcedPattern;
+                this.forcedPattern = null;
+            } else if (++this.forcedTicks > 200) {
+                this.say(mc, "§e" + this.forcedPattern.label + " geht gerade nicht (möglich: "
+                        + options.stream().map(x -> x.label).toList() + ")");
+                this.forcedPattern = null;
+            }
+        }
         if (p.isFallFlying() && !chosen.aerial()) {
             // Fighting on foot now: glide down first.
             this.landIfFlying(mc, p);
@@ -329,6 +349,7 @@ public final class Autopilot {
         this.phase = p.isFallFlying() && chosen.aerial() ? 3 : 0;
         this.phaseTicks = 0;
         this.shots = 0;
+        this.smashed = false;
         LOGGER.info("[AUTOPILOT] try {} ({})", chosen.label, ctx.describe());
     }
 
@@ -1092,6 +1113,9 @@ public final class Autopilot {
      */
     private void swapAttack(Minecraft mc, LocalPlayer p, LivingEntity t, Role role) {
         ItemStack before = p.getMainHandItem();
+        if (role == Role.MACE) {
+            this.smashed = true;
+        }
         if (Kit.classify(before) != role && this.select(mc, p, role)) {
             LOGGER.info("[AUTOPILOT] attribute swap {} -> {}", before.getItem(), p.getMainHandItem().getItem());
             this.say(mc, "§dAttribute-Swap: §f" + before.getHoverName().getString() + " §7→ §f" + p.getMainHandItem().getHoverName().getString());
@@ -1101,6 +1125,10 @@ public final class Autopilot {
 
     /** While falling towards a mace smash: hold the weapon with the highest attack damage (usually an axe). */
     private void holdSmashCarrier(Minecraft mc, LocalPlayer p) {
+        if (this.smashed) {
+            this.select(mc, p, Role.MACE);
+            return;
+        }
         int mace = this.findInventory(p, Role.MACE);
         double maceDamage = mace < 0 ? 0.0 : Kit.attackDamage(p.getInventory().getItem(mace));
         List<ItemStack> items = p.getInventory().getNonEquipmentItems();

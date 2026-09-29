@@ -128,6 +128,9 @@ public class PvpBotEntity extends PathfinderMob {
     private boolean chargeAfterRetreat;
     /** Wind-lunge-smash combo: lunge with the spear at the top of the wind jump. */
     private boolean lungePlanned;
+    /** A trick the owner asked for (/pvpbot trick): used as soon as it is possible. */
+    private @Nullable Pattern forcedPattern;
+    private int forcedTicks;
     /** Ticks left of running past the target after a jab (hit and run). */
     private int spearRunTicks;
     private int windCooldown;
@@ -885,6 +888,11 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     /** What to hold while falling towards a mace smash: the weapon with the highest attack damage. */
+    public void forcePattern(Pattern pattern) {
+        this.forcedPattern = pattern;
+        this.forcedTicks = 0;
+    }
+
     private ItemStack smashCarrier() {
         ItemStack blade = this.kit.bestBlade();
         return !blade.isEmpty() && Kit.attackDamage(blade) > Kit.attackDamage(this.mace()) ? blade : this.mace();
@@ -930,6 +938,16 @@ public class PvpBotEntity extends PathfinderMob {
             }
             BotBrain.Context ctx = this.currentContext(target);
             Pattern chosen = BotBrain.INSTANCE.choose(ctx, options, this.random);
+            if (this.forcedPattern != null) {
+                if (options.contains(this.forcedPattern)) {
+                    chosen = this.forcedPattern;
+                    this.forcedPattern = null;
+                } else if (++this.forcedTicks > 200) {
+                    this.tellOwner("§e" + this.forcedPattern.label + " geht gerade nicht (möglich: "
+                            + options.stream().map(p -> p.label).toList() + ")", true);
+                    this.forcedPattern = null;
+                }
+            }
             this.beginAttempt(chosen, target, ctx);
             if (!chosen.melee) {
                 this.startPattern(level, target, chosen);

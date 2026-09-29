@@ -58,6 +58,15 @@ public final class BotCommands {
                         .then(Commands.literal("auto").executes(ctx -> setStyle(ctx, PvpBotEntity.Style.AUTO)))
                         .then(Commands.literal("mace").executes(ctx -> setStyle(ctx, PvpBotEntity.Style.MACE)))
                         .then(Commands.literal("spear").executes(ctx -> setStyle(ctx, PvpBotEntity.Style.SPEAR))))
+                .then(Commands.literal("trick")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .suggests((c, b) -> {
+                                    for (BotBrain.Pattern p : BotBrain.Pattern.values()) {
+                                        b.suggest(p.trickName());
+                                    }
+                                    return b.buildFuture();
+                                })
+                                .executes(BotCommands::trick)))
                 .then(Commands.literal("brain")
                         .executes(BotCommands::brain)
                         .then(Commands.literal("reset").executes(BotCommands::brainReset)))
@@ -120,6 +129,19 @@ public final class BotCommands {
             ctx.getSource().sendSuccess(() -> Component.literal("§f" + bot.getName().getString() + " §7" + bot.describeNeeds()
                     + " §8| Kit: " + bot.describeKit()), false);
         }
+        return bots.size();
+    }
+
+    private static int trick(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(ctx, "name");
+        BotBrain.Pattern pattern = BotBrain.Pattern.byTrickName(name);
+        if (pattern == null) {
+            ctx.getSource().sendFailure(Component.literal("Unbekannter Trick. Möglich: kombo, smash, ansturm, stiche, sturzflug, speerflug, mace, schwert, bogen"));
+            return 0;
+        }
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.forcePattern(pattern));
+        ctx.getSource().sendSuccess(() -> Component.literal("§aNächster Angriff: §f" + pattern.label), false);
         return bots.size();
     }
 

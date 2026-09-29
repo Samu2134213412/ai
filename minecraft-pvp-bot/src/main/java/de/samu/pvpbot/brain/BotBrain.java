@@ -45,6 +45,30 @@ public final class BotBrain {
             this.melee = melee;
         }
 
+        /** Short command name, e.g. for /pvpbot trick kombo. */
+        public String trickName() {
+            return switch (this) {
+                case MACE_MELEE -> "mace";
+                case SPEAR_KITE -> "stiche";
+                case WIND_SMASH -> "smash";
+                case SPEAR_CHARGE -> "ansturm";
+                case ELYTRA_DIVE -> "sturzflug";
+                case ELYTRA_LANCE -> "speerflug";
+                case BLADE_MELEE -> "schwert";
+                case BOW_SNIPE -> "bogen";
+                case WIND_LUNGE_SMASH -> "kombo";
+            };
+        }
+
+        public static @Nullable Pattern byTrickName(String name) {
+            for (Pattern p : values()) {
+                if (p.trickName().equalsIgnoreCase(name)) {
+                    return p;
+                }
+            }
+            return null;
+        }
+
         public boolean aerial() {
             return this == ELYTRA_DIVE || this == ELYTRA_LANCE;
         }
