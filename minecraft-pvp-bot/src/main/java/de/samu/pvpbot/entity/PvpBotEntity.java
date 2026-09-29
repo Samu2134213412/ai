@@ -652,9 +652,51 @@ public class PvpBotEntity extends PathfinderMob {
             this.kit.equipBest(this, this.isFallFlying());
         }
         this.tickStuck(level);
+        this.trackDragonArrows(level);
         if (!this.kit.isInfinite()) {
             this.pickUpItems(level);
             this.eatFood(level);
+        }
+    }
+
+    /** Its arrows in flight: in the game only players (and explosions) can hurt the dragon. */
+    private final List<AbstractArrow> dragonArrows = new ArrayList<>();
+
+    /**
+     * Arrows the bot shot hit the dragon like a player's arrows would (same damage as the game gives
+     * an arrow: speed times base damage, a quarter plus one on the body, full on the head).
+     */
+    private void trackDragonArrows(ServerLevel level) {
+        if (this.dragonArrows.isEmpty()) {
+            return;
+        }
+        for (java.util.Iterator<AbstractArrow> it = this.dragonArrows.iterator(); it.hasNext(); ) {
+            AbstractArrow arrow = it.next();
+            Vec3 motion = arrow.getDeltaMovement();
+            if (arrow.isRemoved() || arrow.tickCount > 200 || motion.lengthSqr() < 0.01) {
+                it.remove();
+                continue;
+            }
+            Vec3 from = arrow.position();
+            Vec3 to = from.add(motion);
+            AABB sweep = new AABB(from, to).inflate(0.5);
+            for (var dragon : level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, sweep.inflate(24.0))) {
+                for (var part : dragon.getSubEntities()) {
+                    AABB box = part.getBoundingBox().inflate(0.3);
+                    if (box.contains(from) || box.clip(from, to).isPresent()) {
+                        float damage = (float) Math.ceil(motion.length() * arrow.getBaseDamage());
+                        var type = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(BOT_ATTACK);
+                        boolean hurt = part.hurtServer(level, new net.minecraft.world.damagesource.DamageSource(type, arrow, this), damage);
+                        if (DEBUG) {
+                            PvpBotMod.LOGGER.info("[SELFTEST]   arrow hit dragon {} for {} -> hurt={} (dragon hp {})", part == dragon.head ? "head" : "body",
+                                    damage, hurt, (int) dragon.getHealth());
+                        }
+                        arrow.discard();
+                        it.remove();
+                        return;
+                    }
+                }
+            }
         }
     }
 
@@ -1371,6 +1413,9 @@ public class PvpBotEntity extends PathfinderMob {
         double pitch = ballisticPitch(horizontal, yd);
         this.getLookControl().setLookAt(point.x, point.y, point.z);
         Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, Math.tan(pitch) * horizontal, zd, 3.0F, 0.5F);
+        if (this.dragonArrows.size() < 32) {
+            this.dragonArrows.add(arrow);
+        }
         this.swingMainHand();
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(), 1.0F, 1.0F);
         return true;

@@ -1964,6 +1964,7 @@ final class Gatherer {
     private int dragonLogTicks;
     private double eyeLeg = 180.0;
     private int strongholdLogTicks;
+    private int dragonShotTicks;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
@@ -2456,6 +2457,14 @@ final class Gatherer {
         }
         if (!low) {
             this.bot.getLookControl().setLookAt(dragon);
+            // While it flies: arrows, like a player would (aim ahead of it, it is fast).
+            double dist = this.bot.distanceTo(dragon);
+            if (dist < 56.0 && this.kit().count(st -> st.is(Items.ARROW)) > 0 && this.bot.hasLineOfSight(dragon)
+                    && ++this.dragonShotTicks >= 20) {
+                this.dragonShotTicks = 0;
+                Vec3 aim = dragon.getBoundingBox().getCenter().add(dragon.getDeltaMovement().scale(dist / 3.0));
+                this.bot.shootAt(aim);
+            }
         }
         this.step = null;
     }
