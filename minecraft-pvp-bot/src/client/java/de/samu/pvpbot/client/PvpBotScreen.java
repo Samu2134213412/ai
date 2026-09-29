@@ -62,10 +62,10 @@ public class PvpBotScreen extends Screen {
                 list.add(new Entry("Durchspielen stoppen", "pvpbot durchspielen stop", ""));
             }
             case 3 -> {
-                list.add(new Entry("§6Zuhause hier setzen", "pvpbot home set", "Im Umkreis von 20 Blöcken stellt er seine Kisten auf, und hierhin kommt er immer zurück"));
+                list.add(new Entry("§6Zuhause hier setzen", "pvpbot home set", "Kisten im Umkreis von 10 Blöcken benutzt er, sonst stellt er dort welche auf. Hierhin kommt er immer zurück"));
                 list.add(new Entry("Nach Hause gehen", "pvpbot home go", "Er läuft nach Hause und wartet dort"));
                 list.add(new Entry("§6Autonom: an", "pvpbot autonom on",
-                        "Verbessert seine Ausrüstung selbst (bis Diamant), sammelt Rüstungssets (1× Eisen, 2× Diamant) und lagert sie in Kisten im Umkreis von 20 Blöcken ums Zuhause. Ohne Zuhause wohnt er da, wo er gerade steht"));
+                        "Verbessert seine Ausrüstung selbst (bis Diamant), sammelt Rüstungssets (1× Eisen, 2× Diamant) und lagert sie in Kisten im Umkreis von 10 Blöcken ums Zuhause (vorhandene Kisten benutzt er)"));
                 list.add(new Entry("Autonom: aus", "pvpbot autonom off", ""));
                 list.add(new Entry("Zuhause & Kisten anzeigen", "pvpbot home", ""));
                 list.add(new Entry("§cZuhause löschen", "pvpbot home clear", ""));

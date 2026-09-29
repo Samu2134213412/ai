@@ -414,19 +414,28 @@ final class Gatherer {
     }
 
     /** Chests go anywhere within this many blocks of home. */
-    static final int CHEST_RADIUS = 20;
+    static final int CHEST_RADIUS = 10;
 
     void setAutonomous(boolean autonomous) {
         this.autonomous = autonomous;
         this.enabled = this.enabled || autonomous;
-        if (autonomous && this.home == null) {
-            // No home yet: this spot becomes home.
-            this.home = this.bot.blockPosition();
-            this.homeLevel = this.bot.level().dimension();
-            this.bot.tellOwner("§6Ich wohne jetzt hier: §f" + this.home.getX() + " " + this.home.getY() + " " + this.home.getZ()
-                    + " §7(Kisten kommen in " + CHEST_RADIUS + " Blöcken drumherum)", true);
-        }
         this.reset();
+    }
+
+    /**
+     * Chests that already stand within CHEST_RADIUS of home are used too (only looked for while the
+     * bot is at home, so it knows its own base, nothing more).
+     */
+    private void findHomeChests(ServerLevel level) {
+        if (this.home == null || !this.atHomeLevel() || this.bot.tickCount % 100 != 0
+                || this.bot.blockPosition().distSqr(this.home) > 16 * 16) {
+            return;
+        }
+        for (BlockPos p : BlockPos.betweenClosed(this.home.offset(-CHEST_RADIUS, -4, -CHEST_RADIUS), this.home.offset(CHEST_RADIUS, 4, CHEST_RADIUS))) {
+            if (p.distSqr(this.home) <= CHEST_RADIUS * CHEST_RADIUS && this.chestAt(p) != null && !this.homeChests.contains(p)) {
+                this.homeChests.add(p.immutable());
+            }
+        }
     }
 
     @Nullable BlockPos home() {
@@ -683,6 +692,10 @@ final class Gatherer {
             BlockPos chest = this.chestWithRoom();
             if (chest != null) {
                 return new StoreAtHome(chest);
+            }
+            if (this.bot.blockPosition().distSqr(this.home) > 16 * 16) {
+                // First look at home: maybe there are chests already.
+                return new GoHome();
             }
             if (kit.count(st -> st.is(Items.CHEST)) > 0) {
                 return new PlaceChest();
@@ -1250,6 +1263,7 @@ final class Gatherer {
         if (this.escapeLava(level)) {
             return;
         }
+        this.findHomeChests(level);
         if (this.speedrun && this.inNether() && this.netherPortal == null) {
             // Just arrived: remember the way home.
             for (BlockPos p : BlockPos.betweenClosed(this.bot.blockPosition().offset(-2, -1, -2), this.bot.blockPosition().offset(2, 3, 2))) {

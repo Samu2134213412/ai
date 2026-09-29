@@ -182,8 +182,8 @@ public final class BotCommands {
         }
         boolean noHome = homeless;
         ctx.getSource().sendSuccess(() -> Component.literal(on
-                ? "§6Autonom: §fverbessert seine Ausrüstung bis Diamant, sammelt Ersatz-Rüstungssets (1× Eisen, 2× Diamant) und lagert sie in Kisten, die er im Umkreis von 20 Blöcken um sein Zuhause aufstellt. Wenn nichts zu tun ist, wartet er zu Hause."
-                        + (noHome ? " §7Kein Zuhause gesetzt: er wohnt jetzt da, wo er steht (ändern: /pvpbot home set)." : "")
+                ? "§6Autonom: §fverbessert seine Ausrüstung bis Diamant, sammelt Ersatz-Rüstungssets (1× Eisen, 2× Diamant) und lagert sie in Kisten im Umkreis von 10 Blöcken um sein Zuhause (vorhandene Kisten benutzt er, sonst stellt er selbst welche auf). Wenn nichts zu tun ist, wartet er zu Hause."
+                        + (noHome ? " §cSetz ihm noch ein Zuhause (Menü O → Zuhause oder /pvpbot home set), sonst kann er nichts einlagern." : "")
                 : "§eAutonom aus."), false);
         return count;
     }
