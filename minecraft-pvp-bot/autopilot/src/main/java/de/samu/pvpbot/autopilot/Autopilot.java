@@ -1380,8 +1380,9 @@ public final class Autopilot {
         this.faceEntity(p, t, 40.0F);
         HitResult hit = p.raycastHitResult(1.0F, p);
         boolean piercing = p.getMainHandItem().has(DataComponents.PIERCING_WEAPON);
-        Vec3 toT = t.getBoundingBox().getCenter().subtract(p.getEyePosition()).normalize();
-        boolean aimed = piercing ? p.getLookAngle().dot(toT) > 0.97
+        // Spear: the crosshair has to be on the hitbox (within spear reach), like for any other hit.
+        Vec3 eye = p.getEyePosition();
+        boolean aimed = piercing ? t.getBoundingBox().inflate(0.1).clip(eye, eye.add(p.getLookAngle().scale(6.5))).isPresent()
                 : hit instanceof net.minecraft.world.phys.EntityHitResult entityHit && entityHit.getEntity() == t;
         if (!aimed) {
             return;
