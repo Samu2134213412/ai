@@ -52,6 +52,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             run(sp, "gamemode survival @a");
             run(sp, "time set day");
             logWorld(ctx, sp);
+            menuShots(ctx);
 
             fight(ctx, sp, "Schwert vs Golem", ARMOR + ";give @a minecraft:netherite_sword",
                     "summon minecraft:iron_golem 5 ~ 0 {NoAI:1b}", 600);
@@ -228,6 +229,62 @@ public class AutopilotGameTest implements FabricClientGameTest {
         run(sp, "gamemode survival @a");
         run(sp, "tp @a 0 -60 0 -90 0");
         ctx.waitTicks(40);
+    }
+
+    /** Screenshots of both settings menus (every tab). */
+    private void menuShots(ClientGameTestContext ctx) {
+        for (int tab = 0; tab < 3; tab++) {
+            int t = tab;
+            ctx.runOnClient(mc -> {
+                try {
+                    var field = de.samu.pvpbot.autopilot.AutopilotScreen.class.getDeclaredField("page");
+                    field.setAccessible(true);
+                    field.setInt(null, t);
+                } catch (ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+                mc.gui.setScreen(new de.samu.pvpbot.autopilot.AutopilotScreen());
+            });
+            ctx.waitTicks(5);
+            menuShot(ctx, "Menue_Autopilot_" + (tab + 1));
+        }
+        if (FabricLoader.getInstance().isModLoaded("pvpbot")) {
+            for (int tab = 0; tab < 4; tab++) {
+                int t = tab;
+                ctx.runOnClient(mc -> {
+                    try {
+                        Class<?> cls = Class.forName("de.samu.pvpbot.client.PvpBotScreen");
+                        var field = cls.getDeclaredField("page");
+                        field.setAccessible(true);
+                        field.setInt(null, t);
+                        mc.gui.setScreen((net.minecraft.client.gui.screens.Screen) cls.getConstructor().newInstance());
+                    } catch (ReflectiveOperationException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                ctx.waitTicks(5);
+                menuShot(ctx, "Menue_PvPBot_" + (tab + 1));
+            }
+        }
+        ctx.runOnClient(mc -> mc.gui.setScreen(null));
+        ctx.waitTicks(5);
+    }
+
+    private void menuShot(ClientGameTestContext ctx, String name) {
+        try {
+            Path path = ctx.takeScreenshot(name);
+            BufferedImage img = ImageIO.read(path.toFile());
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(img, "png", out);
+            String data = Base64.getEncoder().encodeToString(out.toByteArray());
+            int chunks = (data.length() + 3999) / 4000;
+            for (int i = 0; i < chunks; i++) {
+                System.out.println("[SHOT " + name + " " + (i + 1) + "/" + chunks + "] "
+                        + data.substring(i * 4000, Math.min(data.length(), (i + 1) * 4000)));
+            }
+        } catch (Exception e) {
+            System.out.println(TAG + "menu screenshot failed: " + e);
+        }
     }
 
     /** Water bucket clutch: dropped from 35 blocks with only a water bucket. */
