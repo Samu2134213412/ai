@@ -1175,6 +1175,11 @@ final class Gatherer {
                 PvpBotMod.LOGGER.info("[SELFTEST]   dragon phase {} hp {} at {}", phase, (int) dragon.getHealth(), dragon.blockPosition().toShortString());
             }
             this.lastDragonPhase = phase;
+            if (PvpBotEntity.DEBUG && ++this.dragonLogTicks % 300 == 0) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   dragon status: {} hp {} at {} bot at {} hp {} arrows {}", phase, (int) dragon.getHealth(),
+                        dragon.blockPosition().toShortString(), this.bot.blockPosition().toShortString(), (int) this.bot.getHealth(),
+                        this.kit().count(st -> st.is(Items.ARROW)));
+            }
             // Down at the fountain: that is the moment to hit it, crystals can wait.
             BlockPos fountain = this.level().getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
             // Crystals first (they heal it); only when it is really coming down right now, be at the
@@ -1923,6 +1928,7 @@ final class Gatherer {
     private int crystalLogTicks;
     private int crystalAimTicks;
     private int digLogTicks;
+    private int dragonLogTicks;
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 

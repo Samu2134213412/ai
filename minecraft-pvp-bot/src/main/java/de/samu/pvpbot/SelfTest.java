@@ -519,6 +519,9 @@ final class SelfTest {
         kit.add(new ItemStack(Items.BOW));
         kit.add(new ItemStack(Items.ARROW, 64));
         kit.add(new ItemStack(Items.COOKED_BEEF, 32));
+        // What stage 1 leaves in the inventory anyway: cobblestone (for bridging and pillaring).
+        kit.add(new ItemStack(Items.COBBLESTONE, 64));
+        kit.add(new ItemStack(Items.COBBLESTONE, 64));
         ItemStack fireRes = new ItemStack(Items.POTION);
         fireRes.set(net.minecraft.core.component.DataComponents.POTION_CONTENTS,
                 new net.minecraft.world.item.alchemy.PotionContents(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE));
