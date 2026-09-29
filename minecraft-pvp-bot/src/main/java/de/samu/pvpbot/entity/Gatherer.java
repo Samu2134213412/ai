@@ -1867,6 +1867,13 @@ final class Gatherer {
             this.step = null;
             return;
         }
+        if (PvpBotEntity.DEBUG && ++this.netherLogTicks % 200 == 0) {
+            BlockPos f = this.bot.blockPosition().relative(this.spiralDir);
+            PvpBotMod.LOGGER.info("[SELFTEST]   nether: at {} leg {} {} stuck {} navDone {} digBlocked {} dryWalk {} ahead {} / {} fortress known {} visited {}",
+                    this.bot.blockPosition().toShortString(), this.spiralLeg, this.spiralDir, this.spiralStuck, this.bot.getNavigation().isDone(),
+                    this.digBlocked, this.dryWalkTicks, level.getBlockState(f).getBlock(), level.getBlockState(f.above()).getBlock(),
+                    this.known.getOrDefault(Ore.FORTRESS, List.of()).size(), this.fortressVisited.size());
+        }
         BlockPos goal = this.nearest(Ore.SPAWNER);
         if (goal == null) {
             // In the fortress: go through its halls and bridges, to parts it has not been to yet.
@@ -1965,6 +1972,7 @@ final class Gatherer {
     private double eyeLeg = 180.0;
     private int strongholdLogTicks;
     private int dragonShotTicks;
+    private int netherLogTicks;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
