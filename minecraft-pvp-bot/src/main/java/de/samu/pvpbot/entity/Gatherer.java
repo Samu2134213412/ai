@@ -64,9 +64,9 @@ final class Gatherer {
     enum Ore {
         LOG("Holz", Res.LOG, s -> s.is(BlockTags.LOGS)),
         STONE("Stein", Res.COBBLE, s -> s.is(BlockTags.BASE_STONE_OVERWORLD) || s.is(net.minecraft.world.level.block.Blocks.COBBLESTONE)),
-        COAL("Kohleerz", Res.COAL, s -> s.is(BlockTags.COAL_ORES)),
+        COAL("Kohleerz", Res.COAL, s -> s.is(net.minecraft.world.level.block.Blocks.COAL_ORE) || s.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_COAL_ORE)),
         IRON("Eisenerz", Res.RAW_IRON, s -> s.is(BlockTags.IRON_ORES)),
-        DIAMOND("Diamanterz", Res.DIAMOND, s -> s.is(BlockTags.DIAMOND_ORES));
+        DIAMOND("Diamanterz", Res.DIAMOND, s -> s.is(net.minecraft.world.level.block.Blocks.DIAMOND_ORE) || s.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_DIAMOND_ORE));
 
         final String label;
         final Res gives;
