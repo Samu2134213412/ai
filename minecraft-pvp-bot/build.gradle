@@ -15,7 +15,7 @@ loom {
                 vmArg '-Dpvpbot.selftest=true'
             }
             if (project.hasProperty('stagetest')) {
-                vmArg '-Dpvpbot.stagetest=true'
+                vmArg "-Dpvpbot.stagetest=${project.property('stagetest') ?: 'all'}"
             }
         }
     }

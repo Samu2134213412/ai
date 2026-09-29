@@ -137,10 +137,17 @@ final class SelfTest {
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
         SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 48000, -240,
                 level -> List.of(), SelfTest::stage2Kit, PvpBotEntity::stage2Done));
+        SCENARIOS.add(new Scenario("Etappe 3: Enderaugen werfen, Festung, Endportal", PvpBotEntity.Style.AUTO, 60000, 480,
+                level -> List.of(), SelfTest::stage3Kit, PvpBotEntity::inEnd));
+        SCENARIOS.add(new Scenario("Etappe 4: Endkristalle und Enderdrache", PvpBotEntity.Style.AUTO, 36000, 0,
+                level -> List.of(), SelfTest::stage4Kit, PvpBotEntity::gameBeaten));
 
         // The "beat the game" stages need a normal world; the fights need the flat test world.
-        if (Boolean.getBoolean("pvpbot.stagetest")) {
-            SCENARIOS.removeIf(sc -> !sc.name().startsWith("Etappe"));
+        String stages = System.getProperty("pvpbot.stagetest");
+        if (stages != null) {
+            // "all" or a single stage number (CI runs the stages as parallel jobs).
+            SCENARIOS.removeIf(sc -> !sc.name().startsWith("Etappe") || !stages.equals("all") && !stages.equals("true")
+                    && !sc.name().startsWith("Etappe " + stages + ":"));
         } else {
             SCENARIOS.removeIf(sc -> sc.name().startsWith("Etappe"));
         }
@@ -312,12 +319,17 @@ final class SelfTest {
         flew = false;
         PvpBotMod.LOGGER.info(TAG + "==================== " + scenario.name());
         baseX = scenario.baseX();
+        boolean end = scenario.name().startsWith("Etappe 4");
+        if (end) {
+            level = level.getServer().getLevel(net.minecraft.world.level.Level.END);
+        }
         bot = PvpBotMod.PVP_BOT.create(level, EntitySpawnReason.COMMAND);
         bot.snapTo(origin.getX() + baseX + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F);
         boolean stage = scenario.name().startsWith("Etappe");
         if (stage) {
-            int sx = origin.getX() + baseX;
-            int sz = origin.getZ();
+            int sx = end ? 0 : origin.getX() + baseX;
+            int sz0 = end ? 60 : origin.getZ();
+            int sz = sz0;
             level.setChunkForced(sx >> 4, sz >> 4, true);
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, sx, sz);
             bot.snapTo(sx + 0.5, sy, sz + 0.5, 0.0F, 0.0F);
@@ -345,6 +357,18 @@ final class SelfTest {
                 }
             }
             bot.startAtStage2(base.offset(0, 1, 1));
+        } else if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
+            bot.startAtStage3();
+            if (end && level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class,
+                    new net.minecraft.world.phys.AABB(-300, -64, -300, 300, 320, 300)).isEmpty()) {
+                // Without a player nearby the End never spawns its dragon on its own.
+                var dragon = net.minecraft.world.entity.EntityTypes.ENDER_DRAGON.create(level, EntitySpawnReason.COMMAND);
+                if (dragon != null) {
+                    dragon.snapTo(0.5, 90.0, 0.5, 0.0F, 0.0F);
+                    level.addFreshEntity(dragon);
+                    spawned.add(dragon);
+                }
+            }
         } else if (stage) {
             bot.setSpeedrun(true);
         }
@@ -404,6 +428,19 @@ final class SelfTest {
         kit.add(fireRes.copyWithCount(1));
         kit.add(fireRes.copyWithCount(1));
         kit.add(fireRes.copyWithCount(1));
+        return kit;
+    }
+
+    private static List<ItemStack> stage3Kit() {
+        List<ItemStack> kit = new ArrayList<>(stage2Kit());
+        kit.add(new ItemStack(Items.ENDER_EYE, 14));
+        return kit;
+    }
+
+    private static List<ItemStack> stage4Kit() {
+        List<ItemStack> kit = new ArrayList<>(stage3Kit());
+        kit.add(new ItemStack(Items.DIAMOND_SWORD));
+        kit.add(new ItemStack(Items.ARROW, 64));
         return kit;
     }
 

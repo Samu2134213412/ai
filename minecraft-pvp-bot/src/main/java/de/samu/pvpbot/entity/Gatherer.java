@@ -53,6 +53,8 @@ final class Gatherer {
         BLAZE_POWDER("Lohenstaub", s -> s.is(Items.BLAZE_POWDER)),
         PEARL("Enderperlen", s -> s.is(Items.ENDER_PEARL)),
         EYE("Enderaugen", s -> s.is(Items.ENDER_EYE)),
+        STRING("Faden", s -> s.is(Items.STRING)),
+        FEATHER("Federn", s -> s.is(Items.FEATHER)),
         RAW_MEAT("rohes Fleisch", s -> s.is(Items.BEEF) || s.is(Items.PORKCHOP) || s.is(Items.CHICKEN) || s.is(Items.MUTTON) || s.is(Items.RABBIT)),
         COOKED_MEAT("gebratenes Fleisch", s -> s.is(Items.COOKED_BEEF) || s.is(Items.COOKED_PORKCHOP) || s.is(Items.COOKED_CHICKEN)
                 || s.is(Items.COOKED_MUTTON) || s.is(Items.COOKED_RABBIT) || s.is(Items.BREAD));
@@ -80,7 +82,12 @@ final class Gatherer {
         FORTRESS("Netherfestung", Res.BLAZE_ROD, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_BRICKS)
                 || s.is(net.minecraft.world.level.block.Blocks.NETHER_BRICK_FENCE)),
         SPAWNER("Spawner", Res.BLAZE_ROD, s -> s.is(net.minecraft.world.level.block.Blocks.SPAWNER)),
-        PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL));
+        PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)),
+        STRONGHOLD("Festungsmauern", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.MOSSY_STONE_BRICKS)
+                || s.is(net.minecraft.world.level.block.Blocks.CRACKED_STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.INFESTED_STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.INFESTED_MOSSY_STONE_BRICKS)
+                || s.is(net.minecraft.world.level.block.Blocks.INFESTED_CRACKED_STONE_BRICKS)),
+        END_FRAME("Endportalrahmen", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.END_PORTAL_FRAME)),
+        END_PORTAL("Endportal", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.END_PORTAL));
 
         final String label;
         final Res gives;
@@ -133,6 +140,8 @@ final class Gatherer {
         recipe(Items.FLINT_AND_STEEL, 1, Res.IRON, 1, Res.FLINT, 1);
         recipe(Items.BLAZE_POWDER, 2, Res.BLAZE_ROD, 1);
         recipe(Items.ENDER_EYE, 1, Res.BLAZE_POWDER, 1, Res.PEARL, 1);
+        recipe(Items.BOW, 1, Res.STRING, 3, Res.STICK, 3);
+        recipe(Items.ARROW, 4, Res.FLINT, 1, Res.STICK, 1, Res.FEATHER, 1);
     }
 
     private static final Item[] IRON_ARMOR = {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS};
@@ -141,7 +150,7 @@ final class Gatherer {
 
     /** The next thing to do. */
     sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
-            UsePortal, HuntMob, ExploreNether {
+            UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal {
         String describe();
     }
 
@@ -217,6 +226,42 @@ final class Gatherer {
         }
     }
 
+    record ThrowEye() implements Step {
+        public String describe() {
+            return "wirft ein Enderauge";
+        }
+    }
+
+    record FollowEye() implements Step {
+        public String describe() {
+            return "folgt dem Enderauge";
+        }
+    }
+
+    record ExploreStronghold() implements Step {
+        public String describe() {
+            return "erkundet die Festung";
+        }
+    }
+
+    record FillEndPortal() implements Step {
+        public String describe() {
+            return "setzt Enderaugen in den Portalrahmen";
+        }
+    }
+
+    record UseEndPortal() implements Step {
+        public String describe() {
+            return "springt ins Endportal";
+        }
+    }
+
+    record ShootCrystal() implements Step {
+        public String describe() {
+            return "schießt Endkristalle ab";
+        }
+    }
+
     record BuildPortal() implements Step {
         public String describe() {
             return "baut das Netherportal";
@@ -262,6 +307,15 @@ final class Gatherer {
     private @Nullable BlockPos overworldPortal;
     private @Nullable BlockPos netherPortal;
     private boolean stage2Done;
+    // Stage 3 and 4: stronghold and the dragon.
+    static final int ARROWS_WANTED = 16;
+    private @Nullable Vec3 eyeDir;
+    private @Nullable Vec3 legStart;
+    private boolean eyeWentDown;
+    private int legTicks;
+    private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
+    private boolean seenDragon;
+    private boolean gameBeaten;
 
     Gatherer(PvpBotEntity bot) {
         this.bot = bot;
@@ -312,6 +366,18 @@ final class Gatherer {
     void setPortals(@Nullable BlockPos overworld, @Nullable BlockPos nether) {
         this.overworldPortal = overworld;
         this.netherPortal = nether;
+    }
+
+    boolean gameBeaten() {
+        return this.gameBeaten;
+    }
+
+    void setGameBeaten(boolean beaten) {
+        this.gameBeaten = beaten;
+    }
+
+    private boolean inEnd() {
+        return this.bot.level().dimension() == net.minecraft.world.level.Level.END;
     }
 
     private boolean inNether() {
@@ -475,6 +541,9 @@ final class Gatherer {
         if (this.speedrun && !this.stage2Done) {
             return this.stage2Step();
         }
+        if (this.speedrun && !this.gameBeaten) {
+            return this.inEnd() ? this.stage4Step() : this.stage3Step();
+        }
         this.goalLabel = null;
         return null;
     }
@@ -568,6 +637,97 @@ final class Gatherer {
         return rods > 0 ? new Craft(RECIPES.get(Items.BLAZE_POWDER)) : new ExploreNether("Lohen");
     }
 
+    /**
+     * Stage 3: bow and arrows for the end crystals, then find the stronghold the fair way: throw an
+     * eye of ender, follow its direction, throw again; where it goes down, dig down and explore until
+     * the portal room is in sight, fill the frames and jump in.
+     */
+    private @Nullable Step stage3Step() {
+        BotKit kit = this.kit();
+        if (this.inNether()) {
+            this.goalLabel = "den Weg zurück in die Oberwelt";
+            return new UsePortal(false);
+        }
+        if (kit.count(st -> st.is(Items.BOW)) == 0) {
+            this.goalLabel = "einen Bogen (für die Endkristalle)";
+            Step s = this.resolveItem(Items.BOW, 0);
+            if (s != null) {
+                return s;
+            }
+        }
+        if (kit.count(st -> st.is(Items.ARROW)) < ARROWS_WANTED) {
+            this.goalLabel = "Pfeile (" + kit.count(st -> st.is(Items.ARROW)) + "/" + ARROWS_WANTED + ")";
+            Step s = this.resolveItem(Items.ARROW, 0);
+            if (s != null) {
+                return s;
+            }
+        }
+        this.goalLabel = "die Festung (Stronghold)";
+        if (this.nearest(Ore.END_PORTAL) != null) {
+            return new UseEndPortal();
+        }
+        if (this.nearest(Ore.END_FRAME) != null) {
+            return new FillEndPortal();
+        }
+        if (this.eyeWentDown) {
+            if (this.nearest(Ore.STRONGHOLD) != null) {
+                return new ExploreStronghold();
+            }
+            return this.bot.getY() > -20.0 ? new Descend() : new StripMine();
+        }
+        if (kit.count(Res.EYE.match) == 0) {
+            this.goalLabel = "neue Enderaugen (alle verbraucht)";
+            this.stage2Done = false;
+            return null;
+        }
+        if (this.eyeDir == null || this.legTicks > 1200) {
+            return new ThrowEye();
+        }
+        return new FollowEye();
+    }
+
+    /** Stage 4: shoot the end crystals it can see, then fight the dragon. */
+    private @Nullable Step stage4Step() {
+        this.goalLabel = "den Enderdrachen";
+        net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon = null;
+        for (var d : this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class,
+                this.bot.getBoundingBox().inflate(300.0))) {
+            if (d.isAlive()) {
+                dragon = d;
+            }
+        }
+        if (dragon != null) {
+            this.seenDragon = true;
+        } else if (this.seenDragon) {
+            this.gameBeaten = true;
+            this.bot.tellOwner("§6§lMINECRAFT DURCHGESPIELT! §eDer Enderdrache ist besiegt.", true);
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: DRAGON DEAD - GAME BEATEN");
+            }
+            return null;
+        }
+        if (this.visibleCrystal() != null && this.kit().count(st -> st.is(Items.ARROW)) > 0) {
+            return new ShootCrystal();
+        }
+        if (dragon != null) {
+            return new HuntMob("den Enderdrachen", EntityTypes.ENDER_DRAGON);
+        }
+        return new Explore("den Drachen");
+    }
+
+    private net.minecraft.world.entity.boss.enderdragon.@Nullable EndCrystal visibleCrystal() {
+        net.minecraft.world.entity.boss.enderdragon.EndCrystal best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (var c : this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class,
+                this.bot.getBoundingBox().inflate(160.0))) {
+            if (c.isAlive() && this.bot.hasLineOfSight(c) && this.bot.distanceToSqr(c) < bestDist) {
+                best = c;
+                bestDist = this.bot.distanceToSqr(c);
+            }
+        }
+        return best;
+    }
+
     private @Nullable LivingEntity visibleMob(net.minecraft.world.entity.EntityType<?> type) {
         LivingEntity best = null;
         double bestDist = Double.MAX_VALUE;
@@ -618,6 +778,9 @@ final class Gatherer {
             case IRON -> this.smelt(Res.RAW_IRON, Res.IRON, count - this.kit().count(res.match), depth);
             case COOKED_MEAT -> this.smelt(Res.RAW_MEAT, Res.COOKED_MEAT, count - this.kit().count(res.match), depth);
             case RAW_MEAT -> new Hunt();
+            case STRING -> this.visibleMob(EntityTypes.SPIDER) != null ? new HuntMob("Spinnen (Faden)", EntityTypes.SPIDER) : new Explore("Spinnen (Faden)");
+            case FEATHER -> this.visibleMob(EntityTypes.CHICKEN) != null ? new HuntMob("Hühner (Federn)", EntityTypes.CHICKEN) : new Explore("Hühner (Federn)");
+            case BLAZE_ROD, BLAZE_POWDER, PEARL, EYE -> null;
         };
     }
 
@@ -705,6 +868,12 @@ final class Gatherer {
             case UsePortal up -> this.doUsePortal(level, up.toNether());
             case HuntMob hm -> this.doHuntMob(hm.type());
             case ExploreNether en -> this.doExploreNether(level);
+            case ThrowEye te -> this.doThrowEye(level);
+            case FollowEye fe -> this.doFollowEye(level);
+            case ExploreStronghold es -> this.doExploreStronghold(level);
+            case FillEndPortal fp -> this.doFillEndPortal(level);
+            case UseEndPortal ue -> this.doUseEndPortal();
+            case ShootCrystal sc -> this.doShootCrystal();
         }
     }
 
@@ -1050,6 +1219,198 @@ final class Gatherer {
             if (!this.bot.getNavigation().moveTo(candidate.x, candidate.y, candidate.z, 1.1)) {
                 // No walkable way: tunnel straight on (doDig turns away from lava).
                 this.doDig(level, false);
+            }
+        }
+        this.step = null;
+    }
+
+    // --- stage 3: stronghold
+
+    /**
+     * Throws an eye of ender. Like in the game it only shows the direction to the stronghold, and it
+     * goes down when the stronghold is right below. One in five eyes breaks.
+     */
+    private void doThrowEye(ServerLevel level) {
+        this.bot.getNavigation().stop();
+        BlockPos target = level.findNearestMapStructure(net.minecraft.tags.StructureTags.EYE_OF_ENDER_LOCATED, this.bot.blockPosition(), 100, false);
+        level.playSound(null, this.bot.blockPosition(), SoundEvents.ENDER_EYE_LAUNCH, this.bot.getSoundSource(), 1.0F, 1.0F);
+        this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+        if (this.bot.getRandom().nextInt(5) == 0) {
+            this.kit().remove(Res.EYE.match, 1);
+            this.bot.tellOwner("§7Das Enderauge ist zerbrochen.", false);
+        }
+        this.legTicks = 0;
+        this.legStart = this.bot.position();
+        if (target == null) {
+            this.bot.tellOwner("§cDas Enderauge zeigt nirgendwo hin – hier gibt es keine Festung.", true);
+            this.eyeDir = null;
+            this.step = null;
+            return;
+        }
+        Vec3 toTarget = Vec3.atCenterOf(target).subtract(this.bot.position()).multiply(1.0, 0.0, 1.0);
+        if (toTarget.length() < 12.0) {
+            this.eyeWentDown = true;
+            this.bot.tellOwner("§5Das Enderauge fliegt nach unten – die Festung ist hier drunter!", true);
+        } else {
+            this.eyeDir = toTarget.normalize();
+            this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
+        }
+        this.step = null;
+    }
+
+    /** Walks along the eye's direction for a while (tunnels where it cannot walk), then throws again. */
+    private void doFollowEye(ServerLevel level) {
+        if (this.eyeDir == null || this.legStart == null) {
+            this.step = null;
+            return;
+        }
+        this.legTicks++;
+        double travelled = this.bot.position().subtract(this.legStart).horizontalDistance();
+        if (travelled > 180.0) {
+            this.legTicks = Integer.MAX_VALUE / 2; // throw the next eye
+            this.step = null;
+            return;
+        }
+        Vec3 goal = this.bot.position().add(this.eyeDir.scale(16.0));
+        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, (int) goal.x, (int) goal.z);
+        if (!this.bot.getNavigation().moveTo(goal.x, y, goal.z, 1.1) || this.noProgress()) {
+            this.doDig(level, false);
+        }
+        this.step = null;
+    }
+
+    private boolean noProgress() {
+        Vec3 pos = this.bot.position();
+        if (this.lastPos != null && pos.distanceToSqr(this.lastPos) < 0.01) {
+            this.noProgressTicks++;
+        } else {
+            this.noProgressTicks = 0;
+        }
+        this.lastPos = pos;
+        return this.noProgressTicks > 40;
+    }
+
+    /** Inside the stronghold: go to walls it has not been near yet; the portal room shows up on the way. */
+    private void doExploreStronghold(ServerLevel level) {
+        BlockPos here = this.bot.blockPosition();
+        this.visitedCells.add(cellKey(here));
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (BlockPos p : this.known.getOrDefault(Ore.STRONGHOLD, List.of())) {
+            if (this.visitedCells.contains(cellKey(p)) || this.blacklist.contains(p)) {
+                continue;
+            }
+            double d = here.distSqr(p);
+            if (d < bestDist) {
+                best = p;
+                bestDist = d;
+            }
+        }
+        if (best == null) {
+            this.doDig(level, false);
+            this.step = null;
+            return;
+        }
+        if (!this.bot.getNavigation().moveTo(best.getX() + 0.5, best.getY() + 1, best.getZ() + 0.5, 1.0) || this.noProgress()) {
+            this.mineTarget = best;
+            this.tunnelTowards(level, best);
+            if (this.noProgressTicks > 200) {
+                this.visitedCells.add(cellKey(best));
+                this.noProgressTicks = 0;
+            }
+        }
+        this.step = null;
+    }
+
+    private static long cellKey(BlockPos p) {
+        return BlockPos.asLong(p.getX() >> 3, p.getY() >> 3, p.getZ() >> 3);
+    }
+
+    /** Puts eyes into the frames it can see; once all twelve are filled the portal opens. */
+    private void doFillEndPortal(ServerLevel level) {
+        List<BlockPos> frames = new ArrayList<>(this.known.getOrDefault(Ore.END_FRAME, List.of()));
+        BlockPos next = null;
+        for (BlockPos f : frames) {
+            BlockState st = level.getBlockState(f);
+            if (st.is(net.minecraft.world.level.block.Blocks.END_PORTAL_FRAME) && !st.getValue(net.minecraft.world.level.block.EndPortalFrameBlock.HAS_EYE)) {
+                if (next == null || this.bot.blockPosition().distSqr(f) < this.bot.blockPosition().distSqr(next)) {
+                    next = f;
+                }
+            }
+        }
+        if (next != null) {
+            if (this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(next)) > 4.0) {
+                this.bot.getNavigation().moveTo(next.getX() + 0.5, next.getY() + 1, next.getZ() + 0.5, 1.0);
+                this.step = null;
+                return;
+            }
+            if (this.kit().remove(Res.EYE.match, 1) == 0) {
+                this.bot.tellOwner("§cMir fehlen Enderaugen für den Rahmen.", true);
+                this.stage2Done = false;
+                this.step = null;
+                return;
+            }
+            this.bot.lookAtBlock(next);
+            level.setBlock(next, level.getBlockState(next).setValue(net.minecraft.world.level.block.EndPortalFrameBlock.HAS_EYE, true), 2);
+            level.playSound(null, next, SoundEvents.END_PORTAL_FRAME_FILL, this.bot.getSoundSource(), 1.0F, 1.0F);
+            this.step = null;
+            return;
+        }
+        // All frames we can see have eyes: once all 12 are there, open the portal (like the game does).
+        if (frames.size() >= 12) {
+            int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE, y = frames.get(0).getY();
+            for (BlockPos f : frames) {
+                minX = Math.min(minX, f.getX());
+                maxX = Math.max(maxX, f.getX());
+                minZ = Math.min(minZ, f.getZ());
+                maxZ = Math.max(maxZ, f.getZ());
+            }
+            for (int x = minX + 1; x < maxX; x++) {
+                for (int z = minZ + 1; z < maxZ; z++) {
+                    level.setBlock(new BlockPos(x, y, z), net.minecraft.world.level.block.Blocks.END_PORTAL.defaultBlockState(), 2);
+                }
+            }
+            level.globalLevelEvent(1038, new BlockPos(minX + 2, y, minZ + 2), 0);
+            this.bot.tellOwner("§5§lDas Endportal ist offen! §7Auf zum Drachen.", true);
+            this.known.computeIfAbsent(Ore.END_PORTAL, k -> new ArrayList<>()).add(new BlockPos(minX + 2, y, minZ + 2));
+        } else {
+            // Not all frames in sight yet: walk into the middle of the ones we know.
+            BlockPos f = frames.get(0);
+            this.bot.getNavigation().moveTo(f.getX() + 0.5, f.getY() + 1, f.getZ() + 0.5, 1.0);
+        }
+        this.step = null;
+    }
+
+    private void doUseEndPortal() {
+        BlockPos portal = this.nearest(Ore.END_PORTAL);
+        if (portal == null) {
+            this.step = null;
+            return;
+        }
+        Vec3 c = Vec3.atBottomCenterOf(portal);
+        this.bot.getNavigation().moveTo(c.x, c.y, c.z, 1.0);
+        if (this.bot.position().distanceToSqr(c) < 9.0) {
+            this.bot.getMoveControl().setWantedPosition(c.x, c.y, c.z, 1.0);
+        }
+        this.step = null;
+    }
+
+    // --- stage 4: the end
+
+    private void doShootCrystal() {
+        var crystal = this.visibleCrystal();
+        if (crystal == null) {
+            this.step = null;
+            return;
+        }
+        double h = this.bot.position().subtract(crystal.position()).horizontalDistance();
+        if (h > 48.0) {
+            this.bot.getNavigation().moveTo(crystal.getX(), this.bot.getY(), crystal.getZ(), 1.1);
+        } else {
+            this.bot.getNavigation().stop();
+            if (++this.actionTicks >= 25) {
+                this.actionTicks = 0;
+                this.bot.shootAt(crystal.position().add(0.0, 1.0, 0.0));
             }
         }
         this.step = null;

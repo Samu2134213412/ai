@@ -407,6 +407,20 @@ public class PvpBotEntity extends PathfinderMob {
         this.gatherer.setPortals(portal, null);
     }
 
+    /** For tests: start stage 3 with the eyes of ender already crafted. */
+    public void startAtStage3() {
+        this.startAtStage2(null);
+        this.gatherer.setStage2Done(true);
+    }
+
+    public boolean inEnd() {
+        return this.level().dimension() == net.minecraft.world.level.Level.END;
+    }
+
+    public boolean gameBeaten() {
+        return this.gatherer.gameBeaten();
+    }
+
     @Override
     public void remove(Entity.RemovalReason reason) {
         this.gatherer.releaseChunks();
@@ -1302,6 +1316,30 @@ public class PvpBotEntity extends PathfinderMob {
         Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, yd + horizontal * horizontal / 330.0, zd, 3.0F, 1.0F);
         this.swingMainHand();
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(), 1.0F, 1.0F);
+    }
+
+    /** Shoots one arrow at a point (end crystals). Returns false without bow or arrows. */
+    boolean shootAt(Vec3 point) {
+        ItemStack bow = this.bow();
+        if (bow.isEmpty() || !this.hasArrows() || !(this.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        this.holdWeapon(bow);
+        ItemStack arrowItem = this.kit.find(Role.ARROW);
+        ItemStack ammo = arrowItem.isEmpty() ? new ItemStack(Items.ARROW) : arrowItem.copyWithCount(1);
+        if (!this.kit.isInfinite() && !arrowItem.isEmpty()) {
+            arrowItem.shrink(1);
+        }
+        AbstractArrow arrow = ProjectileUtil.getMobArrow(this, ammo, BowItem.getPowerForTime(20), bow);
+        double xd = point.x - this.getX();
+        double zd = point.z - this.getZ();
+        double yd = point.y - arrow.getY();
+        double horizontal = Math.sqrt(xd * xd + zd * zd);
+        this.getLookControl().setLookAt(point.x, point.y, point.z);
+        Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, yd + horizontal * horizontal / 330.0, zd, 3.0F, 0.5F);
+        this.swingMainHand();
+        level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(), 1.0F, 1.0F);
+        return true;
     }
 
     private void jab(LivingEntity target) {
