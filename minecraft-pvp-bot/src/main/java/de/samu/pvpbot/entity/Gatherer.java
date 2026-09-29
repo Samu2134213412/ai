@@ -307,6 +307,8 @@ final class Gatherer {
     private boolean portalBuilt;
     private Direction digDir = Direction.NORTH;
     private final java.util.Set<Long> dugTunnel = new java.util.HashSet<>();
+    private int digBlocked;
+    private int dryWalkTicks;
     private int portalProgress;
     private @Nullable BlockPos portalBase;
     private Direction portalAlong = Direction.EAST;
@@ -1025,6 +1027,17 @@ final class Gatherer {
 
     /** Staircase down (descend) or a straight 2-high tunnel (strip mine); turns away from lava and bedrock. */
     private void doDig(ServerLevel level, boolean down) {
+        if (this.digBlocked >= 4 || this.bot.isInWater()) {
+            // Water (or lava) on every side, e.g. standing in the lake it just scooped from: walk to
+            // dry ground first, then dig.
+            this.digBlocked = 0;
+            this.dryWalkTicks = 120;
+        }
+        if (this.dryWalkTicks > 0) {
+            this.dryWalkTicks--;
+            this.doExplore();
+            return;
+        }
         this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
         BlockPos front = feet.relative(this.digDir);
@@ -1063,11 +1076,14 @@ final class Gatherer {
                 // Lava, water or bedrock ahead: take another direction.
                 this.stopBreaking();
                 this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+                this.digBlocked++;
                 this.bot.tellOwner("§7Gefahr voraus – ich grabe in eine andere Richtung.", false);
                 return;
             }
             if (!state.getCollisionShape(level, p).isEmpty()) {
-                this.breakBlock(level, p);
+                if (this.breakBlock(level, p)) {
+                    this.digBlocked = 0;
+                }
                 return;
             }
         }
