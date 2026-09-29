@@ -136,6 +136,12 @@ final class SelfTest {
         SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 36000, 240,
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
 
+        // The "beat the game" stages need a normal world; the fights need the flat test world.
+        if (Boolean.getBoolean("pvpbot.stagetest")) {
+            SCENARIOS.removeIf(sc -> !sc.name().startsWith("Etappe"));
+        } else {
+            SCENARIOS.removeIf(sc -> sc.name().startsWith("Etappe"));
+        }
         ServerLifecycleEvents.SERVER_STARTED.register(SelfTest::setup);
         ServerTickEvents.END_SERVER_TICK.register(SelfTest::tick);
         ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamage, damageTaken, blocked) -> {

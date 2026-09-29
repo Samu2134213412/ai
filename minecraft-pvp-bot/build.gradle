@@ -14,6 +14,9 @@ loom {
             if (project.hasProperty('selftest')) {
                 vmArg '-Dpvpbot.selftest=true'
             }
+            if (project.hasProperty('stagetest')) {
+                vmArg '-Dpvpbot.stagetest=true'
+            }
         }
     }
     mods {
