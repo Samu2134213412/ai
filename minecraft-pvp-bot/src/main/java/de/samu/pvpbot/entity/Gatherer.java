@@ -322,6 +322,8 @@ final class Gatherer {
     private @Nullable Vec3 legStart;
     private boolean eyeWentDown;
     private int legTicks;
+    private double legBest;
+    private int legStuckTicks;
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
     private boolean seenDragon;
     private boolean gameBeaten;
@@ -1288,6 +1290,8 @@ final class Gatherer {
             this.bot.tellOwner("§7Das Enderauge ist zerbrochen.", false);
         }
         this.legTicks = 0;
+        this.legBest = 0.0;
+        this.legStuckTicks = 0;
         this.legStart = this.bot.position();
         if (target == null) {
             this.bot.tellOwner("§cDas Enderauge zeigt nirgendwo hin – hier gibt es keine Festung.", true);
@@ -1319,23 +1323,53 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        boolean stuck = this.noProgress();
-        boolean walking = !stuck && !this.bot.getNavigation().isDone() && this.exploreTarget != null
-                && this.bot.position().distanceToSqr(this.exploreTarget) > 4.0;
+        // Progress is measured along the eye's line, not just as movement (pacing back and forth
+        // in front of a lake is not progress).
+        double along = this.bot.position().subtract(this.legStart).dot(this.eyeDir);
+        if (along > this.legBest + 1.0) {
+            this.legBest = along;
+            this.legStuckTicks = 0;
+        } else {
+            this.legStuckTicks++;
+        }
+        boolean walking = !this.bot.getNavigation().isDone() && this.exploreTarget != null
+                && this.bot.position().distanceToSqr(this.exploreTarget) > 4.0 && this.legStuckTicks < 100;
         if (!walking) {
-            // Next waypoint along the eye's line (kept, so the path is not rebuilt every tick).
-            Vec3 goal = this.bot.position().add(this.eyeDir.scale(12.0));
-            int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(goal.x), Mth.floor(goal.z));
-            this.exploreTarget = new Vec3(goal.x, y, goal.z);
-            boolean path = !stuck && this.bot.getNavigation().moveTo(goal.x, y, goal.z, 1.1);
+            // Straight on if possible, otherwise the smallest detour around water, cliffs and hills.
+            double[] turns = this.legStuckTicks < 100 ? new double[]{0.0} : new double[]{0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0};
+            if (this.legStuckTicks >= 100 && this.bot.getRandom().nextBoolean()) {
+                for (int i = 1; i + 1 < turns.length; i += 2) {
+                    double t = turns[i];
+                    turns[i] = turns[i + 1];
+                    turns[i + 1] = t;
+                }
+            }
+            boolean path = false;
+            Vec3 goal = null;
+            for (double turn : turns) {
+                Vec3 dir = this.eyeDir.yRot((float) Math.toRadians(turn));
+                Vec3 g = this.bot.position().add(dir.scale(turn == 0.0 ? 12.0 : 16.0));
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(g.x), Mth.floor(g.z));
+                var p = this.bot.getNavigation().createPath(Mth.floor(g.x), y, Mth.floor(g.z), 1);
+                if (p != null && p.canReach() && level.getFluidState(new BlockPos(Mth.floor(g.x), y - 1, Mth.floor(g.z))).isEmpty()) {
+                    this.bot.getNavigation().moveTo(p, 1.1);
+                    goal = new Vec3(g.x, y, g.z);
+                    path = true;
+                    if (turn != 0.0) {
+                        this.legStuckTicks = 40; // walk the detour, then try straight on again
+                    }
+                    break;
+                }
+            }
+            this.exploreTarget = goal;
             if (!path) {
-                // No way to walk there (water, cliffs, caves): tunnel straight on.
+                // No way to walk anywhere near the line: tunnel straight on.
                 this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
                 this.doDig(level, false);
             }
             if (PvpBotEntity.DEBUG && this.legTicks % 100 == 0) {
-                PvpBotMod.LOGGER.info("[SELFTEST]   eye: pos {} goal {} {} {} path={} stuck={} travelled={}", this.bot.blockPosition().toShortString(),
-                        Mth.floor(goal.x), y, Mth.floor(goal.z), path, stuck, (int) travelled);
+                PvpBotMod.LOGGER.info("[SELFTEST]   eye: pos {} goal {} path={} stuckTicks={} along={}", this.bot.blockPosition().toShortString(),
+                        goal == null ? "-" : BlockPos.containing(goal).toShortString(), path, this.legStuckTicks, (int) along);
             }
         }
         this.step = null;
