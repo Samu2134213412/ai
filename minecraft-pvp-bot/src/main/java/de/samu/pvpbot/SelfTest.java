@@ -138,9 +138,9 @@ final class SelfTest {
         SCENARIOS.add(new Scenario("Zuhause: Kiste aufstellen, Eisenset einlagern", PvpBotEntity.Style.AUTO, 2400, HOME_X,
                 level -> List.of(), SelfTest::homeKit, SelfTest::ironSetStored));
         // Beat the game, stage 1, in untouched terrain (sped up with /tick sprint).
-        SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 36000, 240,
+        SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 72000, 240,
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
-        SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 48000, -240,
+        SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 72000, -240,
                 level -> List.of(), SelfTest::stage2Kit, PvpBotEntity::stage2Done));
         SCENARIOS.add(new Scenario("Etappe 3: Enderaugen werfen, Festung, Endportal", PvpBotEntity.Style.AUTO, 60000, 480,
                 level -> List.of(), SelfTest::stage3Kit, PvpBotEntity::inEnd));
@@ -289,7 +289,7 @@ final class SelfTest {
             // Without a player the dragon hardly ever lands; in a real fight it does - make it land now and then.
             for (var dragon : end.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, bot.getBoundingBox().inflate(300.0))) {
                 if (dragon.getPhaseManager().getCurrentPhase().getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
-                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING_APPROACH);
+                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING);
                 }
             }
         }

@@ -1731,17 +1731,45 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (this.bot.getNavigation().isDone() || this.exploreTarget == null || this.bot.position().distanceToSqr(this.exploreTarget) < 9.0) {
-            Vec3 dir = new Vec3(this.digDir.getStepX(), 0.0, this.digDir.getStepZ());
+        // A square spiral around where it arrived (legs of 64, 64, 128, 128, 192 ...), so it covers
+        // the area around the portal instead of running off in one line.
+        if (this.spiralStart == null) {
+            this.spiralStart = this.bot.blockPosition();
+            this.spiralLegStart = this.bot.blockPosition();
+            this.spiralLeg = 0;
+            this.spiralDir = this.digDir;
+        }
+        int legLength = 64 * (this.spiralLeg / 2 + 1);
+        BlockPos here = this.bot.blockPosition();
+        int travelled = Math.abs(here.getX() - this.spiralLegStart.getX()) + Math.abs(here.getZ() - this.spiralLegStart.getZ());
+        if (travelled >= legLength || this.noProgressTicks > 400) {
+            this.spiralLeg++;
+            this.spiralDir = this.spiralDir.getClockWise();
+            this.spiralLegStart = here;
+            this.noProgressTicks = 0;
+            this.exploreTarget = null;
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   nether spiral: leg {} towards {} at {}", this.spiralLeg, this.spiralDir, here.toShortString());
+            }
+        }
+        boolean stuck = this.noProgress();
+        if (this.bot.getNavigation().isDone() || stuck || this.exploreTarget == null || this.bot.position().distanceToSqr(this.exploreTarget) < 9.0) {
+            Vec3 dir = new Vec3(this.spiralDir.getStepX(), 0.0, this.spiralDir.getStepZ());
             Vec3 candidate = this.bot.position().add(dir.scale(24.0));
             this.exploreTarget = candidate;
-            if (!this.bot.getNavigation().moveTo(candidate.x, candidate.y, candidate.z, 1.1)) {
+            if (stuck || !this.bot.getNavigation().moveTo(candidate.x, candidate.y, candidate.z, 1.1)) {
                 // No walkable way: tunnel straight on (doDig turns away from lava).
+                this.digDir = this.spiralDir;
                 this.doDig(level, false);
             }
         }
         this.step = null;
     }
+
+    private @Nullable BlockPos spiralStart;
+    private @Nullable BlockPos spiralLegStart;
+    private int spiralLeg;
+    private Direction spiralDir = Direction.NORTH;
 
     // --- stage 3: stronghold
 
