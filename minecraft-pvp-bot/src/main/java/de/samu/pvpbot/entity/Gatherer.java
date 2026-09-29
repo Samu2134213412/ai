@@ -644,7 +644,8 @@ final class Gatherer {
         for (Entity e : this.level().getEntities(this.bot, this.bot.getBoundingBox().inflate(40.0))) {
             boolean food = e.getType() == EntityTypes.COW || e.getType() == EntityTypes.PIG || e.getType() == EntityTypes.SHEEP
                     || e.getType() == EntityTypes.CHICKEN || e.getType() == EntityTypes.RABBIT;
-            if (food && e instanceof LivingEntity living && living.isAlive() && !living.isBaby() && this.bot.distanceToSqr(e) < best) {
+            if (food && e instanceof LivingEntity living && living.isAlive() && !living.isBaby() && this.bot.distanceToSqr(e) < best
+                    && this.bot.getSensing().hasLineOfSight(living)) {
                 prey = living;
                 best = this.bot.distanceToSqr(e);
             }
@@ -862,6 +863,18 @@ final class Gatherer {
         return best;
     }
 
+    /** True when a line from the bot's eyes reaches this block without passing through others. */
+    private boolean seesBlock(ServerLevel level, BlockPos p) {
+        Vec3 eye = this.bot.getEyePosition();
+        Vec3 center = Vec3.atCenterOf(p);
+        if (eye.distanceToSqr(center) > 24.0 * 24.0) {
+            return false;
+        }
+        var hit = level.clip(new net.minecraft.world.level.ClipContext(eye, center, net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                net.minecraft.world.level.ClipContext.Fluid.ANY, this.bot));
+        return hit.getBlockPos().equals(p) || hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS;
+    }
+
     private boolean isExposed(BlockPos p) {
         for (Direction d : Direction.values()) {
             if (this.level().getBlockState(p.relative(d)).getCollisionShape(this.level(), p.relative(d)).isEmpty()) {
@@ -1055,8 +1068,8 @@ final class Gatherer {
                 for (Ore ore : Ore.values()) {
                     if (ore.match.test(state)) {
                         List<BlockPos> list = this.scanning.computeIfAbsent(ore, k -> new ArrayList<>());
-                        // Plain stone is everywhere: remember only exposed pieces.
-                        if (list.size() < 64 && (ore != Ore.STONE || this.isExposed(p))) {
+                        // No x-ray: only blocks that are uncovered and in plain sight from where the bot is.
+                        if (list.size() < 64 && this.isExposed(p) && (ore == Ore.STONE || this.seesBlock(level, p))) {
                             list.add(p);
                         }
                         break;
@@ -1074,7 +1087,7 @@ final class Gatherer {
         ItemEntity closest = null;
         double best = 10.0 * 10.0;
         for (ItemEntity item : this.level().getEntitiesOfClass(ItemEntity.class, this.bot.getBoundingBox().inflate(10.0))) {
-            if (item.isAlive() && isUseful(item.getItem()) && this.bot.distanceToSqr(item) < best) {
+            if (item.isAlive() && isUseful(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)) {
                 closest = item;
                 best = this.bot.distanceToSqr(item);
             }

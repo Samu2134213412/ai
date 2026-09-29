@@ -212,6 +212,10 @@ public final class Autopilot {
             return;
         }
 
+        if (this.trackSight(mc, p, t)) {
+            this.applyKeys(mc);
+            return;
+        }
         if (this.pattern != null) {
             this.attemptTicks++;
             this.phaseTicks++;
@@ -244,6 +248,48 @@ public final class Autopilot {
         this.applyKeys(mc);
     }
 
+    private @Nullable Vec3 lastSeen;
+    private int unseenTicks;
+    private @Nullable Entity sightOf;
+
+    /**
+     * No wallhacks: we only know where the target is while we see it. Out of sight we walk to where
+     * it was last seen, and give up if it is not there. Returns true while searching.
+     */
+    private boolean trackSight(Minecraft mc, LocalPlayer p, LivingEntity t) {
+        if (this.sightOf != t) {
+            this.sightOf = t;
+            this.lastSeen = null;
+            this.unseenTicks = 0;
+        }
+        if (p.hasLineOfSight(t)) {
+            this.lastSeen = t.position();
+            this.unseenTicks = 0;
+            return false;
+        }
+        this.unseenTicks++;
+        if (p.isFallFlying() || this.unseenTicks <= 40 && this.lastSeen != null) {
+            return false;
+        }
+        boolean there = this.lastSeen != null && p.position().distanceToSqr(this.lastSeen) < 2.5;
+        if (this.lastSeen == null || this.unseenTicks > 300 || there && this.unseenTicks > 120) {
+            this.say(mc, "§7" + t.getName().getString() + (this.lastSeen == null ? " ist nicht in Sicht." : " aus den Augen verloren."));
+            this.finishAttempt(mc);
+            this.target = null;
+            this.sightOf = null;
+            return true;
+        }
+        this.finishAttempt(mc);
+        this.face(p, this.lastSeen.subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 25.0F);
+        this.kForward = !there;
+        this.kSprint = !there;
+        if (p.horizontalCollision && p.onGround()) {
+            this.kJump = true;
+        }
+        this.status(p, "§7sucht " + t.getName().getString() + " (zuletzt gesehen)");
+        return true;
+    }
+
     private void refreshTarget(Minecraft mc, LocalPlayer p) {
         if (this.target != null && (!this.target.isAlive() || this.target.isRemoved() || this.target.level() != p.level()
                 || p.distanceToSqr(this.target) > 160.0 * 160.0)) {
@@ -253,14 +299,15 @@ public final class Autopilot {
             this.target = null;
         }
         if (this.target == null && this.targetMode != TargetMode.MANUAL) {
-            AABB box = p.getBoundingBox().inflate(this.targetMode == TargetMode.MOBS ? 24.0 : 96.0);
+            AABB box = p.getBoundingBox().inflate(this.targetMode == TargetMode.MOBS ? 24.0 : 64.0);
             Entity best = null;
             double bestDist = Double.MAX_VALUE;
             for (Entity e : mc.level.getEntities(p, box)) {
                 boolean fits = this.targetMode == TargetMode.MOBS
                         ? e instanceof Enemy && e instanceof LivingEntity
                         : e instanceof Player other && !other.isSpectator() && !other.isCreative();
-                if (fits && e.isAlive() && p.distanceToSqr(e) < bestDist) {
+                // Only what we can actually see: no finding players through walls.
+                if (fits && e.isAlive() && p.distanceToSqr(e) < bestDist && p.hasLineOfSight(e)) {
                     best = e;
                     bestDist = p.distanceToSqr(e);
                 }
@@ -1068,7 +1115,7 @@ public final class Autopilot {
         for (net.minecraft.world.entity.item.ItemEntity item : p.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                 p.getBoundingBox().inflate(12.0))) {
             double d = p.distanceToSqr(item);
-            if (item.isAlive() && d < best && Math.abs(item.getY() - p.getY()) < 3.0) {
+            if (item.isAlive() && d < best && Math.abs(item.getY() - p.getY()) < 3.0 && p.hasLineOfSight(item)) {
                 closest = item;
                 best = d;
             }
@@ -1325,9 +1372,21 @@ public final class Autopilot {
 
     // ------------------------------------------------------------------ actions
 
+    /**
+     * Turns towards the target at a human speed and only swings when the crosshair is really on it
+     * (spear jabs: when looking straight at it). No snapping, no hits around corners.
+     */
     private void attack(Minecraft mc, LocalPlayer p, LivingEntity t) {
-        this.faceEntity(p, t, 180.0F);
-        mc.hitResult = p.raycastHitResult(1.0F, p);
+        this.faceEntity(p, t, 40.0F);
+        HitResult hit = p.raycastHitResult(1.0F, p);
+        boolean piercing = p.getMainHandItem().has(DataComponents.PIERCING_WEAPON);
+        Vec3 toT = t.getBoundingBox().getCenter().subtract(p.getEyePosition()).normalize();
+        boolean aimed = piercing ? p.getLookAngle().dot(toT) > 0.97
+                : hit instanceof net.minecraft.world.phys.EntityHitResult entityHit && entityHit.getEntity() == t;
+        if (!aimed) {
+            return;
+        }
+        mc.hitResult = hit;
         ((MinecraftInvoker) mc).pvpbot$startAttack();
     }
 

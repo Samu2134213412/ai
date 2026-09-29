@@ -108,6 +108,9 @@ public class PvpBotEntity extends PathfinderMob {
     private boolean assisting = true;
     private Style style = Style.AUTO;
     private final Deque<UUID> targetQueue = new ArrayDeque<>();
+    // No wallhacks: the bot only knows where a target is while it can see it.
+    private @Nullable Vec3 lastSeenPos;
+    private int unseenTicks;
 
     private final BotKit kit = new BotKit();
     final Gatherer gatherer = new Gatherer(this);
@@ -800,13 +803,53 @@ public class PvpBotEntity extends PathfinderMob {
             this.setTarget(null);
             current = null;
         }
-        while (current == null && !this.targetQueue.isEmpty()) {
-            Entity next = level.getEntity(this.targetQueue.pollFirst());
-            if (next instanceof LivingEntity living && this.isValidTarget(living)) {
-                this.setTarget(living);
-                current = living;
+        if (current == null && !this.targetQueue.isEmpty() && this.tickCount % 10 == 0) {
+            // Take the next target it can actually see (or hear right next to it), like a player would.
+            for (java.util.Iterator<UUID> it = this.targetQueue.iterator(); it.hasNext(); ) {
+                Entity next = level.getEntity(it.next());
+                if (!(next instanceof LivingEntity living) || !this.isValidTarget(living)) {
+                    it.remove();
+                    continue;
+                }
+                if (this.getSensing().hasLineOfSight(living) || this.distanceTo(living) < 5.0) {
+                    it.remove();
+                    this.setTarget(living);
+                    current = living;
+                    break;
+                }
             }
         }
+        if (current == null) {
+            this.lastSeenPos = null;
+            this.unseenTicks = 0;
+        } else if (this.getSensing().hasLineOfSight(current)) {
+            this.lastSeenPos = current.position();
+            this.unseenTicks = 0;
+        } else {
+            this.unseenTicks++;
+            boolean reachedLastSeen = this.lastSeenPos != null && this.position().distanceToSqr(this.lastSeenPos) < 4.0;
+            if (this.lastSeenPos == null || this.unseenTicks > 400 || reachedLastSeen && this.unseenTicks > 160) {
+                this.tellOwner("§7Ich habe " + current.getName().getString() + " aus den Augen verloren.", true);
+                if (this.duelOwner && this.isOwnedBy(current)) {
+                    this.duelOwner = false;
+                }
+                this.setTarget(null);
+                this.lastSeenPos = null;
+                this.unseenTicks = 0;
+            }
+        }
+    }
+
+    /** Out of sight for a while: go where it was last seen instead of knowing where it is. */
+    private boolean searchLastSeen() {
+        if (this.unseenTicks <= 60 || this.lastSeenPos == null || this.isFallFlying()) {
+            return false;
+        }
+        this.manualRotation = false;
+        this.setSprinting(true);
+        this.getNavigation().moveTo(this.lastSeenPos.x, this.lastSeenPos.y, this.lastSeenPos.z, 1.2);
+        this.getLookControl().setLookAt(this.lastSeenPos.x, this.lastSeenPos.y + 1.5, this.lastSeenPos.z);
+        return true;
     }
 
     // ------------------------------------------------------------------ movement helpers
@@ -1046,6 +1089,9 @@ public class PvpBotEntity extends PathfinderMob {
     // ------------------------------------------------------------------ combat
 
     private void tickCombat(ServerLevel level, LivingEntity target) {
+        if (this.searchLastSeen()) {
+            return;
+        }
         this.modeTicks++;
         if (this.pattern != null) {
             this.attemptTicks++;

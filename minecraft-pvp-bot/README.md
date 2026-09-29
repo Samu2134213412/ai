@@ -92,6 +92,31 @@ Auf GitHub unter **Actions → „PvP Bot - build mod“ → neuester grüner La
 `pvpbot-mod` (Bot) und `pvpbot-autopilot` (Autopilot). Das sind ZIP-Dateien, in denen die `.jar` liegt.
 Selbst bauen geht auch mit `./gradlew build` (Java 25 nötig).
 
+## Menüs
+
+- **Taste O**: PvP-Bot-Menü (Bot erschaffen, angreifen, Duell, folgen, Kit, Sammeln, Durchspielen, Tricks, Gelerntes …).
+  Jeder Button führt einfach den passenden `/pvpbot`-Befehl aus.
+- **Taste N**: Autopilot-Menü (an/aus, Ziel, Tricks) und Schalter für jede Taktik
+  (Elytra, Windladungen, Speer, Bogen, Attribute-Swap, Schild, W-Tap, Enderperlen, Wassereimer, Tränke, Essen, Beute, Chat).
+  Die Schalter werden in `config/pvpbot-autopilot.properties` gespeichert.
+
+Die Tasten lassen sich in den Minecraft-Einstellungen unter *Steuerung* ändern.
+
+## Fair Play – kein Cheaten
+
+Beide sehen nur, was ein Spieler auch sehen würde:
+- Ziele werden nur angegriffen, wenn sie **in Sichtlinie** sind. Verschwindet ein Ziel hinter einer Wand,
+  gehen sie zur letzten gesehenen Stelle, suchen kurz und geben dann auf („aus den Augen verloren“).
+- Beim Sammeln kennt der Bot nur **freiliegende Blöcke, die er sehen kann** – kein Röntgenblick durch Stein.
+- Der Autopilot dreht sich mit menschlicher Geschwindigkeit und schlägt nur zu, wenn das Fadenkreuz wirklich
+  auf dem Gegner ist (normale Reichweite, keine Treffer um die Ecke).
+
+## Durchspielen (Etappe 1)
+
+`/pvpbot durchspielen` (für einen Survival-Bot): Wassereimer → Treppe nach unten auf Diamant-Höhe und Stollen
+graben → Diamantspitzhacke → Wasser auf Lava gießen und 10 Obsidian abbauen → Feuerstein aus Kies → Feuerzeug →
+Netherportal bauen und anzünden. Die nächsten Etappen (Nether, Stronghold, Drache) folgen.
+
 ## Befehle – PvP-Bot
 
 | Befehl | Wirkung |
@@ -111,6 +136,8 @@ Selbst bauen geht auch mit `./gradlew build` (Java 25 nötig).
 | `/pvpbot follow` / `/pvpbot stay` | Dir folgen oder stehen bleiben |
 | `/pvpbot assist on\|off` | Wenn an (Standard): Der Bot greift alles an, was **du schlägst** und was **dich schlägt**. |
 | `/pvpbot weapon auto\|mace\|spear` | Mace und/oder Speer erlauben |
+| `/pvpbot trick <name>` | Nächster Angriff: `kombo`, `smash`, `ansturm`, `stiche`, `sturzflug`, `speerflug`, `mace`, `schwert`, `bogen` |
+| `/pvpbot durchspielen` / `durchspielen stop` | Survival-Bot spielt Minecraft durch (Etappe 1: Netherportal) |
 | `/pvpbot brain` / `brain reset` | Zeigt bzw. löscht, was die Bots gelernt haben |
 | `/pvpbot chat on\|off` | Ob die Bots dir im Chat erzählen, was sie lernen oder ob sie feststecken |
 | `/pvpbot tp` · `list` · `remove` | Herholen · Status · Entfernen |
@@ -126,6 +153,8 @@ Selbst bauen geht auch mit `./gradlew build` (Java 25 nötig).
 | `/autopilot target nearest` | Immer den nächsten Spieler angreifen |
 | `/autopilot target mobs` | Monster in der Nähe bekämpfen |
 | `/autopilot stop` | Ziel vergessen |
+| `/autopilot trick <name>` | Nächster Angriff (wie beim Bot) |
+| **N** | Autopilot-Menü mit allen Einstellungen |
 | `/autopilot brain` / `brain reset` | Gelerntes anzeigen / löschen |
 
 Die Tasten lassen sich in den Minecraft-Einstellungen unter *Steuerung → PvP-Autopilot* ändern.
