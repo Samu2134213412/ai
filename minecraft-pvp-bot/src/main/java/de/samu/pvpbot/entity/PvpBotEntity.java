@@ -416,7 +416,7 @@ public class PvpBotEntity extends PathfinderMob {
         return this.gatherer.isAutonomous();
     }
 
-    public void setHome(@org.jspecify.annotations.Nullable net.minecraft.core.BlockPos home) {
+    public void setHome(net.minecraft.core.@org.jspecify.annotations.Nullable BlockPos home) {
         this.gatherer.setHome(home, home == null ? null : this.level().dimension());
     }
 

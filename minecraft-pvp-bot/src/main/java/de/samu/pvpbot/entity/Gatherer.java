@@ -759,7 +759,7 @@ final class Gatherer {
         return out;
     }
 
-    private @Nullable net.minecraft.world.Container chestAt(BlockPos pos) {
+    private net.minecraft.world.@Nullable Container chestAt(BlockPos pos) {
         return this.level().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest ? chest : null;
     }
 
