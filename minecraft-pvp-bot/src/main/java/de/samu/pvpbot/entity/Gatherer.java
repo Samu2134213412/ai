@@ -2204,7 +2204,20 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (this.strongholdTicks > 200 || !this.bot.getNavigation().moveTo(best.getX() + 0.5, best.getY() + 1, best.getZ() + 0.5, 1.0) || this.noProgress()) {
+        // Walk along the corridor next to the wall (not into the wall: that is slow and wakes silverfish).
+        BlockPos stand = best.above();
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos side = best.relative(d);
+            if (level.getBlockState(side).getCollisionShape(level, side).isEmpty() && level.getBlockState(side.above()).getCollisionShape(level, side.above()).isEmpty()) {
+                stand = side;
+                while (stand.getY() > level.getMinY() && level.getBlockState(stand.below()).getCollisionShape(level, stand.below()).isEmpty()
+                        && best.getY() - stand.getY() < 4) {
+                    stand = stand.below();
+                }
+                break;
+            }
+        }
+        if (this.strongholdTicks > 200 || !this.bot.getNavigation().moveTo(stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 1.0) || this.noProgress()) {
             this.mineTarget = best;
             this.tunnelTowards(level, best);
             if (this.noProgressTicks > 200) {
