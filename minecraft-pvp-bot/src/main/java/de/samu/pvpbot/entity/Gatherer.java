@@ -2027,6 +2027,13 @@ final class Gatherer {
             return;
         }
         this.legTicks++;
+        if (this.bot.isInWater() && this.bot.horizontalCollision) {
+            // Swimming against a bank: cut a step into it and climb out (a swimming mob cannot get up
+            // a bank higher than one block).
+            this.climbBank(level);
+            this.step = null;
+            return;
+        }
         double travelled = this.bot.position().subtract(this.legStart).horizontalDistance();
         if (travelled > this.eyeLeg) {
             this.legTicks = Integer.MAX_VALUE / 2; // throw the next eye
