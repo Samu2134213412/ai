@@ -236,6 +236,14 @@ final class Survival {
         if (this.job != null) {
             return this.tickJob(mc, p);
         }
+        if (p.isUnderWater() && p.getAirSupply() < p.getMaxAirSupply() / 2) {
+            // Running out of air: straight up.
+            this.say(p, "taucht auf");
+            this.ap.lookAt(p, p.getYRot(), -60.0F, 30.0F);
+            this.ap.kJump = true;
+            this.ap.kForward = true;
+            return true;
+        }
         if (this.ap.collectLoot(mc, p)) {
             this.say(p, "sammelt Beute auf");
             return true;
@@ -276,6 +284,18 @@ final class Survival {
         }
         if (swordTier(p) < 2) {
             return this.makeWithTable(mc, p, level, R_STONE_SWORD, "ein Steinschwert");
+        }
+        // Before going underground: sticks and planks for the next tools, and a spare crafting table.
+        if (p.getY() > 50 && (count(p, STICK) < 6 || count(p, PLANKS) + count(p, LOG) * 4 < 12 || !has(p, Items.CRAFTING_TABLE))) {
+            if (count(p, STICK) < 6 && count(p, PLANKS) >= 2) {
+                return this.craft(mc, p, level, R_STICKS);
+            }
+            if (!has(p, Items.CRAFTING_TABLE) && count(p, PLANKS) >= 4) {
+                return this.craft(mc, p, level, R_TABLE);
+            }
+            if (count(p, PLANKS) + count(p, LOG) * 4 < 12 || count(p, PLANKS) < 2) {
+                return this.getPlanks(mc, p, level, count(p, PLANKS) + 4, "Holzvorrat für unter Tage");
+            }
         }
         // 3. Food, when there is little and an animal is in sight.
         if (foodCount(p) < 4 && this.hunt(mc, p, level)) {
@@ -389,6 +409,10 @@ final class Survival {
         }
         this.say(p, "fällt Bäume für " + label);
         BlockPos log = this.nearest(level, p, Kind.LOG);
+        if (log == null && p.getY() < 50 && !level.canSeeSky(p.blockPosition())) {
+            // Underground and no wood: climb back up (a staircase to the surface).
+            return this.digUp(mc, p, level);
+        }
         if (log == null) {
             return this.explore(mc, p, level, "sucht Bäume");
         }
@@ -424,30 +448,45 @@ final class Survival {
     }
 
     /** Places a block from the inventory on free ground next to the player. */
+    private int placeTries;
+
     private boolean place(Minecraft mc, LocalPlayer p, Level level, Item item, String what) {
         this.say(p, what);
         BlockPos feet = p.blockPosition();
-        for (Direction d : Direction.Plane.HORIZONTAL) {
-            BlockPos spot = feet.relative(d);
-            if (level.getBlockState(spot).isAir() && level.getBlockState(spot.above()).isAir() && PathFinder.solidGround(level, spot.below())) {
-                int index = this.indexOf(p, st -> st.is(item));
-                int slot = this.ap.toHotbar(mc, p, index);
-                if (slot < 0) {
-                    return false;
-                }
-                p.getInventory().setSelectedSlot(slot);
-                BlockPos ground = spot.below();
-                Vec3 face = Vec3.atCenterOf(ground).add(0.0, 0.5, 0.0);
-                this.ap.face(p, face.subtract(p.getEyePosition()), 90.0F);
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(face, Direction.UP, ground, false));
-                Kind kind = item == Items.CRAFTING_TABLE ? Kind.TABLE : Kind.FURNACE;
-                this.seen.computeIfAbsent(kind, k -> new LinkedHashSet<>()).add(spot);
-                return true;
+        Direction[] dirs = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
+        for (int k = 0; k < 8; k++) {
+            // Two blocks away (never where the player itself stands), a different spot each try.
+            int i = (k + this.placeTries) % 8;
+            BlockPos spot = feet.relative(dirs[i % 4], 2).offset(i >= 4 ? dirs[(i + 1) % 4].getStepX() : 0, 0, i >= 4 ? dirs[(i + 1) % 4].getStepZ() : 0);
+            if (!level.getBlockState(spot).canBeReplaced() || !level.getBlockState(spot.above()).canBeReplaced()
+                    || !PathFinder.solidGround(level, spot.below()) || p.getBoundingBox().intersects(new AABB(spot))) {
+                continue;
             }
+            int index = this.indexOf(p, st -> st.is(item));
+            int slot = this.ap.toHotbar(mc, p, index);
+            if (slot < 0) {
+                return false;
+            }
+            p.getInventory().setSelectedSlot(slot);
+            BlockPos ground = spot.below();
+            Vec3 face = Vec3.atCenterOf(ground).add(0.0, 0.5, 0.0);
+            this.ap.face(p, face.subtract(p.getEyePosition()), 90.0F);
+            if (this.placeWait++ < 4) {
+                return true; // turn towards it first
+            }
+            this.placeWait = 0;
+            this.placeTries++;
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(face, Direction.UP, ground, false));
+            Kind kind = item == Items.CRAFTING_TABLE ? Kind.TABLE : Kind.FURNACE;
+            this.seen.computeIfAbsent(kind, key -> new LinkedHashSet<>()).add(spot);
+            return true;
         }
         // No free spot around: step somewhere else.
+        this.placeTries++;
         return this.explore(mc, p, level, what);
     }
+
+    private int placeWait;
 
     private int indexOf(LocalPlayer p, Predicate<ItemStack> match) {
         List<ItemStack> items = p.getInventory().getNonEquipmentItems();
@@ -784,6 +823,32 @@ final class Survival {
         Vec3 c = Vec3.atBottomCenterOf(step);
         this.ap.face(p, c.subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 30.0F);
         this.ap.kForward = true;
+        return true;
+    }
+
+    /** Staircase up: clear head room, the step ahead and the space above it, then jump onto it. */
+    private boolean digUp(Minecraft mc, LocalPlayer p, Level level) {
+        this.say(p, "gräbt sich nach oben (y " + p.getBlockY() + ")");
+        BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+        Direction d = p.getDirection();
+        BlockPos step = feet.relative(d).above();
+        for (BlockPos b : new BlockPos[]{feet.above(2), step.above(2), step.above()}) {
+            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b)) {
+                this.ap.lookAt(p, p.getYRot() + 90.0F, 0.0F, 90.0F);
+                return true;
+            }
+            if (!PathFinder.body(level, b)) {
+                return this.mine(mc, p, level, b);
+            }
+        }
+        if (PathFinder.body(level, step)) {
+            // Nothing to stand on: the step is air, just walk forward.
+            this.ap.kForward = true;
+            return true;
+        }
+        this.ap.face(p, Vec3.atCenterOf(step).subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 30.0F);
+        this.ap.kForward = true;
+        this.ap.kJump = p.onGround();
         return true;
     }
 
