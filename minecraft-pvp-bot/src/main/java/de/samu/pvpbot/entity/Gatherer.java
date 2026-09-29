@@ -1023,6 +1023,11 @@ final class Gatherer {
             Step s = this.resolveItem(Items.DIAMOND_PICKAXE, 0);
             return s != null ? s : this.deepStep();
         }
+        if (this.portalBase != null && kit.count(st -> st.is(Items.FLINT_AND_STEEL)) > 0) {
+            // Already building: the blocks in the frame count too.
+            this.goalLabel = "das Netherportal";
+            return new BuildPortal();
+        }
         if (kit.count(Res.OBSIDIAN.match) < 10) {
             this.goalLabel = "Obsidian fürs Netherportal (" + kit.count(Res.OBSIDIAN.match) + "/10)";
             if (this.nearest(Ore.OBSIDIAN) != null) {
@@ -1463,6 +1468,14 @@ final class Gatherer {
             }
         }
         if (prey == null) {
+            if (this.level() instanceof ServerLevel sl && sl.dimension() == net.minecraft.world.level.Level.OVERWORLD
+                    && sl.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, this.bot.getBlockX(), this.bot.getBlockZ())
+                    > this.bot.getY() + 6.0) {
+                // Animals live up on the surface.
+                this.doDigUp(sl);
+                this.step = null;
+                return;
+            }
             this.doExplore();
             return;
         }
@@ -1735,6 +1748,7 @@ final class Gatherer {
                 level.setBlock(p, net.minecraft.world.level.block.Blocks.OBSIDIAN.defaultBlockState(), 3);
                 level.playSound(null, p, SoundEvents.STONE_PLACE, this.bot.getSoundSource(), 1.0F, 1.0F);
             }
+            this.blacklist.add(p.immutable()); // its own frame is not obsidian to mine
             this.portalProgress++;
             return;
         }
@@ -1997,7 +2011,10 @@ final class Gatherer {
                 Vec3 g = this.bot.position().add(dir.scale(turn == 0.0 ? 12.0 : 16.0));
                 int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(g.x), Mth.floor(g.z));
                 var p = this.bot.getNavigation().createPath(Mth.floor(g.x), y, Mth.floor(g.z), 1);
-                if (p != null && p.canReach() && level.getFluidState(new BlockPos(Mth.floor(g.x), y - 1, Mth.floor(g.z))).isEmpty()) {
+                // A path that only gets part of the way is fine too, as long as it gets well closer.
+                boolean useful = p != null && (p.canReach() || p.getEndNode() != null
+                        && Vec3.atCenterOf(p.getEndNode().asBlockPos()).distanceTo(g) < this.bot.position().distanceTo(g) - 6.0);
+                if (useful && level.getFluidState(new BlockPos(Mth.floor(g.x), y - 1, Mth.floor(g.z))).isEmpty()) {
                     this.bot.getNavigation().moveTo(p, 1.1);
                     goal = new Vec3(g.x, y, g.z);
                     path = true;
