@@ -298,7 +298,14 @@ final class SelfTest {
                 && bot.level() instanceof ServerLevel end) {
             // Without a player the dragon hardly ever lands; in a real fight it does - make it land now and then.
             for (var dragon : end.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, bot.getBoundingBox().inflate(300.0))) {
-                if (dragon.getPhaseManager().getCurrentPhase().getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
+                var phase = dragon.getPhaseManager().getCurrentPhase();
+                boolean frozen = dragonLastPos != null && dragon.position().distanceTo(dragonLastPos) < 0.5 && !phase.isSitting();
+                dragonLastPos = dragon.position();
+                if (frozen) {
+                    // A summoned dragon sometimes loses its flight path and just hangs there: start it again.
+                    PvpBotMod.LOGGER.info(TAG + "  (test) dragon hung in " + phase.getPhase() + " at " + dragon.blockPosition().toShortString() + " - restarting its flight");
+                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.TAKEOFF);
+                } else if (phase.getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
                     dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING);
                 }
             }
@@ -358,9 +365,10 @@ final class SelfTest {
             int sx = end ? 0 : origin.getX() + baseX;
             int sz0 = end ? 60 : origin.getZ();
             if (scenario.name().startsWith("Etappe 2")) {
-                // Portal ~250 blocks (nether) from a fortress: the test is about finding and using one.
-                sx = -4400;
-                sz0 = -5500;
+                // Portal ~60 blocks (nether) from the fortress at -752/-832 (overworld x8): the test is
+                // about finding one, getting blaze rods and ender pearls.
+                sx = -5600;
+                sz0 = -6400;
             } else if (scenario.name().startsWith("Etappe 3")) {
                 // Start ~300 blocks from the stronghold (the long walk is tested separately).
                 BlockPos stronghold = level.findNearestMapStructure(net.minecraft.tags.StructureTags.EYE_OF_ENDER_LOCATED, origin, 100, false);
@@ -543,6 +551,8 @@ final class SelfTest {
         kit.add(new ItemStack(Items.ARROW, 64));
         return kit;
     }
+
+    private static net.minecraft.world.phys.@org.jspecify.annotations.Nullable Vec3 dragonLastPos;
 
     private static void cleanup() {
         if (!spawned.isEmpty() && spawned.get(0).level() instanceof ServerLevel sl) {
