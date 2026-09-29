@@ -946,7 +946,7 @@ public class PvpBotEntity extends PathfinderMob {
             }
             if (low && heals || missing && dist > 6.0) {
                 for (MobEffectInstance effect : contents.getAllEffects()) {
-                    if (effect.getEffect().value().isInstantenous()) {
+                    if (effect.getDuration() <= 1) {
                         this.heal(effect.getAmplifier() >= 1 ? 8.0F : 4.0F);
                     } else {
                         this.addEffect(new MobEffectInstance(effect));
@@ -1168,7 +1168,8 @@ public class PvpBotEntity extends PathfinderMob {
                 this.doHurtTarget(level, target);
                 if (fast) {
                     // Like a player's sprint hit (w-tap): extra knockback.
-                    target.knockback(0.4, Mth.sin(this.getYRot() * Mth.DEG_TO_RAD), -Mth.cos(this.getYRot() * Mth.DEG_TO_RAD));
+                    target.push(-Mth.sin(this.getYRot() * Mth.DEG_TO_RAD) * 0.4, 0.1, Mth.cos(this.getYRot() * Mth.DEG_TO_RAD) * 0.4);
+                    target.needsSync = true;
                 }
                 // Same attack cooldown a player has with this weapon.
                 double speed = Kit.attackSpeed(this.getMainHandItem());
