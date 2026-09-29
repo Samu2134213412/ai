@@ -2133,7 +2133,7 @@ final class Gatherer {
                 nearest = part;
                 nearestDist = d;
             }
-            if (d < 3.2 * 3.2 && this.bot.hasLineOfSight(part) && (reachable == null || part == dragon.head)) {
+            if (d < 3.6 * 3.6 && this.bot.hasLineOfSight(part) && (reachable == null || part == dragon.head)) {
                 reachable = part;
             }
         }
@@ -2162,9 +2162,18 @@ final class Gatherer {
             return;
         }
         boolean low = sitting && nearest != null && nearestDist < 24 * 24;
-        Vec3 goal = low ? nearest.position() : new Vec3(fountain.getX() + 4.5, fountain.getY(), fountain.getZ() + 4.5);
-        if (this.bot.position().distanceToSqr(goal) > 4.0 && (this.bot.getNavigation().isDone() || low)) {
-            this.bot.getNavigation().moveTo(goal.x, goal.y, goal.z, low ? 1.3 : 1.0);
+        // Sitting: run straight to the head (it only sits a few seconds). Otherwise wait close to the
+        // middle of the island, where it lands.
+        Vec3 goal = low ? dragon.head.position() : new Vec3(fountain.getX() + 3.5, fountain.getY(), fountain.getZ() + 3.5);
+        if (low) {
+            this.bot.getNavigation().stop();
+            this.bot.getMoveControl().setWantedPosition(goal.x, this.bot.getY(), goal.z, 1.4);
+            this.bot.getLookControl().setLookAt(goal.x, goal.y, goal.z);
+            if (this.bot.horizontalCollision && this.bot.onGround()) {
+                this.bot.getJumpControl().jump();
+            }
+        } else if (this.bot.position().distanceToSqr(goal) > 4.0 && this.bot.getNavigation().isDone()) {
+            this.bot.getNavigation().moveTo(goal.x, goal.y, goal.z, 1.0);
         }
         if (!low) {
             this.bot.getLookControl().setLookAt(dragon);

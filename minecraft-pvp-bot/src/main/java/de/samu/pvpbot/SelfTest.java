@@ -357,6 +357,19 @@ final class SelfTest {
         if (stage) {
             int sx = end ? 0 : origin.getX() + baseX;
             int sz0 = end ? 60 : origin.getZ();
+            if (scenario.name().startsWith("Etappe 2")) {
+                // Portal ~250 blocks (nether) from a fortress: the test is about finding and using one.
+                sx = -4400;
+                sz0 = -5500;
+            } else if (scenario.name().startsWith("Etappe 3")) {
+                // Start ~300 blocks from the stronghold (the long walk is tested separately).
+                BlockPos stronghold = level.findNearestMapStructure(net.minecraft.tags.StructureTags.EYE_OF_ENDER_LOCATED, origin, 100, false);
+                if (stronghold != null) {
+                    sx = stronghold.getX() + 300;
+                    sz0 = stronghold.getZ();
+                    PvpBotMod.LOGGER.info(TAG + "  (info) stronghold at " + stronghold.toShortString() + ", start 300 blocks east of it");
+                }
+            }
             int sz = sz0;
             level.setChunkForced(sx >> 4, sz >> 4, true);
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, sx, sz);
