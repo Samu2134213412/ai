@@ -187,6 +187,7 @@ final class Survival {
     private static final Recipe R_WOOD_PICK = recipe("Holzspitzhacke", Items.WOODEN_PICKAXE, true, new String[]{"PPP", " S ", " S "}, 'P', PLANKS, 'S', STICK);
     private static final Recipe R_STONE_PICK = recipe("Steinspitzhacke", Items.STONE_PICKAXE, true, new String[]{"CCC", " S ", " S "}, 'C', COBBLE, 'S', STICK);
     private static final Recipe R_STONE_SWORD = recipe("Steinschwert", Items.STONE_SWORD, true, new String[]{"C", "C", "S"}, 'C', COBBLE, 'S', STICK);
+    private static final Recipe R_CHEST = recipe("Kiste", Items.CHEST, true, new String[]{"PPP", "P P", "PPP"}, 'P', PLANKS);
     private static final Recipe R_FURNACE = recipe("Ofen", Items.FURNACE, true, new String[]{"CCC", "C C", "CCC"}, 'C', COBBLE);
     private static final Recipe R_IRON_PICK = recipe("Eisenspitzhacke", Items.IRON_PICKAXE, true, new String[]{"III", " S ", " S "}, 'I', IRON, 'S', STICK);
     private static final Recipe R_IRON_SWORD = recipe("Eisenschwert", Items.IRON_SWORD, true, new String[]{"I", "I", "S"}, 'I', IRON, 'S', STICK);
@@ -303,6 +304,11 @@ final class Survival {
         if (this.tick % 6000 == 0) {
             this.unreachable.clear(); // things change (and it may have died meanwhile)
         }
+        // Inventory nearly full: put things away at home (if it has one).
+        BlockPos home = this.home(level);
+        if (home != null && usedSlots(p) >= 32 && this.anythingToStore(p)) {
+            return this.storeAtHome(mc, p, level, home);
+        }
         // Food: nothing to eat and getting hungry -> hunt (from the surface), before anything else.
         int hunger = p.getFoodData().getFoodLevel();
         if (foodCount(p) == 0 && hunger <= 14) {
@@ -387,8 +393,25 @@ final class Survival {
             this.say(p, "sucht Diamanten (" + count(p, DIAMOND) + "/" + diaNeeded + ")");
             return this.mineOre(mc, p, level, Kind.DIAMOND, -54);
         }
-        this.doing = "";
-        return false;
+        return this.idleAtHome(mc, p, level);
+    }
+
+    /** Nothing left to do: go home and wait there (where the owner can find it). */
+    private boolean idleAtHome(Minecraft mc, LocalPlayer p, Level level) {
+        BlockPos home = this.home(level);
+        if (home == null) {
+            this.doing = "";
+            return false;
+        }
+        if (this.anythingToStore(p)) {
+            return this.storeAtHome(mc, p, level, home);
+        }
+        if (p.blockPosition().distSqr(home) > 4 * 4) {
+            this.say(p, "geht nach Hause");
+            return this.walkNear(mc, p, level, home);
+        }
+        this.say(p, "wartet zu Hause");
+        return true;
     }
 
     /** True if it already has this item or a better one of the same kind. */
@@ -523,8 +546,10 @@ final class Survival {
             this.placeWait = 0;
             this.placeTries++;
             mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(face, Direction.UP, ground, false));
-            Kind kind = item == Items.CRAFTING_TABLE ? Kind.TABLE : Kind.FURNACE;
-            this.seen.computeIfAbsent(kind, key -> new LinkedHashSet<>()).add(spot);
+            if (item == Items.CRAFTING_TABLE || item == Items.FURNACE) {
+                Kind kind = item == Items.CRAFTING_TABLE ? Kind.TABLE : Kind.FURNACE;
+                this.seen.computeIfAbsent(kind, key -> new LinkedHashSet<>()).add(spot);
+            }
             return true;
         }
         // No free spot around: step somewhere else.
@@ -908,28 +933,155 @@ final class Survival {
     }
 
     /** Staircase up: clear head room, the step ahead and the space above it, then jump onto it. */
+    private @Nullable BlockPos pillarBase;
+
+    /**
+     * Up and out like a player: clear the block above the head, look straight down, jump and put a
+     * block (cobblestone or dirt) under the feet at the top of the jump. Repeat.
+     */
     private boolean digUp(Minecraft mc, LocalPlayer p, Level level) {
-        this.say(p, "gräbt sich nach oben (y " + p.getBlockY() + ")");
+        this.say(p, "baut sich nach oben (y " + p.getBlockY() + ")");
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        Direction d = p.getDirection();
-        BlockPos step = feet.relative(d).above();
-        for (BlockPos b : new BlockPos[]{feet.above(2), step.above(2), step.above()}) {
-            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b)) {
-                this.ap.lookAt(p, p.getYRot() + 90.0F, 0.0F, 90.0F);
-                return true;
-            }
-            if (!PathFinder.body(level, b)) {
-                return this.mine(mc, p, level, b);
-            }
+        BlockPos above = feet.above(2);
+        if (!level.getFluidState(above).isEmpty() || PathFinder.nearLava(level, above)) {
+            // Water or lava overhead: go sideways first.
+            return this.explore(mc, p, level, "sucht einen Weg nach oben");
         }
-        if (PathFinder.body(level, step)) {
-            // Nothing to stand on: the step is air, just walk forward.
-            this.ap.kForward = true;
+        if (!PathFinder.body(level, above)) {
+            this.pillarBase = null;
+            return this.mine(mc, p, level, above);
+        }
+        int index = this.indexOf(p, st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE) || st.is(Items.DIRT) || st.is(Items.NETHERRACK));
+        if (index < 0) {
+            return this.explore(mc, p, level, "sucht einen Weg nach oben (keine Blöcke)");
+        }
+        int slot = this.ap.toHotbar(mc, p, index);
+        if (slot >= 0) {
+            p.getInventory().setSelectedSlot(slot);
+        }
+        this.ap.lookAt(p, p.getYRot(), 90.0F, 45.0F);
+        if (p.onGround()) {
+            this.pillarBase = feet;
+            this.ap.kJump = true;
             return true;
         }
-        this.ap.face(p, Vec3.atCenterOf(step).subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 30.0F);
-        this.ap.kForward = true;
-        this.ap.kJump = p.onGround();
+        if (this.pillarBase != null && p.getY() > this.pillarBase.getY() + 1.05 && level.getBlockState(this.pillarBase).canBeReplaced()) {
+            BlockPos support = this.pillarBase.below();
+            Vec3 face = Vec3.atCenterOf(support).add(0.0, 0.5, 0.0);
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(face, Direction.UP, support, false));
+            this.pillarBase = null;
+        }
+        return true;
+    }
+
+    // ------------------------------------------------------------------ home and chests
+
+    private @Nullable BlockPos home(Level level) {
+        AutopilotSettings s = AutopilotSettings.INSTANCE;
+        if (!s.homeSet || !level.dimension().toString().equals(s.homeLevel)) {
+            return null;
+        }
+        return new BlockPos(s.homeX, s.homeY, s.homeZ);
+    }
+
+    private static final Predicate<ItemStack> JUNK = st -> st.is(Items.DIRT) || st.is(Items.GRANITE) || st.is(Items.DIORITE)
+            || st.is(Items.ANDESITE) || st.is(Items.TUFF) || st.is(Items.GRAVEL) || st.is(Items.SAND) || st.is(Items.COBBLED_DEEPSLATE)
+            || st.is(Items.RAW_COPPER) || st.is(Items.ROTTEN_FLESH) || st.is(Items.WHEAT_SEEDS) || st.is(Items.FIREFLY_BUSH);
+
+    private static int usedSlots(LocalPlayer p) {
+        int n = 0;
+        List<ItemStack> items = p.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < 36 && i < items.size(); i++) {
+            if (!items.get(i).isEmpty()) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Things worth putting away: junk, cobblestone beyond one stack, armor and tools it does not use. */
+    private boolean storable(LocalPlayer p, ItemStack st, boolean[] keptCobble) {
+        if (st.isEmpty()) {
+            return false;
+        }
+        if (st.is(Items.COBBLESTONE)) {
+            if (!keptCobble[0]) {
+                keptCobble[0] = true;
+                return false;
+            }
+            return true;
+        }
+        if (JUNK.test(st)) {
+            return true;
+        }
+        // Worse tools than the ones it has (the wooden pickaxe once it has a stone one, ...).
+        return st.is(Items.WOODEN_PICKAXE) && pickaxeTier(p) > 1 || st.is(Items.STONE_PICKAXE) && pickaxeTier(p) > 2
+                || st.is(Items.WOODEN_SWORD) && swordTier(p) > 1 || st.is(Items.STONE_SWORD) && swordTier(p) > 2;
+    }
+
+    private boolean anythingToStore(LocalPlayer p) {
+        boolean[] kept = {false};
+        int n = 0;
+        for (ItemStack st : p.getInventory().getNonEquipmentItems()) {
+            if (this.storable(p, st, kept)) {
+                n++;
+            }
+        }
+        return n >= 4;
+    }
+
+    /** Chests within 10 blocks of home (already there or placed by it). */
+    private @Nullable BlockPos homeChest(Level level, BlockPos home) {
+        for (BlockPos pos : BlockPos.betweenClosed(home.offset(-10, -3, -10), home.offset(10, 3, 10))) {
+            if (pos.distSqr(home) <= 100 && level.getBlockState(pos).is(Blocks.CHEST) && !this.fullChests.contains(pos.asLong())) {
+                return pos.immutable();
+            }
+        }
+        return null;
+    }
+
+    private final Set<Long> fullChests = new java.util.HashSet<>();
+
+    /** Inventory filling up: back home, into a chest (placing one if there is none). */
+    private boolean storeAtHome(Minecraft mc, LocalPlayer p, Level level, BlockPos home) {
+        BlockPos chest = this.homeChest(level, home);
+        if (chest == null) {
+            if (!has(p, Items.CHEST)) {
+                if (count(p, PLANKS) < 8) {
+                    return this.getPlanks(mc, p, level, 8, "eine Kiste");
+                }
+                return this.craft(mc, p, level, R_CHEST);
+            }
+            if (p.blockPosition().distSqr(home) > 5 * 5) {
+                this.say(p, "geht nach Hause (Kiste aufstellen)");
+                return this.walkNear(mc, p, level, home);
+            }
+            return this.place(mc, p, level, Items.CHEST, "stellt zu Hause eine Kiste auf");
+        }
+        if (!this.reach(p, chest)) {
+            this.say(p, "geht nach Hause (Sachen einlagern)");
+            return this.walkNear(mc, p, level, chest);
+        }
+        BlockPos target = chest;
+        this.job = new Job("lagert Sachen in die Kiste", chest, m -> m instanceof net.minecraft.world.inventory.ChestMenu, menu -> {
+            List<Click> clicks = new ArrayList<>();
+            boolean[] kept = {false};
+            int free = 0;
+            for (Slot slot : menu.slots) {
+                if (!(slot.container instanceof Inventory) && slot.getItem().isEmpty()) {
+                    free++;
+                }
+            }
+            if (free == 0) {
+                this.fullChests.add(target.asLong());
+            }
+            for (Slot slot : menu.slots) {
+                if (slot.container instanceof Inventory && this.storable(p, slot.getItem(), kept)) {
+                    clicks.add(new Click(slot.index, 0, ContainerInput.QUICK_MOVE));
+                }
+            }
+            return clicks;
+        });
         return true;
     }
 

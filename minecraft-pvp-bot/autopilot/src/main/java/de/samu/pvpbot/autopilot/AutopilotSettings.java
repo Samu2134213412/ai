@@ -24,6 +24,12 @@ public final class AutopilotSettings {
     public boolean autoEat = true;
     public boolean lootPickup = true;
     public boolean chat = true;
+    /** Home set by the player ({@code /autopilot home set}): chests within 10 blocks, comes back here when idle. */
+    public boolean homeSet;
+    public int homeX;
+    public int homeY;
+    public int homeZ;
+    public String homeLevel = "";
 
     private Path file;
 
@@ -55,6 +61,15 @@ public final class AutopilotSettings {
         this.autoEat = get(p, "autoEat", this.autoEat);
         this.lootPickup = get(p, "lootPickup", this.lootPickup);
         this.chat = get(p, "chat", this.chat);
+        this.homeSet = get(p, "homeSet", false);
+        try {
+            this.homeX = Integer.parseInt(p.getProperty("homeX", "0"));
+            this.homeY = Integer.parseInt(p.getProperty("homeY", "0"));
+            this.homeZ = Integer.parseInt(p.getProperty("homeZ", "0"));
+        } catch (NumberFormatException e) {
+            this.homeSet = false;
+        }
+        this.homeLevel = p.getProperty("homeLevel", this.homeLevel);
     }
 
     public void save() {
@@ -75,6 +90,11 @@ public final class AutopilotSettings {
         p.setProperty("autoEat", Boolean.toString(this.autoEat));
         p.setProperty("lootPickup", Boolean.toString(this.lootPickup));
         p.setProperty("chat", Boolean.toString(this.chat));
+        p.setProperty("homeSet", Boolean.toString(this.homeSet));
+        p.setProperty("homeX", Integer.toString(this.homeX));
+        p.setProperty("homeY", Integer.toString(this.homeY));
+        p.setProperty("homeZ", Integer.toString(this.homeZ));
+        p.setProperty("homeLevel", this.homeLevel);
         try {
             Files.createDirectories(this.file.getParent());
             try (Writer w = Files.newBufferedWriter(this.file)) {

@@ -419,11 +419,13 @@ public class AutopilotGameTest implements FabricClientGameTest {
             run(sp, "time set 0");
             run(sp, "clear @a");
             logWorld(ctx, sp);
+            // Home at the start point: when the inventory fills up it stores things in a chest here.
+            ctx.runOnClient(mc -> de.samu.pvpbot.autopilot.AutopilotClient.setHome(mc));
             ctx.runOnClient(mc -> Autopilot.INSTANCE.setFullControl(mc, true));
             startClip("11_autopilot_ausruestung_zeitraffer", 15);
             String[] goals = {"wooden_pickaxe", "crafting_table", "stone_pickaxe", "stone_sword", "furnace", "iron_ingot",
                     "iron_pickaxe", "iron_sword", "iron_chestplate", "iron_leggings", "iron_helmet", "iron_boots", "shield",
-                    "diamond", "diamond_pickaxe"};
+                    "diamond", "diamond_pickaxe", "chest"};
             java.util.Set<String> reached = new java.util.LinkedHashSet<>();
             long ticks = minutes * 60 * 20;
             for (long t = 0; t < ticks; t += 40) {

@@ -74,6 +74,17 @@ public class AutopilotClient implements ClientModInitializer {
                             Autopilot.INSTANCE.setEnabled(ctx.getSource().getClient(), false);
                             return 1;
                         }))
+                        .then(ClientCommands.literal("home")
+                                .then(ClientCommands.literal("set").executes(ctx -> {
+                                    setHome(ctx.getSource().getClient());
+                                    return 1;
+                                }))
+                                .then(ClientCommands.literal("clear").executes(ctx -> {
+                                    AutopilotSettings.INSTANCE.homeSet = false;
+                                    AutopilotSettings.INSTANCE.save();
+                                    Autopilot.INSTANCE.say(ctx.getSource().getClient(), "§eZuhause gelöscht.");
+                                    return 1;
+                                })))
                         .then(ClientCommands.literal("full").executes(ctx -> {
                             Autopilot.INSTANCE.setFullControl(ctx.getSource().getClient(), !Autopilot.INSTANCE.isFullControl());
                             return 1;
@@ -176,5 +187,21 @@ public class AutopilotClient implements ClientModInitializer {
             return;
         }
         Autopilot.INSTANCE.setTarget(mc, entity);
+    }
+
+    /** Home = where the player stands now. Chests within 10 blocks of it are used for storage. */
+    public static void setHome(Minecraft mc) {
+        if (mc.player == null) {
+            return;
+        }
+        AutopilotSettings st = AutopilotSettings.INSTANCE;
+        st.homeSet = true;
+        st.homeX = mc.player.getBlockX();
+        st.homeY = mc.player.getBlockY();
+        st.homeZ = mc.player.getBlockZ();
+        st.homeLevel = mc.player.level().dimension().toString();
+        st.save();
+        Autopilot.INSTANCE.say(mc, "§6Zuhause gesetzt: §f" + st.homeX + " " + st.homeY + " " + st.homeZ
+                + " §7– Kisten in 10 Blöcken Umkreis werden benutzt, hierhin kommt er zurück.");
     }
 }
