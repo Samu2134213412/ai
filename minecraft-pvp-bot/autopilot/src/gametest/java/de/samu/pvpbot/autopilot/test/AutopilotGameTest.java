@@ -313,6 +313,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             }
             return ids;
         });
+        java.util.Map<java.util.UUID, net.minecraft.world.phys.Vec3> lastSeen = new java.util.HashMap<>();
         boolean started = ctx.computeOnClient(mc -> {
             LivingEntity enemy = nearestEnemy(mc);
             if (enemy == null) {
@@ -361,9 +362,16 @@ public class AutopilotGameTest implements FabricClientGameTest {
             });
             System.out.println(TAG + state.replace("t=  0s", String.format("t=%3ds", waited / 20)));
             boolean enemyLeft = sp.getServer().computeOnServer(server -> {
+                // An enemy only counts as dead when it died near the player; far away it may just be unloaded.
+                var player = server.getPlayerList().getPlayers().get(0);
                 for (java.util.UUID id : enemyIds) {
                     Entity e = server.overworld().getEntity(id);
-                    if (e != null && e.isAlive()) {
+                    if (e != null) {
+                        lastSeen.put(id, e.position());
+                        if (e.isAlive()) {
+                            return true;
+                        }
+                    } else if (lastSeen.containsKey(id) && lastSeen.get(id).distanceTo(player.position()) > 40.0) {
                         return true;
                     }
                 }

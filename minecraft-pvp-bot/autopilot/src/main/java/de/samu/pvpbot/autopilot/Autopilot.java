@@ -631,7 +631,9 @@ public final class Autopilot {
                     this.face(p, new Vec3(above.x, Mth.clamp(above.y, -4.0, 4.0), above.z), 15.0F);
                     this.boost(mc, p, speed < 1.0 && hDist > 20.0);
                     double height = p.getY() - (t.getY() + t.getBbHeight());
-                    if (hDist < Math.max(4.0, height * 0.6)) {
+                    Vec3 hVel = p.getDeltaMovement().multiply(1.0, 0.0, 1.0);
+                    boolean heading = hVel.dot(toTarget.multiply(1.0, 0.0, 1.0).normalize()) > 0.3 * Math.max(0.1, hVel.length());
+                    if (hDist < Math.max(4.0, height * 0.6) && heading) {
                         // Tip over into a steep dive with the elytra still on: while diving the fall
                         // distance keeps growing (smash damage), and a miss just means pulling up.
                         this.nextPhase();
@@ -651,7 +653,13 @@ public final class Autopilot {
                     // Pull up after the smash (or a miss) and glide on; landing is handled later.
                     this.face(p, p.getDeltaMovement().multiply(1.0, 0.0, 1.0).normalize().add(0.0, 0.6, 0.0), 45.0F);
                     this.boost(mc, p, speed < 0.9 || this.phaseTicks < 3);
-                    if (this.phaseTicks > 20 || !p.isFallFlying()) {
+                    if (this.phaseTicks > 20 && p.isFallFlying() && this.shots < 2 && this.attemptTarget != null
+                            && this.attemptTarget.isAlive() && this.attemptTarget.hurtTime == 0) {
+                        // Missed: climb again and have another go.
+                        this.shots++;
+                        this.phase = 3;
+                        this.phaseTicks = 0;
+                    } else if (this.phaseTicks > 20 || !p.isFallFlying()) {
                         this.flightCooldown = 40;
                         this.finishAttempt(mc);
                     }
@@ -667,7 +675,7 @@ public final class Autopilot {
                         this.attack(mc, p, t);
                         hit = true;
                     }
-                    boolean willMiss = above < 6.0 && p.distanceTo(t) > 3.3 + Math.max(0.0, -p.getDeltaMovement().y);
+                    boolean willMiss = above < 4.0 && p.distanceTo(t) > 3.3 + Math.max(0.0, -p.getDeltaMovement().y);
                     if (hit || willMiss || this.phaseTicks > 80) {
                         LOGGER.info("[AUTOPILOT] dive ends: hit={} willMiss={} height={} dist={}", hit, willMiss,
                                 String.format("%.1f", above), String.format("%.1f", p.distanceTo(t)));
