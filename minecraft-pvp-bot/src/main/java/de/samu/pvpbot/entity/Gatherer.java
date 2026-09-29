@@ -2768,15 +2768,27 @@ final class Gatherer {
                 BlockState state = level.getBlockState(p);
                 for (Ore ore : Ore.values()) {
                     if (ore != Ore.STONE && ore != Ore.LOG && ore.match.test(state)) {
-                        List<BlockPos> list = this.known.computeIfAbsent(ore, k -> new ArrayList<>());
-                        if (list.size() < 128 && !list.contains(p)) {
-                            list.add(p.immutable());
-                        }
+                        remember(this.known.computeIfAbsent(ore, k -> new ArrayList<>()), ore, p.immutable());
                         break;
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Keeps what it saw; when the list is full the oldest sighting makes room (in a stronghold or
+     * fortress there is always more wall ahead than behind).
+     */
+    private static void remember(List<BlockPos> list, Ore ore, BlockPos p) {
+        if (list.contains(p)) {
+            return;
+        }
+        int cap = ore == Ore.STRONGHOLD || ore == Ore.FORTRESS ? 512 : 128;
+        if (list.size() >= cap) {
+            list.remove(0);
+        }
+        list.add(p);
     }
 
     private void scanTick(ServerLevel level) {
@@ -2796,9 +2808,8 @@ final class Gatherer {
                     }
                     List<BlockPos> list = this.known.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
                     for (BlockPos p : e.getValue()) {
-                        if (list.size() < 128 && !list.contains(p) && p.distSqr(here) < 64 * 64
-                                && e.getKey().match.test(level.getBlockState(p))) {
-                            list.add(p);
+                        if (p.distSqr(here) < 64 * 64 && e.getKey().match.test(level.getBlockState(p))) {
+                            remember(list, e.getKey(), p);
                         }
                     }
                 }
@@ -2819,8 +2830,13 @@ final class Gatherer {
                     if (ore.match.test(state)) {
                         List<BlockPos> list = this.scanning.computeIfAbsent(ore, k -> new ArrayList<>());
                         // No x-ray: only blocks that are uncovered and in plain sight from where the bot is.
-                        if (list.size() < 64 && this.isExposed(p) && (ore == Ore.STONE || this.seesBlock(level, p))) {
-                            list.add(p);
+                        boolean big = ore == Ore.STRONGHOLD || ore == Ore.FORTRESS;
+                        if ((big || list.size() < 64) && this.isExposed(p) && (ore == Ore.STONE || this.seesBlock(level, p))) {
+                            if (big) {
+                                remember(list, ore, p);
+                            } else {
+                                list.add(p);
+                            }
                         }
                         break;
                     }
