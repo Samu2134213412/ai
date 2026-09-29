@@ -2399,10 +2399,10 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (!los || h > 30.0 && !(stuck && h < 44.0)) {
+        if (!los || h > 44.0) {
             // Closer shots miss less, but right below the pillar its edge is in the way: about 24
             // blocks out, further when the pillar still hides it.
-            Vec3 spot = crystal.position().add(away.normalize().scale(los ? 24.0 : Math.min(h + 8.0, 40.0)));
+            Vec3 spot = crystal.position().add(away.normalize().scale(los ? 30.0 : Math.min(h + 8.0, 40.0)));
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
             if (this.bot.getNavigation().isDone() || stuck) {
                 this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
