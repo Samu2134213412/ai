@@ -311,6 +311,13 @@ public final class Autopilot {
                 out.add(Pattern.ELYTRA_LANCE);
             }
         }
+        if (this.forcedPattern == Pattern.WIND_LUNGE_SMASH && !out.contains(Pattern.WIND_LUNGE_SMASH) && this.ticks % 20 == 0) {
+            int spearIndex = this.findInventory(p, Role.SPEAR);
+            LOGGER.info("[AUTOPILOT] combo not possible: mace={} spear={} lunge={} ench={} wind={} ground={} windCd={} sees={} hDist={} dy={} ceiling={} food={}",
+                    mace, spear, this.spearLunge(p), spearIndex < 0 ? "-" : p.getInventory().getItem(spearIndex).getEnchantments(),
+                    this.has(p, Role.WIND_CHARGE), p.onGround(), this.windCooldown, sees, String.format("%.1f", hDist),
+                    String.format("%.1f", dy), this.ceiling(p, 8), p.getFoodData().getFoodLevel());
+        }
         List<Pattern> allowed = new ArrayList<>(out);
         allowed.removeIf(x -> this.tabuUntil.getOrDefault(x, 0L) > this.ticks);
         return allowed.isEmpty() ? out : allowed;

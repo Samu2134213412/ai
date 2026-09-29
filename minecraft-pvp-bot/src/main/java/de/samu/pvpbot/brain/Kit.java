@@ -92,7 +92,8 @@ public final class Kit {
     /** Level of the Lunge enchantment (spear jabs throw the wielder forward), 0 if none. */
     public static int lungeLevel(ItemStack stack) {
         for (var entry : stack.getEnchantments().entrySet()) {
-            if (entry.getKey().is(Enchantments.LUNGE)) {
+            var holder = entry.getKey();
+            if (holder.is(Enchantments.LUNGE) || holder.getRegisteredName().endsWith("lunge")) {
                 return entry.getIntValue();
             }
         }
