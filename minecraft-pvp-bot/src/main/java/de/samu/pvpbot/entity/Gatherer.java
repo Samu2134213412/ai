@@ -300,6 +300,7 @@ final class Gatherer {
     private boolean speedrun;
     private boolean portalBuilt;
     private Direction digDir = Direction.NORTH;
+    private final java.util.Set<Long> dugTunnel = new java.util.HashSet<>();
     private int portalProgress;
     private @Nullable BlockPos portalBase;
     private Direction portalAlong = Direction.EAST;
@@ -563,6 +564,14 @@ final class Gatherer {
                 }
             }
             return this.nearest(Ore.WATER) != null ? new FillWater() : new Explore("Wasser");
+        }
+        if (kit.count(st -> st.is(Items.STONE_PICKAXE)) == 0 && kit.count(Res.COBBLE.match) >= 3) {
+            // A cheap pickaxe for tunnelling, so the iron one is still there when diamonds show up.
+            Step s = this.resolveItem(Items.STONE_PICKAXE, 0);
+            if (s instanceof Craft) {
+                this.goalLabel = "eine Steinspitzhacke zum Tunneln";
+                return s;
+            }
         }
         if (this.needPickaxe(Items.DIAMOND_PICKAXE, 0) != null) {
             this.goalLabel = "eine Diamantspitzhacke";
@@ -1013,13 +1022,35 @@ final class Gatherer {
         if (down) {
             toClear.add(front.below());
         }
+        if (!down) {
+            this.dugTunnel.add(feet.asLong());
+            if (this.dugTunnel.size() > 4000) {
+                this.dugTunnel.clear();
+            }
+            if (this.dugTunnel.contains(front.asLong()) && level.getBlockState(front).isAir() && level.getBlockState(front.above()).isAir()) {
+                // Back in its own tunnel: branch off into fresh rock instead of walking in circles.
+                Direction fresh = null;
+                for (Direction d : new Direction[]{this.digDir.getClockWise(), this.digDir.getCounterClockWise(), this.digDir}) {
+                    if (!this.dugTunnel.contains(feet.relative(d).asLong())) {
+                        fresh = d;
+                        if (this.bot.getRandom().nextBoolean()) {
+                            break;
+                        }
+                    }
+                }
+                this.digDir = fresh != null ? fresh : this.digDir.getOpposite();
+                front = feet.relative(this.digDir);
+                toClear.set(0, front.above());
+                toClear.set(1, front);
+            }
+        }
         for (BlockPos p : toClear) {
             BlockState state = level.getBlockState(p);
             boolean danger = this.nearLava(level, p) || !level.getFluidState(p).isEmpty() || state.getDestroySpeed(level, p) < 0.0F;
             if (danger) {
                 // Lava, water or bedrock ahead: take another direction.
                 this.stopBreaking();
-                this.digDir = this.digDir.getClockWise();
+                this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
                 this.bot.tellOwner("§7Gefahr voraus – ich grabe in eine andere Richtung.", false);
                 return;
             }
@@ -1607,12 +1638,18 @@ final class Gatherer {
         }
         level.destroyBlockProgress(this.bot.getId(), pos, Math.min(9, this.breakProgress * 10 / this.breakNeeded));
         if (this.breakProgress >= this.breakNeeded) {
-            ItemStack tool = this.bot.getMainHandItem();
+            // The tool picked for this block, even if the hand shows something else by now (that
+            // cost diamonds: mined with the sword in hand, the ore dropped nothing).
+            ItemStack tool = this.bestTool(state);
+            this.bot.holdTool(tool);
             boolean drops = !state.requiresCorrectToolForDrops() || !tool.isEmpty() && tool.isCorrectToolForDrops(state);
             level.destroyBlockProgress(this.bot.getId(), pos, -1);
             level.destroyBlock(pos, drops, this.bot, 512);
             if (!tool.isEmpty() && tool.isDamageableItem()) {
                 tool.hurtAndBreak(1, this.bot, EquipmentSlot.MAINHAND);
+                if (tool.isEmpty()) {
+                    this.bot.onKitChanged();
+                }
             }
             this.breaking = null;
             return true;
@@ -1634,7 +1671,15 @@ final class Gatherer {
         for (ItemStack stack : this.kit().items()) {
             float speed = stack.getDestroySpeed(state);
             boolean correct = !state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state);
-            if (correct && speed > bestSpeed) {
+            if (!correct || speed <= 1.0F) {
+                continue;
+            }
+            int tier = pickaxeTier(stack.getItem());
+            int bestTier = pickaxeTier(best.getItem());
+            // Plain stone does not need the good pickaxe: dig with the cheapest one that works, so the
+            // iron/diamond pickaxe lasts for the ores that need it.
+            boolean better = tier > 0 && bestTier > 0 ? tier < bestTier || tier == bestTier && speed > bestSpeed : speed > bestSpeed;
+            if (better) {
                 best = stack;
                 bestSpeed = speed;
             }
