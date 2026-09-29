@@ -1202,7 +1202,15 @@ final class Gatherer {
 
     private net.minecraft.world.entity.boss.enderdragon.phases.@Nullable EnderDragonPhase<?> lastDragonPhase;
 
+    private java.util.@Nullable UUID crystalTarget;
+
     private net.minecraft.world.entity.boss.enderdragon.@Nullable EndCrystal visibleCrystal() {
+        // Stay with the crystal it is going for (walking there, others come into sight and go again).
+        if (this.crystalTarget != null && this.level().getEntity(this.crystalTarget) instanceof net.minecraft.world.entity.boss.enderdragon.EndCrystal c
+                && c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 12) {
+            return c;
+        }
+        this.crystalTarget = null;
         net.minecraft.world.entity.boss.enderdragon.EndCrystal best = null;
         double bestDist = Double.MAX_VALUE;
         for (var c : this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class,
@@ -1212,6 +1220,9 @@ final class Gatherer {
                 best = c;
                 bestDist = this.bot.distanceToSqr(c);
             }
+        }
+        if (best != null) {
+            this.crystalTarget = best.getUUID();
         }
         return best;
     }
@@ -1881,7 +1892,8 @@ final class Gatherer {
             this.fortressVisited.add(cellKey(this.bot.blockPosition()));
             double bestDist = Double.MAX_VALUE;
             for (BlockPos p : this.known.getOrDefault(Ore.FORTRESS, List.of())) {
-                if (this.fortressVisited.contains(cellKey(p)) || this.blacklist.contains(p)) {
+                // (Not the pillars the bridges stand on: they go down into the lava sea.)
+                if (this.fortressVisited.contains(cellKey(p)) || this.blacklist.contains(p) || p.getY() < 45) {
                     continue;
                 }
                 double d = this.bot.blockPosition().distSqr(p);
