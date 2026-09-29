@@ -310,7 +310,7 @@ final class SelfTest {
                     // Its chunk is not ticking here (no player around): bring it back over the island.
                     for (int dx = -1; dx <= 1; dx++) {
                         for (int dz = -1; dz <= 1; dz++) {
-                            end.setChunkForced(dragon.chunkPosition().x + dx, dragon.chunkPosition().z + dz, true);
+                            end.setChunkForced((dragon.getBlockX() >> 4) + dx, (dragon.getBlockZ() >> 4) + dz, true);
                         }
                     }
                     dragon.snapTo(0.5, 85.0, 0.5, dragon.getYRot(), 0.0F);
