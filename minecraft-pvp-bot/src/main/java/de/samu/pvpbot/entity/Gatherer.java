@@ -1247,7 +1247,11 @@ final class Gatherer {
             }
         }
         this.scanTick(level);
-        if (this.collectDrops()) {
+        boolean collecting = this.collectDrops();
+        if (PvpBotEntity.DEBUG && this.bot.tickCount % 200 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   gatherer tick: step {} collecting {} actionTicks {}", this.step, collecting, this.actionTicks);
+        }
+        if (collecting) {
             return;
         }
         Step s = this.step;
@@ -2296,17 +2300,33 @@ final class Gatherer {
         ItemEntity closest = null;
         double best = 10.0 * 10.0;
         for (ItemEntity item : this.level().getEntitiesOfClass(ItemEntity.class, this.bot.getBoundingBox().inflate(10.0))) {
-            if (item.isAlive() && isUseful(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)) {
+            if (item.isAlive() && isUseful(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)
+                    && !this.unreachableDrops.contains(item.getId())) {
                 closest = item;
                 best = this.bot.distanceToSqr(item);
             }
         }
         if (closest != null && best > 4.0) {
-            this.bot.getNavigation().moveTo(closest, 1.1);
+            // Give up on drops it cannot get to (on a ledge, in a hole) instead of trying forever.
+            if (closest.getId() != this.dropId) {
+                this.dropId = closest.getId();
+                this.dropTicks = 0;
+            }
+            if (!this.bot.getNavigation().moveTo(closest, 1.1) || ++this.dropTicks > 100) {
+                this.unreachableDrops.add(closest.getId());
+                if (this.unreachableDrops.size() > 200) {
+                    this.unreachableDrops.clear();
+                }
+                return false;
+            }
             return true;
         }
         return false;
     }
+
+    private final java.util.Set<Integer> unreachableDrops = new java.util.HashSet<>();
+    private int dropId = -1;
+    private int dropTicks;
 
     // --- saving known state that matters
 
