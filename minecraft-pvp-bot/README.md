@@ -200,3 +200,9 @@ Jede Änderung wird automatisch in echtem Minecraft 26.3 getestet (siehe unten).
   - startet einen echten Client (ohne Bildschirm), in dem der Autopilot mit verschiedenen Kits
     kämpft und ein Duell gegen den Bot bestreitet (`autopilot/src/gametest`, lokal:
     `./gradlew :autopilot:runClientGameTest`).
+
+### Zuhause & Autonom-Modus
+
+- `/pvpbot home set` (oder Menü **O → Zuhause**): setzt das Zuhause des Bots auf deine Position. Hat er nichts zu tun, läuft er dorthin zurück und wartet – dort findest du ihn immer und kannst ihm neue Befehle geben.
+- `/pvpbot home go` schickt ihn sofort nach Hause, `/pvpbot home` zeigt Zuhause, Kisten und Modus, `/pvpbot home clear` löscht es.
+- `/pvpbot autonom on|off` (nur Survival-Bots): er verbessert seine Ausrüstung selbst bis Diamant (Schwert, Rüstung, Spitzhacke), sammelt danach Ersatz-Rüstungssets (1× Eisen, 2× Diamant), baut sich Kisten, stellt sie neben das Zuhause und lagert dort die Sets und überflüssige Blöcke.

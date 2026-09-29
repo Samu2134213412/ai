@@ -44,6 +44,15 @@ public final class BotCommands {
                 .then(Commands.literal("durchspielen")
                         .executes(ctx -> setSpeedrun(ctx, true))
                         .then(Commands.literal("stop").executes(ctx -> setSpeedrun(ctx, false))))
+                .then(Commands.literal("autonom")
+                        .executes(ctx -> setAutonomous(ctx, true))
+                        .then(Commands.literal("on").executes(ctx -> setAutonomous(ctx, true)))
+                        .then(Commands.literal("off").executes(ctx -> setAutonomous(ctx, false))))
+                .then(Commands.literal("home")
+                        .executes(BotCommands::homeInfo)
+                        .then(Commands.literal("set").executes(BotCommands::homeSet))
+                        .then(Commands.literal("go").executes(BotCommands::homeGo))
+                        .then(Commands.literal("clear").executes(BotCommands::homeClear)))
                 .then(Commands.literal("duel").executes(BotCommands::duel))
                 .then(Commands.literal("kit")
                         .executes(BotCommands::kitShow)
@@ -153,6 +162,76 @@ public final class BotCommands {
                 ? "§5Durchspielen – Etappe 1: §fWassereimer → Diamantspitzhacke (Treppe runter, Strip-Mining) → 10 Obsidian (Wasser auf Lava) → Feuerzeug → Netherportal. §7Status: /pvpbot needs"
                 : "§eDurchspielen gestoppt."), false);
         return count;
+    }
+
+    private static int setAutonomous(CommandContext<CommandSourceStack> ctx, boolean on) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        int count = 0;
+        boolean homeless = false;
+        for (PvpBotEntity bot : bots) {
+            if (on && bot.getKit().isInfinite()) {
+                continue;
+            }
+            bot.setAutonomous(on);
+            homeless |= on && bot.getHome() == null;
+            count++;
+        }
+        if (on && count == 0 && !bots.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("Dein Bot hat ein unendliches Kit. Nimm einen Survival-Bot: /pvpbot survival"));
+            return 0;
+        }
+        boolean noHome = homeless;
+        ctx.getSource().sendSuccess(() -> Component.literal(on
+                ? "§6Autonom: §fverbessert seine Ausrüstung bis Diamant, sammelt Ersatz-Rüstungssets (1× Eisen, 2× Diamant) und lagert sie in Kisten zu Hause. Wenn nichts zu tun ist, wartet er zu Hause."
+                        + (noHome ? " §cSetz ihm noch ein Zuhause: /pvpbot home set" : "")
+                : "§eAutonom aus."), false);
+        return count;
+    }
+
+    private static int homeSet(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        net.minecraft.core.BlockPos pos = net.minecraft.core.BlockPos.containing(ctx.getSource().getPosition());
+        for (PvpBotEntity bot : bots) {
+            if (bot.level() == ctx.getSource().getLevel()) {
+                bot.setHome(pos);
+            }
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§6Zuhause gesetzt: §f" + pos.getX() + " " + pos.getY() + " " + pos.getZ()
+                + " §7– hier stellt er seine Kisten auf und hierhin kommt er zurück."), false);
+        return bots.size();
+    }
+
+    private static int homeClear(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.setHome(null));
+        ctx.getSource().sendSuccess(() -> Component.literal("§eZuhause gelöscht."), false);
+        return bots.size();
+    }
+
+    private static int homeGo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        int count = 0;
+        for (PvpBotEntity bot : bots) {
+            if (bot.getHome() != null) {
+                bot.setFollowing(false);
+                bot.clearTargets();
+                bot.goHome();
+                count++;
+            }
+        }
+        int n = count;
+        ctx.getSource().sendSuccess(() -> Component.literal(n > 0 ? "§6Ab nach Hause." : "§cKein Zuhause gesetzt: /pvpbot home set"), false);
+        return count;
+    }
+
+    private static int homeInfo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        for (PvpBotEntity bot : myBots(ctx)) {
+            var home = bot.getHome();
+            ctx.getSource().sendSuccess(() -> Component.literal("§6" + bot.getName().getString() + "§7: Zuhause "
+                    + (home == null ? "§ckeins" : "§f" + home.getX() + " " + home.getY() + " " + home.getZ())
+                    + " §7· Kisten: §f" + bot.homeChests().size() + " §7· Autonom: " + (bot.isAutonomous() ? "§aan" : "§caus")), false);
+        }
+        return 1;
     }
 
     private static int trick(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

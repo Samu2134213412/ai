@@ -249,7 +249,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             menuShot(ctx, "Menue_Autopilot_" + (tab + 1));
         }
         if (FabricLoader.getInstance().isModLoaded("pvpbot")) {
-            for (int tab = 0; tab < 4; tab++) {
+            for (int tab = 0; tab < 5; tab++) {
                 int t = tab;
                 ctx.runOnClient(mc -> {
                     try {

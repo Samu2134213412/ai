@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Item;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -59,6 +60,7 @@ final class SelfTest {
 
     /** X offset of a 1x1 stone pit (4 high) the bot starts in and has to get out of. */
     private static final int PIT_X = -40;
+    private static final int HOME_X = 120;
 
     private static List<ItemStack> swordKit() {
         return List.of(new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.IRON_AXE), new ItemStack(Items.IRON_HELMET),
@@ -133,6 +135,8 @@ final class SelfTest {
                 level -> List.of(), List::of, SelfTest::fullyGeared));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
                 level -> List.of(zombie(level, 6, 6), zombie(level, -7, 5), zombie(level, 12, -9), zombie(level, -3, -14))));
+        SCENARIOS.add(new Scenario("Zuhause: Kiste aufstellen, Eisenset einlagern", PvpBotEntity.Style.AUTO, 2400, HOME_X,
+                level -> List.of(), SelfTest::homeKit, SelfTest::ironSetStored));
         // Beat the game, stage 1, in untouched terrain (sped up with /tick sprint).
         SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 36000, 240,
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
@@ -382,6 +386,10 @@ final class SelfTest {
         } else if (stage) {
             bot.setSpeedrun(true);
         }
+        if (scenario.name().startsWith("Zuhause")) {
+            bot.setHome(bot.blockPosition().offset(4, 0, 0));
+            bot.setAutonomous(true);
+        }
         targets = scenario.targets().apply(level);
         for (LivingEntity target : targets) {
             bot.addTarget(target, true);
@@ -417,6 +425,36 @@ final class SelfTest {
                 bot.getHealth(), smashHits, spearHits, otherHits, maxHit, maxHeight, flew);
         RESULTS.add(line);
         PvpBotMod.LOGGER.info(TAG + line);
+    }
+
+    private static List<ItemStack> homeKit() {
+        return List.of(new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.DIAMOND_PICKAXE), new ItemStack(Items.DIAMOND_HELMET),
+                new ItemStack(Items.DIAMOND_CHESTPLATE), new ItemStack(Items.DIAMOND_LEGGINGS), new ItemStack(Items.DIAMOND_BOOTS),
+                new ItemStack(Items.SHIELD), new ItemStack(Items.COOKED_BEEF, 16), new ItemStack(Items.IRON_HELMET),
+                new ItemStack(Items.IRON_CHESTPLATE), new ItemStack(Items.IRON_LEGGINGS), new ItemStack(Items.IRON_BOOTS),
+                new ItemStack(Items.OAK_PLANKS, 16), new ItemStack(Items.COBBLESTONE, 64), new ItemStack(Items.COBBLESTONE, 64),
+                new ItemStack(Items.DIRT, 40));
+    }
+
+    /** Home test goal: a chest it placed holds the iron set, and it still wears diamond. */
+    private static boolean ironSetStored(PvpBotEntity bot) {
+        for (BlockPos pos : bot.homeChests()) {
+            if (bot.level().getBlockEntity(pos) instanceof net.minecraft.world.Container chest) {
+                int pieces = 0;
+                for (Item piece : new Item[]{Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS}) {
+                    for (int i = 0; i < chest.getContainerSize(); i++) {
+                        if (chest.getItem(i).is(piece)) {
+                            pieces++;
+                            break;
+                        }
+                    }
+                }
+                if (pieces == 4 && bot.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST).is(Items.DIAMOND_CHESTPLATE)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static List<ItemStack> stage1Kit() {

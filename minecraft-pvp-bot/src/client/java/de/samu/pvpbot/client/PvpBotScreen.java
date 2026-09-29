@@ -12,7 +12,7 @@ import net.minecraft.network.chat.Component;
  * menu works on any server that has the mod, and the answer shows up in the chat as usual.
  */
 public class PvpBotScreen extends Screen {
-    private static final String[] PAGES = {"Bot", "Einstellungen", "Kit & Durchspielen", "Tricks"};
+    private static final String[] PAGES = {"Bot", "Einstellungen", "Kit", "Zuhause", "Tricks"};
     private static int page;
 
     private record Entry(String label, String command, String tip) {
@@ -60,6 +60,15 @@ public class PvpBotScreen extends Screen {
                 list.add(new Entry("Was fehlt?", "pvpbot needs", ""));
                 list.add(new Entry("§5Durchspielen starten", "pvpbot durchspielen", "Etappe 1: Diamanten, Obsidian, Netherportal"));
                 list.add(new Entry("Durchspielen stoppen", "pvpbot durchspielen stop", ""));
+            }
+            case 3 -> {
+                list.add(new Entry("§6Zuhause hier setzen", "pvpbot home set", "Hier stellt er seine Kisten auf und hierhin kommt er immer zurück"));
+                list.add(new Entry("Nach Hause gehen", "pvpbot home go", "Er läuft nach Hause und wartet dort"));
+                list.add(new Entry("§6Autonom: an", "pvpbot autonom on",
+                        "Verbessert seine Ausrüstung selbst (bis Diamant), sammelt Rüstungssets (1× Eisen, 2× Diamant) und lagert sie in Kisten zu Hause"));
+                list.add(new Entry("Autonom: aus", "pvpbot autonom off", ""));
+                list.add(new Entry("Zuhause & Kisten anzeigen", "pvpbot home", ""));
+                list.add(new Entry("§cZuhause löschen", "pvpbot home clear", ""));
             }
             default -> {
                 String[][] tricks = {

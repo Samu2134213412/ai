@@ -131,6 +131,7 @@ final class Gatherer {
         recipe(Items.IRON_LEGGINGS, 1, Res.IRON, 7);
         recipe(Items.IRON_BOOTS, 1, Res.IRON, 4);
         recipe(Items.SHIELD, 1, Res.PLANKS, 6, Res.IRON, 1);
+        recipe(Items.CHEST, 1, Res.PLANKS, 8);
         recipe(Items.DIAMOND_SWORD, 1, Res.DIAMOND, 2, Res.STICK, 1);
         recipe(Items.DIAMOND_PICKAXE, 1, Res.DIAMOND, 3, Res.STICK, 2);
         recipe(Items.DIAMOND_HELMET, 1, Res.DIAMOND, 5);
@@ -151,7 +152,8 @@ final class Gatherer {
 
     /** The next thing to do. */
     sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
-            UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon {
+            UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon,
+            GoHome, PlaceChest, StoreAtHome {
         String describe();
     }
 
@@ -170,6 +172,24 @@ final class Gatherer {
     record Mine(Ore ore) implements Step {
         public String describe() {
             return "baut " + this.ore.label + " ab";
+        }
+    }
+
+    record GoHome() implements Step {
+        public String describe() {
+            return "geht nach Hause";
+        }
+    }
+
+    record PlaceChest() implements Step {
+        public String describe() {
+            return "stellt zu Hause eine Kiste auf";
+        }
+    }
+
+    record StoreAtHome(BlockPos chest) implements Step {
+        public String describe() {
+            return "lagert Sachen in der Kiste zu Hause";
         }
     }
 
@@ -330,6 +350,12 @@ final class Gatherer {
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
     private boolean seenDragon;
     private boolean gameBeaten;
+    // Home and autonomous mode.
+    private boolean autonomous;
+    private boolean goingHome;
+    private @Nullable BlockPos home;
+    private net.minecraft.resources.@Nullable ResourceKey<net.minecraft.world.level.Level> homeLevel;
+    private final List<BlockPos> homeChests = new ArrayList<>();
     private final java.util.Map<java.util.UUID, Integer> crystalShots = new java.util.HashMap<>();
 
     Gatherer(PvpBotEntity bot) {
@@ -383,6 +409,39 @@ final class Gatherer {
         this.netherPortal = nether;
     }
 
+    boolean isAutonomous() {
+        return this.autonomous;
+    }
+
+    void setAutonomous(boolean autonomous) {
+        this.autonomous = autonomous;
+        this.enabled = this.enabled || autonomous;
+        this.reset();
+    }
+
+    @Nullable BlockPos home() {
+        return this.home;
+    }
+
+    net.minecraft.resources.@Nullable ResourceKey<net.minecraft.world.level.Level> homeLevel() {
+        return this.homeLevel;
+    }
+
+    void setHome(@Nullable BlockPos home, net.minecraft.resources.@Nullable ResourceKey<net.minecraft.world.level.Level> level) {
+        this.home = home;
+        this.homeLevel = home == null ? null : level;
+        this.reset();
+    }
+
+    void goHome() {
+        this.goingHome = this.home != null;
+        this.step = null;
+    }
+
+    List<BlockPos> homeChests() {
+        return this.homeChests;
+    }
+
     boolean gameBeaten() {
         return this.gameBeaten;
     }
@@ -405,7 +464,7 @@ final class Gatherer {
 
     /** Far away from every player the bot would stop; keep the chunks around it loaded. */
     void keepChunksLoaded() {
-        if (!this.speedrun || this.bot.tickCount % 20 != 0) {
+        if (!this.speedrun && !this.autonomous || this.bot.tickCount % 20 != 0) {
             return;
         }
         ServerLevel level = this.level();
@@ -462,11 +521,23 @@ final class Gatherer {
 
     /** True when there is something to fetch and nothing more important going on. */
     boolean wantsToWork() {
+        if (this.goingHome && this.bot.getTarget() == null) {
+            if (this.home == null || !this.atHomeLevel() || this.bot.blockPosition().distSqr(this.home) <= 3 * 3) {
+                this.goingHome = false;
+                this.step = null;
+            } else {
+                if (!(this.step instanceof GoHome)) {
+                    this.step = new GoHome();
+                    this.goalLabel = "Befehl: nach Hause";
+                }
+                return true;
+            }
+        }
         if (!this.enabled || this.kit().isInfinite() || this.bot.getTarget() != null) {
             return false;
         }
         Player owner = this.bot.getOwner();
-        if (!this.speedrun && owner != null && owner.distanceToSqr(this.bot) > 96.0 * 96.0) {
+        if (!this.speedrun && !this.autonomous && owner != null && owner.distanceToSqr(this.bot) > 96.0 * 96.0) {
             return false;
         }
         if (--this.replanTimer <= 0 || this.step == null) {
@@ -527,7 +598,7 @@ final class Gatherer {
         if (!kit.has(Role.GAPPLE) && kit.count(Res.COOKED_MEAT.match) < 4) {
             needs.add(new Need(Items.COOKED_BEEF, "Essen"));
         }
-        if (diamondsNearby && !this.speedrun) {
+        if ((diamondsNearby || this.autonomous) && !this.speedrun) {
             if (weaponDamage < Kit.attackDamage(new ItemStack(Items.DIAMOND_SWORD))) {
                 needs.add(new Need(Items.DIAMOND_SWORD, "ein Diamantschwert"));
             }
@@ -536,6 +607,9 @@ final class Gatherer {
                     needs.add(new Need(DIAMOND_ARMOR[i], "Diamantrüstung"));
                 }
             }
+        }
+        if (this.autonomous && this.needPickaxe(Items.DIAMOND_PICKAXE, 99) != null) {
+            needs.add(new Need(Items.DIAMOND_PICKAXE, "eine Diamantspitzhacke"));
         }
         return needs;
     }
@@ -559,8 +633,318 @@ final class Gatherer {
         if (this.speedrun && !this.gameBeaten) {
             return this.inEnd() ? this.stage4Step() : this.stage3Step();
         }
+        if (this.autonomous) {
+            Step s = this.autonomousStep();
+            if (s != null) {
+                return s;
+            }
+        }
+        if (this.home != null && this.atHomeLevel() && this.bot.blockPosition().distSqr(this.home) > 5 * 5) {
+            // Nothing to do: back home, where the owner can always find it.
+            this.goalLabel = "nichts zu tun";
+            return new GoHome();
+        }
         this.goalLabel = null;
         return null;
+    }
+
+    // ------------------------------------------------------------------ home, chests, spare sets
+
+    /** Armor sets it keeps in the chests at home, in this order. */
+    private static final Item[][] SPARE_SETS = {IRON_ARMOR, DIAMOND_ARMOR, DIAMOND_ARMOR};
+
+    private boolean atHomeLevel() {
+        return this.homeLevel != null && this.bot.level().dimension() == this.homeLevel;
+    }
+
+    /**
+     * Autonomous mode, once its own gear is the best it can make: collect spare armor sets (one iron,
+     * two diamond) and keep them - and the junk blocks it dug up - in chests it places at home.
+     */
+    private @Nullable Step autonomousStep() {
+        if (this.home == null || !this.atHomeLevel()) {
+            return null;
+        }
+        BotKit kit = this.kit();
+        List<ItemStack> store = this.toStore(false);
+        boolean crowded = kit.items().size() > BotKit.SIZE - 6;
+        if (!store.isEmpty() && (crowded || !this.toStore(true).isEmpty())) {
+            this.goalLabel = "Platz im Inventar / fertige Rüstungssets";
+            BlockPos chest = this.chestWithRoom();
+            if (chest != null) {
+                return new StoreAtHome(chest);
+            }
+            if (kit.count(st -> st.is(Items.CHEST)) > 0) {
+                return new PlaceChest();
+            }
+            Step s = this.resolveItem(Items.CHEST, 0);
+            if (s != null) {
+                this.goalLabel = "eine Kiste für zu Hause";
+                return s;
+            }
+        }
+        java.util.Map<Item, Integer> wanted = new java.util.HashMap<>();
+        for (Item[] set : SPARE_SETS) {
+            for (Item piece : set) {
+                wanted.merge(piece, 1, Integer::sum);
+            }
+        }
+        for (Item[] set : SPARE_SETS) {
+            for (int i = 0; i < 4; i++) {
+                Item piece = set[i];
+                int have = this.storedCount(piece) + this.spareInKit(piece, ARMOR_SLOTS[i]);
+                if (have < wanted.get(piece)) {
+                    Step s = this.resolveItem(piece, 0);
+                    if (s != null) {
+                        this.goalLabel = "Rüstungssets für die Kiste (" + (set == IRON_ARMOR ? "Eisen" : "Diamant") + ")";
+                        return s;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Pieces of this armor in the kit that it does not wear. */
+    private int spareInKit(Item piece, EquipmentSlot slot) {
+        int n = this.kit().count(st -> st.is(piece));
+        return this.kit().bestArmor(slot).is(piece) ? n - 1 : n;
+    }
+
+    private static final Predicate<ItemStack> JUNK = st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE)
+            || st.is(Items.DIRT) || st.is(Items.GRAVEL) || st.is(Items.SAND) || st.is(Items.ANDESITE) || st.is(Items.DIORITE)
+            || st.is(Items.GRANITE) || st.is(Items.TUFF) || st.is(Items.NETHERRACK) || st.is(Items.ROTTEN_FLESH);
+
+    /**
+     * What goes into the chest: armor it does not wear (only whole sets when {@code setsOnly}) and
+     * junk blocks beyond one stack of cobblestone for building.
+     */
+    private List<ItemStack> toStore(boolean setsOnly) {
+        List<ItemStack> out = new ArrayList<>();
+        BotKit kit = this.kit();
+        for (Item[] set : new Item[][]{IRON_ARMOR, DIAMOND_ARMOR}) {
+            boolean whole = true;
+            List<ItemStack> pieces = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                ItemStack worn = kit.bestArmor(ARMOR_SLOTS[i]);
+                ItemStack spare = ItemStack.EMPTY;
+                for (ItemStack st : kit.items()) {
+                    if (st.is(set[i]) && st != worn) {
+                        spare = st;
+                        break;
+                    }
+                }
+                if (spare.isEmpty()) {
+                    whole = false;
+                } else {
+                    pieces.add(spare);
+                }
+            }
+            if (whole || !setsOnly) {
+                out.addAll(pieces);
+            }
+        }
+        if (!setsOnly) {
+            int keptCobble = 0;
+            for (ItemStack st : kit.items()) {
+                if (JUNK.test(st)) {
+                    if (st.is(Items.COBBLESTONE) && keptCobble < 64) {
+                        keptCobble += st.getCount();
+                        continue;
+                    }
+                    out.add(st);
+                }
+            }
+        }
+        return out;
+    }
+
+    private @Nullable net.minecraft.world.Container chestAt(BlockPos pos) {
+        return this.level().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest ? chest : null;
+    }
+
+    private int storedCount(Item item) {
+        int n = 0;
+        for (BlockPos pos : this.homeChests) {
+            var c = this.chestAt(pos);
+            if (c != null) {
+                for (int i = 0; i < c.getContainerSize(); i++) {
+                    if (c.getItem(i).is(item)) {
+                        n += c.getItem(i).getCount();
+                    }
+                }
+            }
+        }
+        return n;
+    }
+
+    private @Nullable BlockPos chestWithRoom() {
+        this.homeChests.removeIf(pos -> this.bot.level().isLoaded(pos) && this.chestAt(pos) == null);
+        for (BlockPos pos : this.homeChests) {
+            var c = this.chestAt(pos);
+            if (c != null) {
+                for (int i = 0; i < c.getContainerSize(); i++) {
+                    if (c.getItem(i).isEmpty()) {
+                        return pos;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Walks home: straight there when close, otherwise in legs of 24 blocks; digs through when stuck. */
+    private void doGoHome(ServerLevel level) {
+        if (this.home == null) {
+            this.step = null;
+            return;
+        }
+        Vec3 home = Vec3.atBottomCenterOf(this.home);
+        Vec3 to = home.subtract(this.bot.position());
+        if (to.horizontalDistance() < 3.0 && Math.abs(to.y) < 3.0) {
+            this.bot.getNavigation().stop();
+            this.step = null;
+            return;
+        }
+        boolean stuck = this.noProgress();
+        if (this.bot.getNavigation().isDone() || stuck) {
+            Vec3 goal = home;
+            if (to.horizontalDistance() > 32.0) {
+                Vec3 leg = this.bot.position().add(to.multiply(1.0, 0.0, 1.0).normalize().scale(24.0));
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(leg.x), Mth.floor(leg.z));
+                goal = new Vec3(leg.x, y, leg.z);
+            }
+            if (stuck || !this.bot.getNavigation().moveTo(goal.x, goal.y, goal.z, 1.1)) {
+                this.digDir = Direction.getApproximateNearest(to.x, 0.0, to.z);
+                if (to.y > 3.0) {
+                    this.doDigUp(level);
+                } else {
+                    this.doDig(level, to.y < -2.0);
+                }
+            }
+        }
+        this.step = null;
+    }
+
+    /** Staircase up (out of its mine): clear head room and the step ahead, then climb onto it. */
+    private void doDigUp(ServerLevel level) {
+        this.bot.getNavigation().stop();
+        BlockPos feet = this.bot.blockPosition();
+        BlockPos step = feet.relative(this.digDir).above();
+        for (BlockPos p : new BlockPos[]{feet.above(2), step.above(), step.above(2)}) {
+            BlockState state = level.getBlockState(p);
+            if (!level.getFluidState(p).isEmpty() || this.nearLava(level, p) || state.getDestroySpeed(level, p) < 0.0F) {
+                this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+                return;
+            }
+            if (!state.getCollisionShape(level, p).isEmpty()) {
+                this.breakBlock(level, p);
+                return;
+            }
+        }
+        if (level.getBlockState(step).getCollisionShape(level, step).isEmpty()) {
+            // Nothing to stand on: just walk forward (the step is dug out already).
+            this.bot.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY() - 1, step.getZ() + 0.5, 1.0);
+            return;
+        }
+        this.bot.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY() + 1, step.getZ() + 0.5, 1.0);
+        this.bot.getJumpControl().jump();
+    }
+
+    /** Places a chest from its kit on free ground next to home (not touching another chest). */
+    private void doPlaceChest(ServerLevel level) {
+        if (this.home == null || this.kit().count(st -> st.is(Items.CHEST)) == 0) {
+            this.step = null;
+            return;
+        }
+        BlockPos spot = null;
+        search:
+        for (int r = 1; r <= 4; r++) {
+            for (BlockPos p : BlockPos.betweenClosed(this.home.offset(-r, -1, -r), this.home.offset(r, 1, r))) {
+                if (p.equals(this.home) || !level.getBlockState(p).isAir() || !level.getBlockState(p.above()).isAir()
+                        || !level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP)) {
+                    continue;
+                }
+                for (Direction d : Direction.Plane.HORIZONTAL) {
+                    if (level.getBlockState(p.relative(d)).is(net.minecraft.world.level.block.Blocks.CHEST)) {
+                        continue search;
+                    }
+                }
+                spot = p.immutable();
+                break search;
+            }
+        }
+        if (spot == null) {
+            this.bot.tellOwner("§7Kein Platz für eine Kiste neben dem Zuhause.", false);
+            this.step = null;
+            return;
+        }
+        if (this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(spot)) > 4.0) {
+            this.bot.getNavigation().moveTo(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 1.0);
+            this.step = null;
+            return;
+        }
+        this.bot.getNavigation().stop();
+        this.bot.lookAtBlock(spot);
+        Direction facing = Direction.getApproximateNearest(this.bot.getX() - (spot.getX() + 0.5), 0.0, this.bot.getZ() - (spot.getZ() + 0.5));
+        level.setBlock(spot, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.ChestBlock.FACING, facing.getAxis().isHorizontal() ? facing : Direction.NORTH), 3);
+        level.playSound(null, spot, SoundEvents.WOOD_PLACE, this.bot.getSoundSource(), 1.0F, 1.0F);
+        this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+        this.kit().remove(st -> st.is(Items.CHEST), 1);
+        this.homeChests.add(spot);
+        this.bot.tellOwner("§6Kiste zu Hause aufgestellt §7(" + spot.getX() + " " + spot.getY() + " " + spot.getZ() + ")", false);
+        this.step = null;
+    }
+
+    private void doStoreAtHome(ServerLevel level, BlockPos pos) {
+        var chest = this.chestAt(pos);
+        if (chest == null) {
+            this.homeChests.remove(pos);
+            this.step = null;
+            return;
+        }
+        if (this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(pos)) > 4.0) {
+            this.bot.getNavigation().moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 1.0);
+            this.step = null;
+            return;
+        }
+        this.bot.getNavigation().stop();
+        this.bot.lookAtBlock(pos);
+        if (++this.actionTicks < 10) {
+            if (this.actionTicks == 1) {
+                level.blockEvent(pos, level.getBlockState(pos).getBlock(), 1, 1);
+                level.playSound(null, pos, SoundEvents.CHEST_OPEN, this.bot.getSoundSource(), 0.6F, 1.0F);
+            }
+            return;
+        }
+        this.actionTicks = 0;
+        int moved = 0;
+        for (ItemStack stack : this.toStore(false)) {
+            ItemStack rest = stack.copy();
+            for (int i = 0; i < chest.getContainerSize() && !rest.isEmpty(); i++) {
+                ItemStack slot = chest.getItem(i);
+                if (slot.isEmpty()) {
+                    chest.setItem(i, rest.copy());
+                    rest.setCount(0);
+                } else if (ItemStack.isSameItemSameComponents(slot, rest) && slot.getCount() < slot.getMaxStackSize()) {
+                    int n = Math.min(rest.getCount(), slot.getMaxStackSize() - slot.getCount());
+                    slot.grow(n);
+                    rest.shrink(n);
+                }
+            }
+            moved += stack.getCount() - rest.getCount();
+            stack.setCount(rest.getCount());
+        }
+        chest.setChanged();
+        level.blockEvent(pos, level.getBlockState(pos).getBlock(), 1, 0);
+        level.playSound(null, pos, SoundEvents.CHEST_CLOSE, this.bot.getSoundSource(), 0.6F, 1.0F);
+        this.kit().items();
+        this.bot.onKitChanged();
+        if (moved > 0) {
+            this.bot.tellOwner("§6In die Kiste gelegt: §f" + moved + " Sachen", false);
+        }
+        this.step = null;
     }
 
     /** Stage 1 of beating the game: water bucket, diamond pickaxe, 10 obsidian, flint and steel, portal. */
@@ -793,7 +1177,7 @@ final class Gatherer {
             case COAL -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.COAL, depth);
             case RAW_IRON -> this.needPickaxe(Items.STONE_PICKAXE, depth) != null ? this.needPickaxe(Items.STONE_PICKAXE, depth) : this.mine(Ore.IRON, depth);
             case DIAMOND -> this.needPickaxe(Items.IRON_PICKAXE, depth) != null ? this.needPickaxe(Items.IRON_PICKAXE, depth)
-                    : this.nearest(Ore.DIAMOND) != null ? new Mine(Ore.DIAMOND) : this.speedrun ? this.deepStep() : new Explore(Ore.DIAMOND.label);
+                    : this.nearest(Ore.DIAMOND) != null ? new Mine(Ore.DIAMOND) : this.speedrun || this.autonomous ? this.deepStep() : new Explore(Ore.DIAMOND.label);
             case OBSIDIAN -> this.nearest(Ore.OBSIDIAN) != null ? new Mine(Ore.OBSIDIAN) : this.deepStep();
             case FLINT -> this.nearest(Ore.GRAVEL) != null ? new Mine(Ore.GRAVEL) : this.speedrun ? this.deepStep() : new Explore(Ore.GRAVEL.label);
             case IRON -> this.smelt(Res.RAW_IRON, Res.IRON, count - this.kit().count(res.match), depth);
@@ -899,6 +1283,9 @@ final class Gatherer {
             case UseEndPortal ue -> this.doUseEndPortal();
             case ShootCrystal sc -> this.doShootCrystal();
             case FightDragon fd -> this.doFightDragon(level);
+            case GoHome gh -> this.doGoHome(level);
+            case PlaceChest pc -> this.doPlaceChest(level);
+            case StoreAtHome sh -> this.doStoreAtHome(level, sh.chest());
         }
     }
 
@@ -1004,7 +1391,7 @@ final class Gatherer {
             boolean stuck = this.exploreTarget != null && pos.distanceToSqr(this.exploreTarget) >= 9.0;
             this.actionTicks = 0;
             double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
-            if (this.speedrun) {
+            if (this.speedrun || this.autonomous) {
                 // Far from home: keep one heading like a player would, turn only when the way is blocked.
                 if (Double.isNaN(this.exploreHeading) || stuck) {
                     this.exploreHeading = Double.isNaN(this.exploreHeading) ? angle
@@ -1013,7 +1400,7 @@ final class Gatherer {
                 angle = this.exploreHeading;
             }
             Vec3 candidate = pos.add(Math.cos(angle) * 32.0, 0.0, Math.sin(angle) * 32.0);
-            if (!this.speedrun && candidate.distanceTo(this.anchor) > 96.0) {
+            if (!this.speedrun && !this.autonomous && candidate.distanceTo(this.anchor) > 96.0) {
                 candidate = this.anchor.add(pos.subtract(this.anchor).scale(-0.5));
             }
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);

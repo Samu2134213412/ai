@@ -407,6 +407,32 @@ public class PvpBotEntity extends PathfinderMob {
         this.gatherer.setPortals(portal, null);
     }
 
+    /** Autonomous mode: upgrade its own gear, collect spare armor sets, store them at home. */
+    public void setAutonomous(boolean autonomous) {
+        this.gatherer.setAutonomous(autonomous);
+    }
+
+    public boolean isAutonomous() {
+        return this.gatherer.isAutonomous();
+    }
+
+    public void setHome(@org.jspecify.annotations.Nullable net.minecraft.core.BlockPos home) {
+        this.gatherer.setHome(home, home == null ? null : this.level().dimension());
+    }
+
+    public net.minecraft.core.@org.jspecify.annotations.Nullable BlockPos getHome() {
+        return this.gatherer.home();
+    }
+
+    /** Walk home now (and wait there). */
+    public void goHome() {
+        this.gatherer.goHome();
+    }
+
+    public List<net.minecraft.core.BlockPos> homeChests() {
+        return this.gatherer.homeChests();
+    }
+
     /** For tests: start stage 3 with the eyes of ender already crafted. */
     public void startAtStage3() {
         this.startAtStage2(null);
@@ -2007,6 +2033,12 @@ public class PvpBotEntity extends PathfinderMob {
             output.putLong("PvpBotNetherPortal", this.gatherer.netherPortal().asLong());
         }
         output.putInt("PvpBotFuel", this.gatherer.fuel());
+        output.putBoolean("PvpBotAutonom", this.gatherer.isAutonomous());
+        if (this.gatherer.home() != null && this.gatherer.homeLevel() != null) {
+            output.putLong("PvpBotHome", this.gatherer.home().asLong());
+            output.store("PvpBotHomeDim", net.minecraft.world.level.Level.RESOURCE_KEY_CODEC, this.gatherer.homeLevel());
+        }
+        output.store("PvpBotChests", net.minecraft.core.BlockPos.CODEC.listOf(), List.copyOf(this.gatherer.homeChests()));
     }
 
     @Override
@@ -2040,6 +2072,16 @@ public class PvpBotEntity extends PathfinderMob {
         this.gatherer.setPortals(ow == Long.MIN_VALUE ? null : net.minecraft.core.BlockPos.of(ow),
                 ne == Long.MIN_VALUE ? null : net.minecraft.core.BlockPos.of(ne));
         this.gatherer.setFuel(input.getIntOr("PvpBotFuel", 0));
+        long home = input.getLongOr("PvpBotHome", Long.MIN_VALUE);
+        if (home != Long.MIN_VALUE) {
+            this.gatherer.setHome(net.minecraft.core.BlockPos.of(home),
+                    input.read("PvpBotHomeDim", net.minecraft.world.level.Level.RESOURCE_KEY_CODEC).orElse(net.minecraft.world.level.Level.OVERWORLD));
+        }
+        this.gatherer.homeChests().clear();
+        this.gatherer.homeChests().addAll(input.read("PvpBotChests", net.minecraft.core.BlockPos.CODEC.listOf()).orElse(List.of()));
+        if (input.getBooleanOr("PvpBotAutonom", false)) {
+            this.gatherer.setAutonomous(true);
+        }
         List<ItemStack> saved = input.read("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf()).orElse(null);
         this.kit.clear();
         if (saved == null) {
