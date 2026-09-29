@@ -1103,10 +1103,19 @@ final class Survival {
             return false;
         }
         this.say(p, "jagt " + best.getName().getString() + " (Essen)");
-        if (p.distanceTo(best) > 2.8) {
-            return this.walkNear(mc, p, level, best.blockPosition());
+        double dist = p.distanceTo(best);
+        if (dist > 4.5) {
+            // Path to right next to it (not just "in reach of the block", that stops too early).
+            BlockPos at = best.blockPosition();
+            return this.walk(mc, p, level, at, feet -> feet.distSqr(at) <= 2);
         }
-        this.ap.attack(mc, p, best);
+        // Close: walk straight at it and hit it.
+        this.ap.face(p, best.position().add(0.0, best.getBbHeight() * 0.5, 0.0).subtract(p.getEyePosition()), 40.0F);
+        this.ap.kForward = dist > 2.2;
+        this.ap.kJump = p.horizontalCollision || p.isInWater();
+        if (dist <= 3.0) {
+            this.ap.attack(mc, p, best);
+        }
         return true;
     }
 
@@ -1135,7 +1144,8 @@ final class Survival {
             this.stillTicks = 0;
         }
         this.lastPos = p.position();
-        boolean replan = this.path == null || !goal.equals(this.pathGoal) || this.pathIndex >= this.path.size()
+        // (A moving goal - an animal - only needs a new path once it has moved a bit.)
+        boolean replan = this.path == null || this.pathGoal == null || goal.distSqr(this.pathGoal) > 4 || this.pathIndex >= this.path.size()
                 || this.stillTicks > 40 || this.pathAge > 400;
         if (!replan && this.pathIndex < this.path.size()) {
             BlockPos next = this.path.get(this.pathIndex);
