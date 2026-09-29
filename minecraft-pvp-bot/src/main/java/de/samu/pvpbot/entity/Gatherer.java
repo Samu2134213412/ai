@@ -2363,9 +2363,9 @@ final class Gatherer {
         Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
         double h = away.length();
         boolean stuck = this.noProgress();
-        if (h > 48.0 && !(stuck && h < 64.0)) {
-            // Closer shots miss less: walk to a spot about 20 blocks from the pillar (not into it).
-            Vec3 spot = crystal.position().add(away.normalize().scale(20.0));
+        if (h > 20.0 && !(stuck && h < 40.0)) {
+            // Closer shots miss less: walk to a spot about 14 blocks from the pillar (not into it).
+            Vec3 spot = crystal.position().add(away.normalize().scale(14.0));
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
             if (this.bot.getNavigation().isDone() || stuck) {
                 this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
@@ -2459,7 +2459,8 @@ final class Gatherer {
             this.bot.getLookControl().setLookAt(dragon);
             // While it flies: arrows, like a player would (aim ahead of it, it is fast).
             double dist = this.bot.distanceTo(dragon);
-            if (dist < 56.0 && this.kit().count(st -> st.is(Items.ARROW)) > 0 && this.bot.hasLineOfSight(dragon)
+            // (Only once the crystals are gone - they heal it - and with arrows to spare.)
+            if (dist < 40.0 && this.visibleCrystal() == null && this.kit().count(st -> st.is(Items.ARROW)) > 16 && this.bot.hasLineOfSight(dragon)
                     && ++this.dragonShotTicks >= 20) {
                 this.dragonShotTicks = 0;
                 Vec3 aim = dragon.getBoundingBox().getCenter().add(dragon.getDeltaMovement().scale(dist / 3.0));
