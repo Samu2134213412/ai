@@ -358,6 +358,7 @@ final class Gatherer {
     private @Nullable BlockPos netherGoal;
     private @Nullable BlockPos strongholdTarget;
     private int strongholdTicks;
+    private int strongholdCells;
     private double netherGoalBest;
     private int netherGoalTicks;
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
@@ -2213,6 +2214,26 @@ final class Gatherer {
                 this.bot.onKitChanged();
             }
             this.bot.tellOwner("§6Lava! §7Wassereimer drauf und raus.", false);
+        } else if (level.getFluidState(feet).is(net.minecraft.tags.FluidTags.LAVA) && this.kit().count(BRIDGE_BLOCK) > 0
+                && !level.getFluidState(feet.above()).is(net.minecraft.tags.FluidTags.LAVA)) {
+            // No water (the nether): a block where it stands, like a player would - it ends up on top.
+            ItemStack block = ItemStack.EMPTY;
+            for (ItemStack st : this.kit().items()) {
+                if (BRIDGE_BLOCK.test(st)) {
+                    block = st;
+                    break;
+                }
+            }
+            if (block.getItem() instanceof net.minecraft.world.item.BlockItem bi) {
+                level.setBlock(feet, bi.getBlock().defaultBlockState(), 3);
+                this.bot.setPos(this.bot.getX(), feet.getY() + 1.0, this.bot.getZ());
+                if (!this.kit().isInfinite()) {
+                    Item item = block.getItem();
+                    this.kit().remove(st -> st.is(item), 1);
+                    this.bot.onKitChanged();
+                }
+                this.bot.tellOwner("§6Lava! §7Block drunter und raus.", false);
+            }
         }
         this.bot.getJumpControl().jump();
         if (this.lastSafe != null) {
@@ -2286,9 +2307,10 @@ final class Gatherer {
                     best.toShortString(), this.known.getOrDefault(Ore.STRONGHOLD, List.of()).size(), this.visitedCells.size(),
                     this.known.getOrDefault(Ore.END_FRAME, List.of()).size());
         }
-        // The same wall for too long (the path ends short of it, it jiggles on the spot): next one.
-        if (!best.equals(this.strongholdTarget)) {
-            this.strongholdTarget = best;
+        // No new part of the stronghold for a while (the path ends short of that wall, two walls take
+        // turns as the target, it jiggles on the spot): count that one as seen and take the next.
+        if (this.visitedCells.size() != this.strongholdCells) {
+            this.strongholdCells = this.visitedCells.size();
             this.strongholdTicks = 0;
         } else if (++this.strongholdTicks > 400) {
             this.visitedCells.add(cellKey(best));
