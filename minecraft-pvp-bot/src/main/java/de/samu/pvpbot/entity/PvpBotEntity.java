@@ -688,6 +688,21 @@ public class PvpBotEntity extends PathfinderMob {
             Vec3 from = arrow.position();
             Vec3 to = from.add(motion);
             AABB sweep = new AABB(from, to).inflate(0.5);
+            for (var crystal : level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, sweep.inflate(2.0))) {
+                AABB box = crystal.getBoundingBox().inflate(0.3);
+                if (crystal.isAlive() && (box.contains(from) || box.clip(from, to).isPresent())) {
+                    var type = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(BOT_ATTACK);
+                    boolean hurt = crystal.hurtServer(level, new net.minecraft.world.damagesource.DamageSource(type, arrow, this), 5.0F);
+                    if (DEBUG) {
+                        PvpBotMod.LOGGER.info("[SELFTEST]   arrow hit crystal at {} -> destroyed={} (invulnerable {})", crystal.blockPosition().toShortString(),
+                                hurt, crystal.isInvulnerable());
+                    }
+                    this.arrowTargets.remove(arrow);
+                    arrow.discard();
+                    it.remove();
+                    return;
+                }
+            }
             for (var dragon : level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, sweep.inflate(24.0))) {
                 for (var part : dragon.getSubEntities()) {
                     AABB box = part.getBoundingBox().inflate(0.3);
