@@ -1798,12 +1798,13 @@ final class Gatherer {
             }
         }
         boolean stuck = this.noProgress();
-        if (this.bot.getNavigation().isDone() || stuck || this.exploreTarget == null || this.bot.position().distanceToSqr(this.exploreTarget) < 9.0) {
+        if (this.bot.getNavigation().isDone() || stuck || this.spiralStuck > 200 || this.exploreTarget == null
+                || this.bot.position().distanceToSqr(this.exploreTarget) < 9.0) {
             Vec3 dir = new Vec3(this.spiralDir.getStepX(), 0.0, this.spiralDir.getStepZ());
             Vec3 candidate = this.bot.position().add(dir.scale(24.0));
             this.exploreTarget = candidate;
-            if (stuck || !this.bot.getNavigation().moveTo(candidate.x, candidate.y, candidate.z, 1.1)) {
-                // No walkable way: tunnel straight on (doDig turns away from lava).
+            if (stuck || this.spiralStuck > 200 || !this.bot.getNavigation().moveTo(candidate.x, candidate.y, candidate.z, 1.1)) {
+                // No walkable way (or walking gets nowhere): tunnel straight on (doDig turns away from lava).
                 this.digDir = this.spiralDir;
                 this.doDig(level, false);
             }
@@ -1852,6 +1853,28 @@ final class Gatherer {
             this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
         }
         this.step = null;
+    }
+
+    /**
+     * Stuck swimming against a bank that is too high to climb: dig a notch into it (the two blocks
+     * above water level) like a player would, then swim in and jump out.
+     */
+    private void climbBank(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        Direction d = this.eyeDir != null ? Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z) : this.digDir;
+        BlockPos front = feet.relative(d);
+        for (BlockPos p : new BlockPos[]{front.above(2), front.above()}) {
+            BlockState st = level.getBlockState(p);
+            if (!st.getCollisionShape(level, p).isEmpty() && st.getDestroySpeed(level, p) >= 0.0F && !this.nearLava(level, p)) {
+                this.bot.getNavigation().stop();
+                this.breakBlock(level, p);
+                return;
+            }
+        }
+        Vec3 c = Vec3.atBottomCenterOf(front.above());
+        this.bot.getNavigation().stop();
+        this.bot.getMoveControl().setWantedPosition(c.x, c.y, c.z, 1.0);
+        this.bot.getJumpControl().jump();
     }
 
     /** Walks along the eye's direction for a while (tunnels where it cannot walk), then throws again. */
@@ -1923,6 +1946,8 @@ final class Gatherer {
                 if (this.bot.isInWater() || this.bot.horizontalCollision) {
                     this.bot.getJumpControl().jump();
                 }
+            } else if (!path && water) {
+                this.climbBank(level);
             } else if (!path) {
                 // No way to walk anywhere near the line: tunnel straight on.
                 this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
@@ -2565,7 +2590,10 @@ final class Gatherer {
         double best = 10.0 * 10.0;
         for (ItemEntity item : this.level().getEntitiesOfClass(ItemEntity.class, this.bot.getBoundingBox().inflate(10.0))) {
             if (item.isAlive() && isUseful(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)
-                    && !this.unreachableDrops.contains(item.getId())) {
+                    && !this.unreachableDrops.contains(item.getId())
+                    // Not into a lava pool after it (obsidian drops fall into the hole it leaves).
+                    && !this.level().getFluidState(item.blockPosition()).is(net.minecraft.tags.FluidTags.LAVA)
+                    && !this.level().getFluidState(item.blockPosition().below()).is(net.minecraft.tags.FluidTags.LAVA)) {
                 closest = item;
                 best = this.bot.distanceToSqr(item);
             }

@@ -296,7 +296,7 @@ public class PvpBotEntity extends PathfinderMob {
         if (!target.isAlive() || target.isRemoved() || target.level() != this.level()) {
             return false;
         }
-        if (this.isAlliedTo(target)) {
+        if (this.isAlliedTo(target) || target instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) {
             return false;
         }
         if (target instanceof Player player && (player.isCreative() || player.isSpectator())) {
@@ -325,7 +325,9 @@ public class PvpBotEntity extends PathfinderMob {
         if (this.pattern != null) {
             this.attemptTaken += Math.max(0.0F, before - (this.getHealth() + this.getAbsorptionAmount()));
         }
-        if (hurt && source.getEntity() instanceof LivingEntity attacker && attacker != this && !this.isAlliedTo(attacker)) {
+        // The dragon is fought with its own tactic (hit it while it sits), not like a normal enemy.
+        if (hurt && source.getEntity() instanceof LivingEntity attacker && attacker != this && !this.isAlliedTo(attacker)
+                && !(attacker instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon)) {
             this.addTarget(attacker, false);
         }
         return hurt;
