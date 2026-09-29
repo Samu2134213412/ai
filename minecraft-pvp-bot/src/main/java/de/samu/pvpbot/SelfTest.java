@@ -306,7 +306,7 @@ final class SelfTest {
                     PvpBotMod.LOGGER.info(TAG + "  (test) dragon hung in " + phase.getPhase() + " at " + dragon.blockPosition().toShortString()
                             + " - restarting its flight (tickCount " + dragon.tickCount + ", noAi " + dragon.isNoAi() + ", entity ticking "
                             + end.isPositionEntityTicking(dragon.blockPosition()) + ", removed " + dragon.isRemoved() + ", same level " + (dragon.level() == end)
-                            + ", dragons in level " + end.getDragons().size() + ")");
+                            + ", dragons in level " + end.getDragons().size() + ", forced chunks " + end.getForceLoadedChunks().size() + ")");
                     dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.TAKEOFF);
                 } else if (phase.getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
                     dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING);
@@ -420,7 +420,9 @@ final class SelfTest {
         } else if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
             bot.startAtStage3();
             if (end) {
-                // No player here: keep the island ticking (the dragon freezes in unticked chunks).
+                // No player here: keep the island ticking (the dragon freezes in unticked chunks). A real
+                // fight does this with the dragon ticket around the island once a player is there.
+                level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.DRAGON, new net.minecraft.world.level.ChunkPos(0, 0), 9);
                 for (int cx = -7; cx <= 6; cx++) {
                     for (int cz = -7; cz <= 6; cz++) {
                         level.setChunkForced(cx, cz, true);
