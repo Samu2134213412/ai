@@ -556,8 +556,10 @@ public final class Autopilot {
                     this.kJump = true;
                 }
                 if (ready && dist >= JAB_MIN && dist <= JAB_MAX && p.hasLineOfSight(t)) {
-                    this.attack(mc, p, t);
-                    this.nextPhase();
+                    // Only run past once the jab really went out (the crosshair has to be on it).
+                    if (this.attack(mc, p, t)) {
+                        this.nextPhase();
+                    }
                 } else if (ready && canLunge && dist > 5.0 && dist < 5.0 + 1.4 * lunge && p.hasLineOfSight(t)) {
                     // Lunge as a gap closer: the jab throws us right into striking distance.
                     this.attack(mc, p, t);
@@ -1376,7 +1378,7 @@ public final class Autopilot {
      * Turns towards the target at a human speed and only swings when the crosshair is really on it
      * (spear jabs: when looking straight at it). No snapping, no hits around corners.
      */
-    private void attack(Minecraft mc, LocalPlayer p, LivingEntity t) {
+    private boolean attack(Minecraft mc, LocalPlayer p, LivingEntity t) {
         this.faceEntity(p, t, 40.0F);
         HitResult hit = p.raycastHitResult(1.0F, p);
         boolean piercing = p.getMainHandItem().has(DataComponents.PIERCING_WEAPON);
@@ -1385,10 +1387,11 @@ public final class Autopilot {
         boolean aimed = piercing ? t.getBoundingBox().inflate(0.1).clip(eye, eye.add(p.getLookAngle().scale(6.5))).isPresent()
                 : hit instanceof net.minecraft.world.phys.EntityHitResult entityHit && entityHit.getEntity() == t;
         if (!aimed) {
-            return;
+            return false;
         }
         mc.hitResult = hit;
         ((MinecraftInvoker) mc).pvpbot$startAttack();
+        return true;
     }
 
     /**
