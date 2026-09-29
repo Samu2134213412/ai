@@ -306,8 +306,15 @@ final class SelfTest {
                     PvpBotMod.LOGGER.info(TAG + "  (test) dragon hung in " + phase.getPhase() + " at " + dragon.blockPosition().toShortString()
                             + " - restarting its flight (tickCount " + dragon.tickCount + ", noAi " + dragon.isNoAi() + ", entity ticking "
                             + end.isPositionEntityTicking(dragon.blockPosition()) + ", removed " + dragon.isRemoved() + ", same level " + (dragon.level() == end)
-                            + ", dragons in level " + end.getDragons().size() + ", forced chunks " + end.getForceLoadedChunks().size() + ")");
-                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.TAKEOFF);
+                            + ", dragons in level " + end.getDragons().size() + ", forced chunks " + end.getForceLoadedChunks().size() + ", bot pos ticking " + end.isPositionEntityTicking(bot.blockPosition()) + ")");
+                    // Its chunk is not ticking here (no player around): bring it back over the island.
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            end.setChunkForced(dragon.chunkPosition().x + dx, dragon.chunkPosition().z + dz, true);
+                        }
+                    }
+                    dragon.snapTo(0.5, 85.0, 0.5, dragon.getYRot(), 0.0F);
+                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN);
                 } else if (phase.getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
                     dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING);
                 }
