@@ -327,6 +327,8 @@ final class Gatherer {
     private boolean portalBuilt;
     private Direction digDir = Direction.NORTH;
     private final java.util.Set<Long> dugTunnel = new java.util.HashSet<>();
+    private @Nullable BlockPos mineSince;
+    private int mineTargetTicks;
     private int digBlocked;
     private int dryWalkTicks;
     private int portalProgress;
@@ -2222,6 +2224,21 @@ final class Gatherer {
             }
         }
         BlockPos target = this.mineTarget;
+        if (!target.equals(this.mineSince)) {
+            this.mineSince = target;
+            this.mineTargetTicks = 0;
+        }
+        if (++this.mineTargetTicks > 600) {
+            // 30 seconds and still not mined (out of reach, behind water ...): take another one.
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: gives up on {} at {}", ore, target.toShortString());
+            }
+            this.blacklist.add(target);
+            this.mineTarget = null;
+            this.stopBreaking();
+            this.step = null;
+            return;
+        }
         Vec3 center = Vec3.atCenterOf(target);
         double dist = this.bot.getEyePosition().distanceTo(center);
         BlockPos under = this.bot.blockPosition().below();
