@@ -402,6 +402,11 @@ public class AutopilotGameTest implements FabricClientGameTest {
      * Full control in a normal world, starting with empty hands: the autopilot has to gear up on its
      * own. Logs the gear every 20 seconds and records a timelapse (one frame every 2 seconds).
      */
+    private static final long CHECK_TICKS = 5 * 60 * 20;
+    private double[] checkPos;
+    private int checkGoals;
+    private int checkItems;
+
     private void survivalTest(ClientGameTestContext ctx) {
         long minutes = Long.getLong("pvpbot.survivalminutes", 25L);
         try (TestSingleplayerContext sp = ctx.worldBuilder()
@@ -454,6 +459,33 @@ public class AutopilotGameTest implements FabricClientGameTest {
                 }
                 if (t % 400 == 0) {
                     System.out.println(TAG + "t=" + t / 20 + "s " + info[1] + " | " + info[0]);
+                }
+                // Every 5 minutes: any progress? (new goal, more items, or moved somewhere)
+                if ((t + 40) % CHECK_TICKS == 0) {
+                    double[] pos = new double[3];
+                    int[] items = new int[1];
+                    ctx.runOnClient(mc -> {
+                        if (mc.player != null) {
+                            pos[0] = mc.player.getX();
+                            pos[1] = mc.player.getY();
+                            pos[2] = mc.player.getZ();
+                            for (var st : mc.player.getInventory().getNonEquipmentItems()) {
+                                items[0] += st.getCount();
+                            }
+                        }
+                    });
+                    double moved = checkPos == null ? 999 : Math.sqrt(Math.pow(pos[0] - checkPos[0], 2) + Math.pow(pos[1] - checkPos[1], 2) + Math.pow(pos[2] - checkPos[2], 2));
+                    boolean progress = reached.size() > checkGoals || items[0] > checkItems + 3 || moved > 8.0;
+                    System.out.println(TAG + "CHECK nach " + (t + 40) / 1200 + " min: ziele " + reached.size() + " (vorher " + checkGoals
+                            + "), items " + items[0] + " (vorher " + checkItems + "), bewegt " + (int) moved + " Bloecke -> "
+                            + (progress ? "Fortschritt, weiter" : "STUCK"));
+                    if (!progress) {
+                        System.out.println(TAG + "STUCK bei: " + info[1] + " | " + info[0]);
+                        break;
+                    }
+                    checkPos = pos;
+                    checkGoals = reached.size();
+                    checkItems = items[0];
                 }
             }
             clip = null;
