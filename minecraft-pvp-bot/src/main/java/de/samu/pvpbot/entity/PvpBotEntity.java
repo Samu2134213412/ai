@@ -396,6 +396,17 @@ public class PvpBotEntity extends PathfinderMob {
         return this.gatherer.portalBuilt();
     }
 
+    public boolean stage2Done() {
+        return this.gatherer.stage2Done();
+    }
+
+    /** For tests: start stage 2 next to an existing, lit portal. */
+    public void startAtStage2(net.minecraft.core.BlockPos portal) {
+        this.gatherer.setSpeedrun(true);
+        this.gatherer.setPortalBuilt(true);
+        this.gatherer.setPortals(portal, null);
+    }
+
     @Override
     public void remove(Entity.RemovalReason reason) {
         this.gatherer.releaseChunks();
@@ -1027,7 +1038,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     /** Ender pearls: chase a target that is far away on foot, or escape when low without a totem. */
     private boolean tryPearl(ServerLevel level, LivingEntity target, double dist, boolean sees) {
-        if (this.pearlCooldown > 0 || !this.onGround() || !this.kit.has(Role.PEARL) || this.thrownPearl != null) {
+        if (this.pearlCooldown > 0 || !this.onGround() || !this.kit.has(Role.PEARL) || this.thrownPearl != null || this.isSpeedrun()) {
             return false;
         }
         boolean flee = this.getHealth() < 7.0F && !this.kit.has(Role.TOTEM) && dist < 8.0;
@@ -1891,6 +1902,13 @@ public class PvpBotEntity extends PathfinderMob {
         output.putBoolean("PvpBotGather", this.gatherer.isEnabled());
         output.putBoolean("PvpBotSpeedrun", this.gatherer.isSpeedrun());
         output.putBoolean("PvpBotPortal", this.gatherer.portalBuilt());
+        output.putBoolean("PvpBotStage2", this.gatherer.stage2Done());
+        if (this.gatherer.overworldPortal() != null) {
+            output.putLong("PvpBotOverworldPortal", this.gatherer.overworldPortal().asLong());
+        }
+        if (this.gatherer.netherPortal() != null) {
+            output.putLong("PvpBotNetherPortal", this.gatherer.netherPortal().asLong());
+        }
         output.putInt("PvpBotFuel", this.gatherer.fuel());
     }
 
@@ -1919,6 +1937,11 @@ public class PvpBotEntity extends PathfinderMob {
             this.gatherer.setSpeedrun(true);
         }
         this.gatherer.setPortalBuilt(input.getBooleanOr("PvpBotPortal", false));
+        this.gatherer.setStage2Done(input.getBooleanOr("PvpBotStage2", false));
+        long ow = input.getLongOr("PvpBotOverworldPortal", Long.MIN_VALUE);
+        long ne = input.getLongOr("PvpBotNetherPortal", Long.MIN_VALUE);
+        this.gatherer.setPortals(ow == Long.MIN_VALUE ? null : net.minecraft.core.BlockPos.of(ow),
+                ne == Long.MIN_VALUE ? null : net.minecraft.core.BlockPos.of(ne));
         this.gatherer.setFuel(input.getIntOr("PvpBotFuel", 0));
         List<ItemStack> saved = input.read("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf()).orElse(null);
         this.kit.clear();

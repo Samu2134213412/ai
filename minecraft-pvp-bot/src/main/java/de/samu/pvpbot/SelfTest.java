@@ -135,6 +135,8 @@ final class SelfTest {
         // Beat the game, stage 1, in untouched terrain (sped up with /tick sprint).
         SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 36000, 240,
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
+        SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 48000, -240,
+                level -> List.of(), SelfTest::stage2Kit, PvpBotEntity::stage2Done));
 
         // The "beat the game" stages need a normal world; the fights need the flat test world.
         if (Boolean.getBoolean("pvpbot.stagetest")) {
@@ -276,6 +278,17 @@ final class SelfTest {
             start(level, SCENARIOS.get(index));
             return;
         }
+        if (bot.isRemoved() && bot.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION) {
+            // Through a portal: the bot lives on as a new entity in the other dimension.
+            for (ServerLevel l : server.getAllLevels()) {
+                if (l.getEntity(bot.getUUID()) instanceof PvpBotEntity moved) {
+                    bot = moved;
+                    spawned.add(moved);
+                    PvpBotMod.LOGGER.info(TAG + "  bot is now in " + l.dimension() + " at " + moved.blockPosition().toShortString());
+                    break;
+                }
+            }
+        }
         ticks++;
         if (bot.getY() - origin.getY() > maxHeight) {
             maxHeight = (int) (bot.getY() - origin.getY());
@@ -319,7 +332,20 @@ final class SelfTest {
         }
         level.addFreshEntity(bot);
         spawned.add(bot);
-        if (stage) {
+        if (stage && scenario.name().startsWith("Etappe 2")) {
+            // Start next to a lit portal (what stage 1 leaves behind).
+            BlockPos base = bot.blockPosition().offset(2, 0, 0);
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 5; j++) {
+                    BlockPos p = base.offset(0, j, i);
+                    boolean frame = i == 0 || i == 3 || j == 0 || j == 4;
+                    level.setBlock(p, frame ? Blocks.OBSIDIAN.defaultBlockState()
+                            : Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
+                            net.minecraft.core.Direction.Axis.Z), frame ? 3 : 18);
+                }
+            }
+            bot.startAtStage2(base.offset(0, 1, 1));
+        } else if (stage) {
             bot.setSpeedrun(true);
         }
         targets = scenario.targets().apply(level);
@@ -364,6 +390,21 @@ final class SelfTest {
                 new ItemStack(Items.IRON_CHESTPLATE), new ItemStack(Items.IRON_LEGGINGS), new ItemStack(Items.IRON_BOOTS),
                 new ItemStack(Items.SHIELD), new ItemStack(Items.COOKED_BEEF, 16), new ItemStack(Items.IRON_INGOT, 6),
                 new ItemStack(Items.STICK, 8), new ItemStack(Items.OAK_PLANKS, 16));
+    }
+
+    private static List<ItemStack> stage2Kit() {
+        List<ItemStack> kit = new ArrayList<>(stage1Kit());
+        kit.add(new ItemStack(Items.DIAMOND_PICKAXE));
+        kit.add(new ItemStack(Items.BOW));
+        kit.add(new ItemStack(Items.ARROW, 64));
+        kit.add(new ItemStack(Items.COOKED_BEEF, 32));
+        ItemStack fireRes = new ItemStack(Items.POTION);
+        fireRes.set(net.minecraft.core.component.DataComponents.POTION_CONTENTS,
+                new net.minecraft.world.item.alchemy.PotionContents(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE));
+        kit.add(fireRes.copyWithCount(1));
+        kit.add(fireRes.copyWithCount(1));
+        kit.add(fireRes.copyWithCount(1));
+        return kit;
     }
 
     private static void cleanup() {

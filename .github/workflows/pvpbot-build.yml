@@ -52,7 +52,7 @@ jobs:
           mkdir -p run
           echo "eula=true" > run/eula.txt
           printf 'online-mode=false\nlevel-type=minecraft\\:normal\nlevel-seed=pvpbot\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=true\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
-          timeout 2700 ./gradlew --no-daemon runServer -Pselftest -Pstagetest > stage.log 2>&1 || true
+          timeout 5400 ./gradlew --no-daemon runServer -Pselftest -Pstagetest > stage.log 2>&1 || true
           grep -E "SELFTEST|Exception|FATAL|at de\.samu" stage.log | grep -v "  hit " | head -800
           grep -q "\[SELFTEST\] DONE" stage.log
 

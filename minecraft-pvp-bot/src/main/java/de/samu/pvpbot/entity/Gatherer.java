@@ -49,6 +49,10 @@ final class Gatherer {
         DIAMOND("Diamanten", s -> s.is(Items.DIAMOND)),
         OBSIDIAN("Obsidian", s -> s.is(Items.OBSIDIAN)),
         FLINT("Feuerstein", s -> s.is(Items.FLINT)),
+        BLAZE_ROD("Lohenruten", s -> s.is(Items.BLAZE_ROD)),
+        BLAZE_POWDER("Lohenstaub", s -> s.is(Items.BLAZE_POWDER)),
+        PEARL("Enderperlen", s -> s.is(Items.ENDER_PEARL)),
+        EYE("Enderaugen", s -> s.is(Items.ENDER_EYE)),
         RAW_MEAT("rohes Fleisch", s -> s.is(Items.BEEF) || s.is(Items.PORKCHOP) || s.is(Items.CHICKEN) || s.is(Items.MUTTON) || s.is(Items.RABBIT)),
         COOKED_MEAT("gebratenes Fleisch", s -> s.is(Items.COOKED_BEEF) || s.is(Items.COOKED_PORKCHOP) || s.is(Items.COOKED_CHICKEN)
                 || s.is(Items.COOKED_MUTTON) || s.is(Items.COOKED_RABBIT) || s.is(Items.BREAD));
@@ -72,7 +76,11 @@ final class Gatherer {
         OBSIDIAN("Obsidian", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.OBSIDIAN)),
         GRAVEL("Kies", Res.FLINT, s -> s.is(net.minecraft.world.level.block.Blocks.GRAVEL)),
         LAVA("Lava", Res.OBSIDIAN, s -> s.getFluidState().is(net.minecraft.tags.FluidTags.LAVA) && s.getFluidState().isSource()),
-        WATER("Wasser", Res.OBSIDIAN, s -> s.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && s.getFluidState().isSource());
+        WATER("Wasser", Res.OBSIDIAN, s -> s.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && s.getFluidState().isSource()),
+        FORTRESS("Netherfestung", Res.BLAZE_ROD, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_BRICKS)
+                || s.is(net.minecraft.world.level.block.Blocks.NETHER_BRICK_FENCE)),
+        SPAWNER("Spawner", Res.BLAZE_ROD, s -> s.is(net.minecraft.world.level.block.Blocks.SPAWNER)),
+        PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL));
 
         final String label;
         final Res gives;
@@ -123,6 +131,8 @@ final class Gatherer {
         recipe(Items.DIAMOND_BOOTS, 1, Res.DIAMOND, 4);
         recipe(Items.BUCKET, 1, Res.IRON, 3);
         recipe(Items.FLINT_AND_STEEL, 1, Res.IRON, 1, Res.FLINT, 1);
+        recipe(Items.BLAZE_POWDER, 2, Res.BLAZE_ROD, 1);
+        recipe(Items.ENDER_EYE, 1, Res.BLAZE_POWDER, 1, Res.PEARL, 1);
     }
 
     private static final Item[] IRON_ARMOR = {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS};
@@ -130,7 +140,8 @@ final class Gatherer {
     private static final EquipmentSlot[] ARMOR_SLOTS = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
 
     /** The next thing to do. */
-    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal {
+    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
+            UsePortal, HuntMob, ExploreNether {
         String describe();
     }
 
@@ -188,6 +199,24 @@ final class Gatherer {
         }
     }
 
+    record UsePortal(boolean toNether) implements Step {
+        public String describe() {
+            return this.toNether ? "geht durchs Portal in den Nether" : "geht durchs Portal zurück in die Oberwelt";
+        }
+    }
+
+    record HuntMob(String label, net.minecraft.world.entity.EntityType<?> type) implements Step {
+        public String describe() {
+            return "jagt " + this.label;
+        }
+    }
+
+    record ExploreNether(String reason) implements Step {
+        public String describe() {
+            return "erkundet den Nether (" + this.reason + ")";
+        }
+    }
+
     record BuildPortal() implements Step {
         public String describe() {
             return "baut das Netherportal";
@@ -228,6 +257,11 @@ final class Gatherer {
     private @Nullable BlockPos portalBase;
     private Direction portalAlong = Direction.EAST;
     private final java.util.Set<Long> forcedChunks = new java.util.HashSet<>();
+    // Stage 2: the nether (blaze rods, ender pearls, eyes of ender).
+    static final int EYES_WANTED = 14;
+    private @Nullable BlockPos overworldPortal;
+    private @Nullable BlockPos netherPortal;
+    private boolean stage2Done;
 
     Gatherer(PvpBotEntity bot) {
         this.bot = bot;
@@ -257,6 +291,31 @@ final class Gatherer {
 
     boolean portalBuilt() {
         return this.portalBuilt;
+    }
+
+    boolean stage2Done() {
+        return this.stage2Done;
+    }
+
+    void setStage2Done(boolean done) {
+        this.stage2Done = done;
+    }
+
+    @Nullable BlockPos overworldPortal() {
+        return this.overworldPortal;
+    }
+
+    @Nullable BlockPos netherPortal() {
+        return this.netherPortal;
+    }
+
+    void setPortals(@Nullable BlockPos overworld, @Nullable BlockPos nether) {
+        this.overworldPortal = overworld;
+        this.netherPortal = nether;
+    }
+
+    private boolean inNether() {
+        return this.bot.level().dimension() == net.minecraft.world.level.Level.NETHER;
     }
 
     void setPortalBuilt(boolean built) {
@@ -413,6 +472,9 @@ final class Gatherer {
         if (this.speedrun && !this.portalBuilt) {
             return this.speedrunStep();
         }
+        if (this.speedrun && !this.stage2Done) {
+            return this.stage2Step();
+        }
         this.goalLabel = null;
         return null;
     }
@@ -450,6 +512,73 @@ final class Gatherer {
         }
         this.goalLabel = "das Netherportal";
         return new BuildPortal();
+    }
+
+    /**
+     * Stage 2: through the portal, blaze rods from a nether fortress, ender pearls from endermen,
+     * craft eyes of ender, back to the overworld.
+     */
+    private @Nullable Step stage2Step() {
+        BotKit kit = this.kit();
+        int eyes = kit.count(Res.EYE.match);
+        int powder = kit.count(Res.BLAZE_POWDER.match);
+        int rods = kit.count(Res.BLAZE_ROD.match);
+        int pearls = kit.count(Res.PEARL.match);
+        int missing = EYES_WANTED - eyes;
+        if (missing <= 0) {
+            if (this.inNether()) {
+                this.goalLabel = "den Weg zurück (Etappe 2)";
+                return new UsePortal(false);
+            }
+            this.stage2Done = true;
+            this.bot.tellOwner("§5§lEtappe 2 geschafft: " + eyes + " Enderaugen! §7Als Nächstes: die Festung (Stronghold).", true);
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: STAGE 2 DONE with {} eyes", eyes);
+            }
+            return null;
+        }
+        this.goalLabel = "Enderaugen (" + eyes + "/" + EYES_WANTED + ")";
+        if (powder > 0 && pearls > 0) {
+            return new Craft(RECIPES.get(Items.ENDER_EYE));
+        }
+        if (rods > 0 && powder == 0 && pearls > 0) {
+            return new Craft(RECIPES.get(Items.BLAZE_POWDER));
+        }
+        int rodsNeeded = (missing - powder + 1) / 2 - rods;
+        int pearlsNeeded = missing - pearls;
+        // Endermen are worth it whenever one is in sight (nether or overworld).
+        if (pearlsNeeded > 0 && this.visibleMob(EntityTypes.ENDERMAN) != null) {
+            return new HuntMob("Endermen (Enderperlen)", EntityTypes.ENDERMAN);
+        }
+        if (rodsNeeded > 0 || pearlsNeeded > 0) {
+            if (!this.inNether()) {
+                return new UsePortal(true);
+            }
+            if (rodsNeeded > 0) {
+                if (this.visibleMob(EntityTypes.BLAZE) != null) {
+                    return new HuntMob("Lohen (Lohenruten)", EntityTypes.BLAZE);
+                }
+                if (this.nearest(Ore.SPAWNER) != null || this.nearest(Ore.FORTRESS) != null) {
+                    return new ExploreNether("Lohen in der Festung");
+                }
+                return new ExploreNether("eine Netherfestung");
+            }
+            return new ExploreNether("Endermen");
+        }
+        return rods > 0 ? new Craft(RECIPES.get(Items.BLAZE_POWDER)) : new ExploreNether("Lohen");
+    }
+
+    private @Nullable LivingEntity visibleMob(net.minecraft.world.entity.EntityType<?> type) {
+        LivingEntity best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (Entity e : this.level().getEntities(this.bot, this.bot.getBoundingBox().inflate(32.0))) {
+            if (e.getType() == type && e instanceof LivingEntity living && living.isAlive() && this.bot.getSensing().hasLineOfSight(living)
+                    && this.bot.distanceToSqr(e) < bestDist) {
+                best = living;
+                bestDist = this.bot.distanceToSqr(e);
+            }
+        }
+        return best;
     }
 
     /** Diamonds and lava are deep down: dig down first, then strip-mine. */
@@ -536,6 +665,16 @@ final class Gatherer {
 
     void tick() {
         ServerLevel level = this.level();
+        if (this.speedrun && this.inNether() && this.netherPortal == null) {
+            // Just arrived: remember the way home.
+            for (BlockPos p : BlockPos.betweenClosed(this.bot.blockPosition().offset(-2, -1, -2), this.bot.blockPosition().offset(2, 3, 2))) {
+                if (level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
+                    this.netherPortal = p.immutable();
+                    this.bot.tellOwner("§5Im Nether angekommen! §7Jetzt: Netherfestung und Lohen suchen.", true);
+                    break;
+                }
+            }
+        }
         this.scanTick(level);
         if (this.collectDrops()) {
             return;
@@ -563,6 +702,9 @@ final class Gatherer {
             case FillWater fw -> this.doFillWater(level);
             case MakeObsidian mo -> this.doMakeObsidian(level);
             case BuildPortal bp -> this.doBuildPortal(level);
+            case UsePortal up -> this.doUsePortal(level, up.toNether());
+            case HuntMob hm -> this.doHuntMob(hm.type());
+            case ExploreNether en -> this.doExploreNether(level);
         }
     }
 
@@ -836,9 +978,79 @@ final class Gatherer {
             }
         }
         this.portalBuilt = true;
+        this.overworldPortal = fire;
         this.bot.tellOwner("§5§lEtappe 1 geschafft: Das Netherportal steht! §7(" + fire.getX() + " " + fire.getY() + " " + fire.getZ() + ")", true);
         if (PvpBotEntity.DEBUG) {
             PvpBotMod.LOGGER.info("[SELFTEST]   gather: PORTAL BUILT at {}", fire);
+        }
+        this.step = null;
+    }
+
+    // --- stage 2: nether
+
+    private void doUsePortal(ServerLevel level, boolean toNether) {
+        BlockPos portal = toNether ? this.overworldPortal : this.netherPortal;
+        if (portal == null || !level.getBlockState(portal).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
+            // Look for the portal we can see.
+            portal = this.nearest(Ore.PORTAL);
+        }
+        if (portal == null) {
+            if (!toNether && this.overworldPortal == null && !this.inNether()) {
+                this.step = null;
+                return;
+            }
+            this.doExplore();
+            return;
+        }
+        Vec3 center = Vec3.atBottomCenterOf(portal);
+        if (this.bot.position().distanceToSqr(center) > 2.0) {
+            this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1);
+            if (this.bot.position().distanceToSqr(center) < 9.0) {
+                this.bot.getMoveControl().setWantedPosition(center.x, center.y, center.z, 1.0);
+            }
+        } else {
+            this.bot.getNavigation().stop();
+            this.bot.getMoveControl().setWantedPosition(center.x, center.y, center.z, 0.6);
+        }
+        this.step = null;
+    }
+
+    private void doHuntMob(net.minecraft.world.entity.EntityType<?> type) {
+        LivingEntity mob = this.visibleMob(type);
+        if (mob == null) {
+            this.step = null;
+            return;
+        }
+        this.bot.huntTarget(mob);
+        this.step = null;
+    }
+
+    /**
+     * Nether exploring without x-ray: walk (or tunnel) in one direction for a long way, turning away
+     * from lava; fortresses stretch far along one axis, so a straight line finds them best. Heads for
+     * fortress blocks and spawners once they are in sight.
+     */
+    private void doExploreNether(ServerLevel level) {
+        BlockPos goal = this.nearest(Ore.SPAWNER);
+        if (goal == null) {
+            goal = this.nearest(Ore.FORTRESS);
+        }
+        if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
+            this.bot.getNavigation().moveTo(goal.getX() + 0.5, goal.getY() + 1, goal.getZ() + 0.5, 1.1);
+            if (this.bot.getNavigation().isDone()) {
+                this.doDig(level, false);
+            }
+            this.step = null;
+            return;
+        }
+        if (this.bot.getNavigation().isDone() || this.exploreTarget == null || this.bot.position().distanceToSqr(this.exploreTarget) < 9.0) {
+            Vec3 dir = new Vec3(this.digDir.getStepX(), 0.0, this.digDir.getStepZ());
+            Vec3 candidate = this.bot.position().add(dir.scale(24.0));
+            this.exploreTarget = candidate;
+            if (!this.bot.getNavigation().moveTo(candidate.x, candidate.y, candidate.z, 1.1)) {
+                // No walkable way: tunnel straight on (doDig turns away from lava).
+                this.doDig(level, false);
+            }
         }
         this.step = null;
     }
