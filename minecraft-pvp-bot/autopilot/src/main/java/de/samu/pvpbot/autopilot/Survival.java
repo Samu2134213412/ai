@@ -269,7 +269,12 @@ final class Survival {
         }
         if (this.unstickTicks > 0) {
             this.unstickTicks--;
-            int surface = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ());
+            // (The ground around it: its own column is open above in a pit.)
+            int surface = Integer.MIN_VALUE;
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                BlockPos n = p.blockPosition().relative(d, 2);
+                surface = Math.max(surface, level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, n.getX(), n.getZ()));
+            }
             if (p.getBlockY() < surface - 1 && !level.getFluidState(p.blockPosition().above(2)).is(net.minecraft.tags.FluidTags.WATER)) {
                 // Stuck in a pit (its own stairs, a flooded hole): build up and out.
                 return this.digUp(mc, p, level);
