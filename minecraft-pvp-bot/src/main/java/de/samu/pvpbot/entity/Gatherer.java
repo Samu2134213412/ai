@@ -1141,7 +1141,9 @@ final class Gatherer {
             this.stage2Done = false;
             return null;
         }
-        if (this.eyeDir == null || this.legTicks > 1200) {
+        // A new eye only after real headway (or a long time): stuck in one place, another eye shows
+        // the same direction and may break.
+        if (this.eyeDir == null || this.legTicks > 1200 && this.legBest > 24.0 || this.legTicks > 6000) {
             return new ThrowEye();
         }
         return new FollowEye();
@@ -2026,7 +2028,8 @@ final class Gatherer {
                 // A path that only gets part of the way is fine too, as long as it gets well closer.
                 boolean useful = p != null && (p.canReach() || p.getEndNode() != null
                         && Vec3.atCenterOf(p.getEndNode().asBlockPos()).distanceTo(g) < this.bot.position().distanceTo(g) - 6.0);
-                if (useful && level.getFluidState(new BlockPos(Mth.floor(g.x), y - 1, Mth.floor(g.z))).isEmpty()) {
+                // (Stuck for long despite a path: walking does not work here, use the fallbacks below.)
+                if (useful && this.legStuckTicks < 200 && level.getFluidState(new BlockPos(Mth.floor(g.x), y - 1, Mth.floor(g.z))).isEmpty()) {
                     this.bot.getNavigation().moveTo(p, 1.1);
                     goal = new Vec3(g.x, y, g.z);
                     path = true;
