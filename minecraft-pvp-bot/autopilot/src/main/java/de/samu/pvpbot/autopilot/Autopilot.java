@@ -437,7 +437,7 @@ public final class Autopilot {
                 this.kLeft = this.strafe < 0;
                 this.kRight = this.strafe > 0;
                 boolean passed = toT.dot(p.getLookAngle().multiply(1.0, 0.0, 1.0)) < 0.0;
-                if (passed && dist > 3.5 || this.phaseTicks > 25) {
+                if (passed && dist > 2.5 || this.phaseTicks > 12) {
                     this.nextPhase();
                 }
             }
@@ -446,11 +446,13 @@ public final class Autopilot {
                 Vec3 toT = t.position().subtract(p.position()).multiply(1.0, 0.0, 1.0);
                 Vec3 away = toT.scale(-1.0);
                 Vec3 side = new Vec3(-toT.z, 0.0, toT.x).normalize().scale(this.strafe * toT.length());
-                this.face(p, dist < 6.0 ? away.add(side) : toT, 25.0F);
+                this.face(p, away.add(side), 35.0F);
                 if (p.horizontalCollision) {
                     this.kJump = true;
                 }
-                if (dist >= 6.0 && this.phaseTicks > 6 || this.phaseTicks > 40) {
+                // Turn back in as soon as the spear is (almost) recharged and we are in reach again.
+                boolean almost = p.getAttackStrengthScale(0.5F) >= 0.8F;
+                if (almost && dist >= 3.0 && this.phaseTicks > 3 || dist >= 6.0 || this.phaseTicks > 30) {
                     if (p.getRandom().nextInt(3) == 0) {
                         this.strafe = -this.strafe;
                     }
@@ -479,7 +481,7 @@ public final class Autopilot {
                 if (p.horizontalCollision) {
                     this.kJump = true;
                 }
-                if (dist >= 11.0 || this.phaseTicks > 45) {
+                if (dist >= 7.5 || this.phaseTicks > 30) {
                     this.nextPhase();
                 }
             }

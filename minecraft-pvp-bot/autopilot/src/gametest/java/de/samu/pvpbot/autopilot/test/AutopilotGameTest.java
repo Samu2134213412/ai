@@ -59,7 +59,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
                     "summon minecraft:iron_golem 6 ~ 0 {NoAI:1b}", 600);
             recordNext = "03_speer";
             fight(ctx, sp, "Speer (Lunge III) vs Golem", ARMOR + ";give @a minecraft:netherite_spear[enchantments={lunge:3}]",
-                    "summon minecraft:iron_golem 9 ~ 0 {NoAI:1b}", 600);
+                    "summon minecraft:iron_golem 9 ~ 0 {NoAI:1b}", 900);
             recordNext = "03b_speer_zombies";
             fight(ctx, sp, "Speer (Lunge III) vs 3 Zombies", ARMOR + ";give @a minecraft:netherite_spear[enchantments={lunge:3}];give @a minecraft:golden_apple 4",
                     "summon minecraft:zombie 10 ~ 4 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};summon minecraft:zombie 12 ~ -4 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};summon minecraft:zombie 14 ~ 0 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}}", 900, true);
@@ -172,8 +172,9 @@ public class AutopilotGameTest implements FabricClientGameTest {
         run(sp, "execute as @p at @p run pvpbot spawn Lanze");
         run(sp, "execute as @p run pvpbot weapon spear");
         run(sp, "execute as @p run pvpbot assist off");
-        run(sp, "execute at @p run summon minecraft:zombie ~12 ~ ~5 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};execute at @p run summon minecraft:zombie ~14 ~ ~-4 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};"
-                + "execute at @p run summon minecraft:zombie ~16 ~ ~1 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}}");
+        for (int[] z : new int[][]{{12, 5}, {14, -4}, {16, 1}, {20, 8}, {22, -7}, {25, 0}}) {
+            run(sp, "execute at @p run summon minecraft:zombie ~" + z[0] + " ~ ~" + z[1] + " {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}}");
+        }
         run(sp, "effect give @e[type=minecraft:zombie] minecraft:fire_resistance infinite 0 true");
         run(sp, "execute as @p run pvpbot attack @e[type=minecraft:zombie]");
         run(sp, "gamemode spectator @a");
@@ -185,7 +186,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             for (int i = 0; i < 10; i++) {
                 ctx.waitTicks(2);
                 waited += 2;
-                orbitCamera(sp, 0.6 + waited * 0.003, 8.0, 3.0);
+                orbitCamera(sp, 0.6 + waited * 0.003, 5.0, 2.5);
                 capture(ctx);
             }
             zombiesLeft = ctx.computeOnClient(mc -> {
@@ -199,11 +200,11 @@ public class AutopilotGameTest implements FabricClientGameTest {
         }
         for (int i = 0; i < 15; i++) {
             ctx.waitTicks(2);
-            orbitCamera(sp, 0.6 + (waited + 2 * i) * 0.003, 8.0, 3.0);
+            orbitCamera(sp, 0.6 + (waited + 2 * i) * 0.003, 5.0, 2.5);
             capture(ctx);
         }
         clip = null;
-        String line = String.format("INFO PvP-Bot Speer vs 3 Zombies: %s nach %.1fs", zombiesLeft ? "Zeit abgelaufen" : "alle erledigt", waited / 20.0);
+        String line = String.format("INFO PvP-Bot Speer vs 6 Zombies: %s nach %.1fs", zombiesLeft ? "Zeit abgelaufen" : "alle erledigt", waited / 20.0);
         results.add(line);
         System.out.println(TAG + line);
         run(sp, "kill @e[type=pvpbot:pvp_bot]");
