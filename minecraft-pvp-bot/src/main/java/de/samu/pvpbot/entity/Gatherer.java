@@ -1903,6 +1903,15 @@ final class Gatherer {
         }
         BlockPos goal = this.nearest(Ore.SPAWNER);
         if (goal == null) {
+            // A blaze nearby can be heard (like a player hears them breathing): go that way.
+            var blaze = this.level().getNearestEntity(net.minecraft.world.entity.monster.Blaze.class,
+                    net.minecraft.world.entity.ai.targeting.TargetingConditions.forNonCombat().ignoreLineOfSight(), this.bot,
+                    this.bot.getX(), this.bot.getY(), this.bot.getZ(), this.bot.getBoundingBox().inflate(24.0));
+            if (blaze != null) {
+                goal = blaze.blockPosition().below();
+            }
+        }
+        if (goal == null) {
             // In the fortress: go through its halls and bridges, to parts it has not been to yet.
             this.fortressVisited.add(cellKey(this.bot.blockPosition()));
             double bestDist = Double.MAX_VALUE;
