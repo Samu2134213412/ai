@@ -62,9 +62,9 @@ final class Survival {
 
     private static @Nullable Kind kindOf(BlockState state) {
         if (state.is(BlockTags.LOGS)) return Kind.LOG;
-        if (state.is(BlockTags.COAL_ORES)) return Kind.COAL;
-        if (state.is(BlockTags.IRON_ORES)) return Kind.IRON;
-        if (state.is(BlockTags.DIAMOND_ORES)) return Kind.DIAMOND;
+        if (state.is(Blocks.COAL_ORE) || state.is(Blocks.DEEPSLATE_COAL_ORE)) return Kind.COAL;
+        if (state.is(Blocks.IRON_ORE) || state.is(Blocks.DEEPSLATE_IRON_ORE)) return Kind.IRON;
+        if (state.is(Blocks.DIAMOND_ORE) || state.is(Blocks.DEEPSLATE_DIAMOND_ORE)) return Kind.DIAMOND;
         if (state.is(Blocks.CRAFTING_TABLE)) return Kind.TABLE;
         if (state.is(Blocks.FURNACE)) return Kind.FURNACE;
         if (state.is(Blocks.STONE) || state.is(Blocks.COBBLESTONE) || state.is(Blocks.DEEPSLATE) || state.is(Blocks.COBBLED_DEEPSLATE)) return Kind.STONE;
@@ -431,7 +431,6 @@ final class Survival {
                 Vec3 face = Vec3.atCenterOf(ground).add(0.0, 0.5, 0.0);
                 this.ap.face(p, face.subtract(p.getEyePosition()), 90.0F);
                 mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(face, Direction.UP, ground, false));
-                p.swing(InteractionHand.MAIN_HAND);
                 Kind kind = item == Items.CRAFTING_TABLE ? Kind.TABLE : Kind.FURNACE;
                 this.seen.computeIfAbsent(kind, k -> new LinkedHashSet<>()).add(spot);
                 return true;
