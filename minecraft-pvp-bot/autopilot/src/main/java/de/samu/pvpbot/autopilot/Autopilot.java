@@ -181,6 +181,16 @@ public final class Autopilot {
         this.ticks++;
         boolean survivalScreen = this.survival.ownsScreen()
                 && mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>;
+        if (!p.isAlive() && this.targetMode == TargetMode.FULL && mc.gui.screen() instanceof net.minecraft.client.gui.screens.DeathScreen
+                && ++this.deadTicks > 60) {
+            // Full control: press "Respawn" and carry on.
+            this.deadTicks = 0;
+            p.respawn();
+            mc.gui.setScreen(null);
+            this.target = null;
+            this.say(mc, "§7Gestorben – wieder da, weiter geht's.");
+            return;
+        }
         if (mc.gui.screen() != null && !survivalScreen || !p.isAlive()) {
             // Menu or chat open, or dead: hands off.
             this.releaseKeys(mc);
@@ -220,6 +230,18 @@ public final class Autopilot {
             return;
         }
         if (this.eatIfLow(mc, p, t)) {
+            this.applyKeys(mc);
+            return;
+        }
+        if (t != null && this.targetMode == TargetMode.FULL && p.getHealth() <= 6.0F && !this.has(p, Role.GAPPLE)
+                && t instanceof Enemy && p.distanceTo(t) < 8.0F) {
+            // Nearly dead against a monster: run away (sprint away from it), eat when it is far enough.
+            this.finishAttempt(mc);
+            this.face(p, p.position().subtract(t.position()).multiply(1.0, 0.0, 1.0), 40.0F);
+            this.kForward = true;
+            this.kSprint = p.getFoodData().getFoodLevel() > 6;
+            this.kJump = p.horizontalCollision || p.isInWater();
+            this.status(p, "§cflieht (wenig Leben)");
             this.applyKeys(mc);
             return;
         }
@@ -352,7 +374,8 @@ public final class Autopilot {
             Entity best = null;
             double bestDist = Double.MAX_VALUE;
             for (Entity e : mc.level.getEntities(p, box)) {
-                boolean mob = e instanceof Enemy && e instanceof LivingEntity && p.distanceToSqr(e) < 24.0 * 24.0;
+                double mobRange = this.targetMode == TargetMode.FULL ? (this.has(p, Role.SWORD) || this.has(p, Role.AXE) ? 12.0 : 6.0) : 24.0;
+                boolean mob = e instanceof Enemy && e instanceof LivingEntity && p.distanceToSqr(e) < mobRange * mobRange;
                 boolean player = e instanceof Player other && !other.isSpectator() && !other.isCreative();
                 boolean fits = switch (this.targetMode) {
                     case MOBS -> mob;
@@ -1166,18 +1189,36 @@ public final class Autopilot {
     }
 
     /** Out of combat: walk over dropped items nearby (loot of kills) to pick them up. */
+    private final java.util.Set<Integer> lootIgnored = new java.util.HashSet<>();
+    private int lootId = -1;
+    private int deadTicks;
+    private int lootTicks;
+
     boolean collectLoot(Minecraft mc, LocalPlayer p) {
         net.minecraft.world.entity.item.ItemEntity closest = null;
         double best = 12.0 * 12.0;
         for (net.minecraft.world.entity.item.ItemEntity item : p.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                 p.getBoundingBox().inflate(12.0))) {
             double d = p.distanceToSqr(item);
-            if (item.isAlive() && d < best && Math.abs(item.getY() - p.getY()) < 3.0 && p.hasLineOfSight(item)) {
+            if (item.isAlive() && d < best && Math.abs(item.getY() - p.getY()) < 3.0 && p.hasLineOfSight(item)
+                    && !this.lootIgnored.contains(item.getId()) && !item.isInWater()) {
                 closest = item;
                 best = d;
             }
         }
         if (closest == null) {
+            return false;
+        }
+        if (closest.getId() != this.lootId) {
+            this.lootId = closest.getId();
+            this.lootTicks = 0;
+        }
+        if (++this.lootTicks > 100) {
+            // Cannot get there (other side of water, on a ledge): leave it.
+            this.lootIgnored.add(closest.getId());
+            if (this.lootIgnored.size() > 300) {
+                this.lootIgnored.clear();
+            }
             return false;
         }
         this.face(p, closest.position().subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 30.0F);

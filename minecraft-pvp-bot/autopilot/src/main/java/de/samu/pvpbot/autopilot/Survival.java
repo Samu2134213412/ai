@@ -726,36 +726,54 @@ final class Survival {
     }
 
     private Direction digDir = Direction.NORTH;
-    private int digTurnTicks;
+    private @Nullable BlockPos stairStep;
 
     /**
-     * Staircase down ({@code down}) or a straight 2-high tunnel: mine the head block, the feet block
-     * and (going down) the step below, then walk in. Turns away from lava and water.
+     * Staircase down ({@code down}) or a straight 2-high tunnel. Each step is one block forward
+     * (and one down): clear the blocks the body passes through (top first), then walk onto the step.
+     * Turns away from lava, water and bedrock.
      */
     private boolean digStairs(Minecraft mc, LocalPlayer p, Level level, boolean down) {
-        BlockPos feet = p.blockPosition();
-        if (this.digTurnTicks-- <= 0) {
-            this.digDir = p.getDirection();
-            this.digTurnTicks = 400;
+        BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+        if (this.stairStep == null || feet.equals(this.stairStep) || feet.distManhattan(this.stairStep) > 3) {
+            if (this.stairStep == null || feet.distManhattan(this.stairStep) > 3) {
+                this.digDir = p.getDirection();
+            }
+            this.stairStep = down ? feet.relative(this.digDir).below() : feet.relative(this.digDir);
         }
-        BlockPos front = feet.relative(this.digDir);
-        BlockPos[] blocks = down ? new BlockPos[]{front.above(), front, front.below()} : new BlockPos[]{front.above(), front};
-        for (BlockPos b : blocks) {
+        BlockPos step = this.stairStep;
+        BlockPos[] clear = {step.above(2), step.above(), step};
+        for (BlockPos b : clear) {
             if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || level.getBlockState(b).getDestroySpeed(level, b) < 0.0F) {
                 this.digDir = p.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
-                this.digTurnTicks = 400;
+                this.stairStep = null;
                 return true;
             }
         }
+        if (down && !PathFinder.solidGround(level, step.below()) && !PathFinder.body(level, step.below())) {
+            // A hole or cave under the step: fine, the walk drops into it.
+            this.stairStep = null;
+        }
         this.say(p, down ? "gräbt eine Treppe nach unten (y " + feet.getY() + ")" : "gräbt einen Tunnel");
-        for (BlockPos b : blocks) {
-            if (!level.getBlockState(b).getCollisionShape(level, b).isEmpty()) {
+        for (BlockPos b : clear) {
+            if (!PathFinder.body(level, b)) {
                 return this.mine(mc, p, level, b);
             }
         }
-        BlockPos target = down ? front.below() : front;
-        Vec3 c = Vec3.atBottomCenterOf(target);
-        this.ap.lookAt(p, this.digDir.toYRot(), down ? 30.0F : 0.0F, 30.0F);
+        if (this.stairStep != null && down && !PathFinder.solidGround(level, step.below())) {
+            // Would fall more than one block: make sure it is not a deep drop.
+            int depth = 0;
+            while (depth < 5 && PathFinder.body(level, step.below(depth + 1))) {
+                depth++;
+            }
+            if (depth >= 4) {
+                this.digDir = this.digDir.getClockWise();
+                this.stairStep = null;
+                return true;
+            }
+        }
+        Vec3 c = Vec3.atBottomCenterOf(step);
+        this.ap.face(p, c.subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 30.0F);
         this.ap.kForward = true;
         return true;
     }
