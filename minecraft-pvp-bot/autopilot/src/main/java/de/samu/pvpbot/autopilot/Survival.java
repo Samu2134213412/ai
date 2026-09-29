@@ -818,6 +818,8 @@ final class Survival {
 
     private Direction digDir = Direction.NORTH;
     private @Nullable BlockPos stairStep;
+    private int digTurns;
+    private int dryWalk;
 
     /**
      * Staircase down ({@code down}) or a straight 2-high tunnel. Each step is one block forward
@@ -825,22 +827,32 @@ final class Survival {
      * Turns away from lava, water and bedrock.
      */
     private boolean digStairs(Minecraft mc, LocalPlayer p, Level level, boolean down) {
+        if (this.dryWalk > 0) {
+            this.dryWalk--;
+            return this.explore(mc, p, level, "sucht trockenen Boden zum Graben");
+        }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
         if (this.stairStep == null || feet.equals(this.stairStep) || feet.distManhattan(this.stairStep) > 3) {
-            if (this.stairStep == null || feet.distManhattan(this.stairStep) > 3) {
-                this.digDir = p.getDirection();
+            if (this.stairStep != null && feet.distManhattan(this.stairStep) > 3) {
+                this.digDir = p.getDirection(); // somewhere else now: start fresh where it looks
             }
             this.stairStep = down ? feet.relative(this.digDir).below() : feet.relative(this.digDir);
         }
         BlockPos step = this.stairStep;
-        BlockPos[] clear = {step.above(2), step.above(), step};
+        BlockPos[] clear = {step.above(2), step.above(), step, step.below()};
         for (BlockPos b : clear) {
             if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || level.getBlockState(b).getDestroySpeed(level, b) < 0.0F) {
-                this.digDir = p.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+                // Water, lava or bedrock that way: try the next direction; all four bad -> walk elsewhere.
+                this.digDir = this.digDir.getClockWise();
                 this.stairStep = null;
+                if (++this.digTurns >= 4) {
+                    this.digTurns = 0;
+                    this.dryWalk = 100;
+                }
                 return true;
             }
         }
+        this.digTurns = 0;
         if (down && !PathFinder.solidGround(level, step.below()) && !PathFinder.body(level, step.below())) {
             // A hole or cave under the step: fine, the walk drops into it.
             this.stairStep = null;
