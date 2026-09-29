@@ -247,10 +247,19 @@ final class Survival {
         return this.job != null;
     }
 
+    private final Deque<String> recentlySaid = new ArrayDeque<>();
+
     private void say(LocalPlayer p, String what) {
         if (!what.equals(this.doing)) {
             this.doing = what;
-            Autopilot.LOGGER.info("[AUTOPILOT] survival: {}", what);
+            // Log each new activity once (not every time two labels take turns in the same tick).
+            if (!this.recentlySaid.contains(what)) {
+                Autopilot.LOGGER.info("[AUTOPILOT] survival: {}", what);
+                this.recentlySaid.addLast(what);
+                if (this.recentlySaid.size() > 6) {
+                    this.recentlySaid.removeFirst();
+                }
+            }
         }
         this.ap.status(p, "§6Ausrüstung §7– " + what);
     }

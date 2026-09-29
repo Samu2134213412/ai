@@ -149,7 +149,7 @@ jobs:
           if-no-files-found: error
       - name: Autopilot gears up on its own (normal world, timelapse)
         env:
-          JAVA_TOOL_OPTIONS: '-Dpvpbot.survivaltest=true -Dpvpbot.survivalminutes=25'
+          JAVA_TOOL_OPTIONS: '-Dpvpbot.survivaltest=true -Dpvpbot.survivalminutes=22'
           LIBGL_ALWAYS_SOFTWARE: '1'
           MESA_GL_VERSION_OVERRIDE: '4.5'
           SDL_VIDEO_DRIVER: x11
@@ -161,13 +161,11 @@ jobs:
           sleep 3
           DISPLAY=:99 glxinfo -B | head -12 || true
           DISPLAY=:99 vulkaninfo --summary 2>/dev/null | head -20 || true
-          DISPLAY=:99 timeout 2400 ./gradlew --no-daemon :autopilot:runClientGameTest > clienttest.log 2>&1 || true
-          grep -E "AUTOPILOT|Exception|FATAL|at de\.samu|Caused by" clienttest.log | grep -v "^\[SHOT" | head -1500
-          grep -q "AUTOPILOT-TEST\] DONE" clienttest.log || tail -80 clienttest.log
+          DISPLAY=:99 timeout 3000 ./gradlew --no-daemon :autopilot:runClientGameTest > clienttest.log 2>&1 || true
+          grep -E "AUTOPILOT-TEST|survival|Gestorben|Exception|FATAL|at de\.samu|Caused by" clienttest.log | grep -v "^\[SHOT" | head -3000
+          echo "===== RESULT ====="
+          grep -E "GOAL|SURVIVAL|DONE" clienttest.log || true
           grep -q "AUTOPILOT-TEST\] DONE" clienttest.log
-      - name: Screenshots (base64)
-        if: always()
-        run: grep "SHOT" clienttest.log | sed 's/^.*\[SHOT/[SHOT/' || true
       - name: Encode videos
         if: always()
         run: |
