@@ -1170,7 +1170,11 @@ final class Gatherer {
             this.lastDragonPhase = phase;
             // Down at the fountain: that is the moment to hit it, crystals can wait.
             BlockPos fountain = this.level().getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
-            if (dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16) {
+            // Coming in to land: be waiting there (it only sits a few seconds).
+            boolean landing = phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING_APPROACH
+                    || phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING
+                    || dragon.getPhaseManager().getCurrentPhase().isSitting();
+            if (landing || dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16) {
                 return new FightDragon();
             }
         }
@@ -1577,7 +1581,13 @@ final class Gatherer {
                 depth++;
                 lavaBelow |= !level.getFluidState(front.below(depth)).isEmpty() && level.getFluidState(front.below(depth)).is(net.minecraft.tags.FluidTags.LAVA);
             }
-            if (lavaBelow || depth >= 4 || level.getFluidState(front.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA)) {
+            boolean bad = lavaBelow || depth >= 4 || level.getFluidState(front.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA);
+            if ((bad || depth >= 2) && this.bridge(level, front.below())) {
+                // Bridged the gap like a player (block under the next step), go on.
+                this.step = null;
+                return;
+            }
+            if (bad) {
                 this.stopBreaking();
                 this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
                 this.digBlocked++;
@@ -1596,6 +1606,39 @@ final class Gatherer {
             this.actionTicks = 0;
         }
         this.step = null;
+    }
+
+    private static final Predicate<ItemStack> BRIDGE_BLOCK = st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE)
+            || st.is(Items.NETHERRACK) || st.is(Items.DIRT) || st.is(Items.BLACKSTONE);
+
+    /** Puts a block (cobblestone, netherrack, dirt) into the gap in front of its feet. */
+    private boolean bridge(ServerLevel level, BlockPos gap) {
+        BlockState there = level.getBlockState(gap);
+        if (!there.canBeReplaced() || !this.bot.onGround()) {
+            return false;
+        }
+        ItemStack block = ItemStack.EMPTY;
+        for (ItemStack st : this.kit().items()) {
+            if (BRIDGE_BLOCK.test(st)) {
+                block = st;
+                break;
+            }
+        }
+        if (block.isEmpty() || !(block.getItem() instanceof net.minecraft.world.item.BlockItem bi)) {
+            return false;
+        }
+        this.bot.getNavigation().stop();
+        this.bot.getMoveControl().setWantedPosition(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 0.0);
+        this.bot.lookAtBlock(gap);
+        level.setBlock(gap, bi.getBlock().defaultBlockState(), 3);
+        level.playSound(null, gap, SoundEvents.STONE_PLACE, this.bot.getSoundSource(), 1.0F, 1.0F);
+        this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+        if (!this.kit().isInfinite()) {
+            Item item = block.getItem();
+            this.kit().remove(st -> st.is(item), 1);
+            this.bot.onKitChanged();
+        }
+        return true;
     }
 
     private void doFillWater(ServerLevel level) {
@@ -1851,6 +1894,7 @@ final class Gatherer {
     private @Nullable BlockPos spiralLegStart;
     private int spiralLeg;
     private int spiralBest;
+    private int crystalLogTicks;
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
@@ -2194,7 +2238,7 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (PvpBotEntity.DEBUG && this.bot.tickCount % 200 == 0) {
+        if (PvpBotEntity.DEBUG && ++this.crystalLogTicks % 100 == 0) {
             int left = this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, this.bot.getBoundingBox().inflate(200.0)).size();
             PvpBotMod.LOGGER.info("[SELFTEST]   crystals left {} - shooting at {} (shots {}) from {}", left, crystal.blockPosition().toShortString(),
                     this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString());
@@ -2663,6 +2707,9 @@ final class Gatherer {
     // --- saving known state that matters
 
     static boolean isUseful(ItemStack stack) {
+        if (stack.is(Items.NETHERRACK)) {
+            return true; // for bridging over the lava sea
+        }
         for (Res res : Res.values()) {
             if (res.match.test(stack)) {
                 return true;
