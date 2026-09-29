@@ -57,7 +57,7 @@ jobs:
           echo "eula=true" > run/eula.txt
           printf 'online-mode=false\nlevel-type=minecraft\\:normal\nlevel-seed=pvpbot\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=true\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
           timeout 5400 ./gradlew --no-daemon runServer -Pselftest -Pstagetest=${{ matrix.stage }} > stage.log 2>&1 || true
-          grep -E "SELFTEST|Exception|FATAL|at de\.samu" stage.log | grep -v "  hit " | grep -vE "\] t=[0-9]+s bot hp" | head -1500
+          grep -E "SELFTEST|Exception|FATAL|at de\.samu" stage.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" | head -1500
           echo "===== RESULT ====="
           grep -E "\[SELFTEST\] (PASS|FAIL)|DONE" stage.log || true
           grep -q "\[SELFTEST\] DONE" stage.log

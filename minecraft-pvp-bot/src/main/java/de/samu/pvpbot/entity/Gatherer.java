@@ -1540,10 +1540,16 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        double h = this.bot.position().subtract(crystal.position()).horizontalDistance();
-        if (h > 28.0) {
-            // Closer shots miss less; the pillars are tall.
-            this.bot.getNavigation().moveTo(crystal.getX(), this.bot.getY(), crystal.getZ(), 1.1);
+        Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
+        double h = away.length();
+        boolean stuck = this.noProgress();
+        if (h > 28.0 && !(stuck && h < 64.0)) {
+            // Closer shots miss less: walk to a spot about 20 blocks from the pillar (not into it).
+            Vec3 spot = crystal.position().add(away.normalize().scale(20.0));
+            int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
+            if (this.bot.getNavigation().isDone() || stuck) {
+                this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
+            }
         } else {
             this.bot.getNavigation().stop();
             if (++this.actionTicks >= 25) {
