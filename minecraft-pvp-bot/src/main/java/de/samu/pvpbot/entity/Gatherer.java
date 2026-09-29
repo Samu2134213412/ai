@@ -1891,6 +1891,10 @@ final class Gatherer {
                 }
             }
         }
+        if (goal != null && this.bot.blockPosition().distSqr(goal) <= 25 && !level.getBlockState(goal).is(net.minecraft.world.level.block.Blocks.SPAWNER)) {
+            // Close enough to see that part of the fortress: next part.
+            this.fortressVisited.add(cellKey(goal));
+        }
         if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
             // Getting closer? If not for a long while (behind lava, up a cliff), forget that block.
             double dist = Math.sqrt(this.bot.blockPosition().distSqr(goal));
@@ -1898,7 +1902,7 @@ final class Gatherer {
                 this.netherGoalTicks = 0;
                 this.netherGoal = goal;
                 this.netherGoalBest = dist;
-            } else if (++this.netherGoalTicks > 600) {
+            } else if (++this.netherGoalTicks > 300) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   nether: gives up on {} at {} (no way there)", goal.toShortString(), this.bot.blockPosition().toShortString());
                 this.blacklist.add(goal);
                 this.fortressVisited.add(cellKey(goal));
