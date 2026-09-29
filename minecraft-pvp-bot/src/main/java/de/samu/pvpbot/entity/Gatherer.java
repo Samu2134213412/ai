@@ -2005,6 +2005,11 @@ final class Gatherer {
                 reachable = part;
             }
         }
+        if (PvpBotEntity.DEBUG && this.bot.tickCount % 400 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   dragon: hp {} phase {} at {} nearest part {} bot {}", (int) dragon.getHealth(),
+                    dragon.getPhaseManager().getCurrentPhase().getPhase(), dragon.blockPosition().toShortString(),
+                    (int) Math.sqrt(nearestDist), this.bot.blockPosition().toShortString());
+        }
         if (reachable != null) {
             this.bot.getNavigation().stop();
             this.bot.getLookControl().setLookAt(reachable.getX(), reachable.getY() + reachable.getBbHeight() / 2, reachable.getZ());
