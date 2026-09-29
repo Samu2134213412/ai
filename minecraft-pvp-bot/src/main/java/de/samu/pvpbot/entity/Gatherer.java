@@ -153,7 +153,7 @@ final class Gatherer {
     /** The next thing to do. */
     sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
             UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon,
-            GoHome, PlaceChest, StoreAtHome {
+            GoHome, PlaceChest, StoreAtHome, ClimbUp {
         String describe();
     }
 
@@ -196,6 +196,12 @@ final class Gatherer {
     record Hunt() implements Step {
         public String describe() {
             return "jagt Tiere für Essen";
+        }
+    }
+
+    record ClimbUp(String reason) implements Step {
+        public String describe() {
+            return "steigt nach oben (" + this.reason + ")";
         }
     }
 
@@ -993,7 +999,16 @@ final class Gatherer {
                     return s;
                 }
             }
-            return this.nearest(Ore.WATER) != null ? new FillWater() : new Explore("Wasser");
+            if (this.nearest(Ore.WATER) != null) {
+                return new FillWater();
+            }
+            // Deep underground there is hardly any water: up to the surface, where lakes are.
+            if (this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD && this.bot.getY() < 50.0
+                    && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
+                return new ClimbUp("Wasser gibt es oben");
+            }
+            return new Explore("Wasser");
         }
         if (kit.count(st -> st.is(Items.STONE_PICKAXE)) == 0 && kit.count(Res.COBBLE.match) >= 3) {
             // A cheap pickaxe for tunnelling, so the iron one is still there when diamonds show up.
@@ -1334,6 +1349,10 @@ final class Gatherer {
             case Mine mine -> this.doMine(level, mine.ore());
             case Hunt hunt -> this.doHunt();
             case Explore explore -> this.doExplore();
+            case ClimbUp up -> {
+                this.doDigUp(level);
+                this.step = null;
+            }
             case Descend d -> this.doDig(level, true);
             case StripMine sm -> this.doDig(level, false);
             case FillWater fw -> this.doFillWater(level);
@@ -1547,6 +1566,22 @@ final class Gatherer {
                 if (this.breakBlock(level, p)) {
                     this.digBlocked = 0;
                 }
+                return;
+            }
+        }
+        if (!down) {
+            // Before stepping into the cleared space: no deep drop and no lava under it.
+            int depth = 0;
+            boolean lavaBelow = false;
+            while (depth < 4 && level.getBlockState(front.below(depth + 1)).getCollisionShape(level, front.below(depth + 1)).isEmpty()) {
+                depth++;
+                lavaBelow |= !level.getFluidState(front.below(depth)).isEmpty() && level.getFluidState(front.below(depth)).is(net.minecraft.tags.FluidTags.LAVA);
+            }
+            if (lavaBelow || depth >= 4 || level.getFluidState(front.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA)) {
+                this.stopBreaking();
+                this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+                this.digBlocked++;
+                this.step = null;
                 return;
             }
         }
@@ -2158,6 +2193,11 @@ final class Gatherer {
         if (crystal == null) {
             this.step = null;
             return;
+        }
+        if (PvpBotEntity.DEBUG && this.bot.tickCount % 200 == 0) {
+            int left = this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, this.bot.getBoundingBox().inflate(200.0)).size();
+            PvpBotMod.LOGGER.info("[SELFTEST]   crystals left {} - shooting at {} (shots {}) from {}", left, crystal.blockPosition().toShortString(),
+                    this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString());
         }
         Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
         double h = away.length();
