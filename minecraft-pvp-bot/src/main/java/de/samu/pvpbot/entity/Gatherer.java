@@ -1878,7 +1878,7 @@ final class Gatherer {
      * fortress blocks and spawners once they are in sight.
      */
     private void doExploreNether(ServerLevel level) {
-        if (this.bot.getY() < 40.0) {
+        if (this.bot.getY() < 45.0) {
             // Down at the lava sea (y 31): climb back up before going on.
             this.doDigUp(level);
             this.step = null;
