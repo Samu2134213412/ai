@@ -413,9 +413,19 @@ final class Gatherer {
         return this.autonomous;
     }
 
+    /** Chests go anywhere within this many blocks of home. */
+    static final int CHEST_RADIUS = 20;
+
     void setAutonomous(boolean autonomous) {
         this.autonomous = autonomous;
         this.enabled = this.enabled || autonomous;
+        if (autonomous && this.home == null) {
+            // No home yet: this spot becomes home.
+            this.home = this.bot.blockPosition();
+            this.homeLevel = this.bot.level().dimension();
+            this.bot.tellOwner("§6Ich wohne jetzt hier: §f" + this.home.getX() + " " + this.home.getY() + " " + this.home.getZ()
+                    + " §7(Kisten kommen in " + CHEST_RADIUS + " Blöcken drumherum)", true);
+        }
         this.reset();
     }
 
@@ -857,25 +867,29 @@ final class Gatherer {
             this.step = null;
             return;
         }
+        // Anywhere within CHEST_RADIUS blocks of home; the chests stay together (next to the last one,
+        // one block gap so they do not join into double chests), the first one as close to home as possible.
+        BlockPos near = this.homeChests.isEmpty() ? this.home : this.homeChests.get(this.homeChests.size() - 1);
         BlockPos spot = null;
+        double bestDist = Double.MAX_VALUE;
         search:
-        for (int r = 1; r <= 4; r++) {
-            for (BlockPos p : BlockPos.betweenClosed(this.home.offset(-r, -1, -r), this.home.offset(r, 1, r))) {
-                if (p.equals(this.home) || !level.getBlockState(p).isAir() || !level.getBlockState(p.above()).isAir()
-                        || !level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP)) {
-                    continue;
-                }
-                for (Direction d : Direction.Plane.HORIZONTAL) {
-                    if (level.getBlockState(p.relative(d)).is(net.minecraft.world.level.block.Blocks.CHEST)) {
-                        continue search;
-                    }
-                }
-                spot = p.immutable();
-                break search;
+        for (BlockPos p : BlockPos.betweenClosed(this.home.offset(-CHEST_RADIUS, -3, -CHEST_RADIUS), this.home.offset(CHEST_RADIUS, 3, CHEST_RADIUS))) {
+            double d = p.distSqr(near);
+            if (d >= bestDist || p.equals(this.home) || p.distSqr(this.home) > CHEST_RADIUS * CHEST_RADIUS
+                    || !level.getBlockState(p).isAir() || !level.getBlockState(p.above()).isAir()
+                    || !level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP)) {
+                continue;
             }
+            for (Direction dir : Direction.Plane.HORIZONTAL) {
+                if (level.getBlockState(p.relative(dir)).is(net.minecraft.world.level.block.Blocks.CHEST)) {
+                    continue search;
+                }
+            }
+            spot = p.immutable();
+            bestDist = d;
         }
         if (spot == null) {
-            this.bot.tellOwner("§7Kein Platz für eine Kiste neben dem Zuhause.", false);
+            this.bot.tellOwner("§7Kein Platz für eine Kiste in " + CHEST_RADIUS + " Blöcken um das Zuhause.", false);
             this.step = null;
             return;
         }
