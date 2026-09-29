@@ -1873,7 +1873,7 @@ final class Gatherer {
         this.stopBreaking();
         this.bot.getNavigation().stop();
         this.drinkFireResistance(level);
-        if (!level.dimensionType().ultraWarm() && this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0
+        if (level.dimension() != net.minecraft.world.level.Level.NETHER && this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0
                 && level.getBlockState(feet).getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
             level.setBlock(feet, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
             level.playSound(null, feet, SoundEvents.BUCKET_EMPTY, this.bot.getSoundSource(), 1.0F, 1.0F);
