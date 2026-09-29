@@ -78,6 +78,7 @@ final class SelfTest {
     private static final List<Scenario> SCENARIOS = new ArrayList<>();
     private static final List<String> RESULTS = new ArrayList<>();
     private static final List<Entity> spawned = new ArrayList<>();
+    private static int portalWait;
     private static int index = -1;
     private static int ticks;
     private static int warmup = 100;
@@ -295,7 +296,11 @@ final class SelfTest {
                     break;
                 }
             }
+            if (bot.isRemoved() && ++portalWait < 200) {
+                return; // the copy in the other dimension shows up a moment later
+            }
         }
+        portalWait = 0;
         ticks++;
         if (bot.getY() - origin.getY() > maxHeight) {
             maxHeight = (int) (bot.getY() - origin.getY());
