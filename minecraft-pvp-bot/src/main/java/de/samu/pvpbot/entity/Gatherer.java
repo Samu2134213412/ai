@@ -350,6 +350,8 @@ final class Gatherer {
     private double legBest;
     private int legStuckTicks;
     private @Nullable BlockPos netherGoal;
+    private @Nullable BlockPos strongholdTarget;
+    private int strongholdTicks;
     private double netherGoalBest;
     private int netherGoalTicks;
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
@@ -1776,7 +1778,16 @@ final class Gatherer {
         int legLength = 64 * (this.spiralLeg / 2 + 1);
         BlockPos here = this.bot.blockPosition();
         int travelled = Math.abs(here.getX() - this.spiralLegStart.getX()) + Math.abs(here.getZ() - this.spiralLegStart.getZ());
-        if (travelled >= legLength || this.noProgressTicks > 400) {
+        // Real progress along the leg (jiggling on the spot does not count).
+        if (travelled > this.spiralBest) {
+            this.spiralBest = travelled;
+            this.spiralStuck = 0;
+        } else {
+            this.spiralStuck++;
+        }
+        if (travelled >= legLength || this.noProgressTicks > 400 || this.spiralStuck > 600) {
+            this.spiralBest = 0;
+            this.spiralStuck = 0;
             this.spiralLeg++;
             this.spiralDir = this.spiralDir.getClockWise();
             this.spiralLegStart = here;
@@ -1803,6 +1814,8 @@ final class Gatherer {
     private @Nullable BlockPos spiralStart;
     private @Nullable BlockPos spiralLegStart;
     private int spiralLeg;
+    private int spiralBest;
+    private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
     // --- stage 3: stronghold
@@ -2019,7 +2032,17 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (!this.bot.getNavigation().moveTo(best.getX() + 0.5, best.getY() + 1, best.getZ() + 0.5, 1.0) || this.noProgress()) {
+        // The same wall for too long (the path ends short of it, it jiggles on the spot): next one.
+        if (!best.equals(this.strongholdTarget)) {
+            this.strongholdTarget = best;
+            this.strongholdTicks = 0;
+        } else if (++this.strongholdTicks > 400) {
+            this.visitedCells.add(cellKey(best));
+            this.strongholdTicks = 0;
+            this.step = null;
+            return;
+        }
+        if (this.strongholdTicks > 200 || !this.bot.getNavigation().moveTo(best.getX() + 0.5, best.getY() + 1, best.getZ() + 0.5, 1.0) || this.noProgress()) {
             this.mineTarget = best;
             this.tunnelTowards(level, best);
             if (this.noProgressTicks > 200) {
@@ -2178,13 +2201,16 @@ final class Gatherer {
             return;
         }
         BlockPos fountain = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
-        // Sitting on the fountain, or down on the ground while landing: that is the time to hit it.
-        boolean sitting = dragon.getPhaseManager().getCurrentPhase().isSitting()
-                || dragon.getY() < fountain.getY() + 4.0 && dragon.getPhaseManager().getCurrentPhase().getPhase()
-                        == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING;
-        if (!sitting && nearest != null && nearestDist < 10 * 10) {
-            // Only close in while it sits: flying or landing, its head and wings hit hard.
-            Vec3 away = this.bot.position().subtract(nearest.position()).multiply(1.0, 0.0, 1.0).normalize().scale(8.0);
+        boolean sitting = dragon.getPhaseManager().getCurrentPhase().isSitting();
+        var phase = dragon.getPhaseManager().getCurrentPhase().getPhase();
+        boolean landing = phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING
+                || phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING_APPROACH;
+        // Only hit it while it sits: flying or landing, its head hits hard. While it comes down, stay
+        // near the middle (it sits only a few seconds) and just keep out of the head's way.
+        double headDist = dragon.head.position().distanceToSqr(this.bot.position());
+        if (!sitting && (landing ? headDist < 5.0 * 5.0 : nearest != null && nearestDist < 10 * 10)) {
+            Vec3 from = landing ? dragon.head.position() : nearest.position();
+            Vec3 away = this.bot.position().subtract(from).multiply(1.0, 0.0, 1.0).normalize().scale(landing ? 4.0 : 8.0);
             this.bot.getNavigation().moveTo(this.bot.getX() + away.x, this.bot.getY(), this.bot.getZ() + away.z, 1.3);
             this.step = null;
             return;
