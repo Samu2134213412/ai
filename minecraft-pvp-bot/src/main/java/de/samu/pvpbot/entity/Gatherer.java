@@ -1933,7 +1933,12 @@ final class Gatherer {
                 // No path: tunnel towards it.
                 Vec3 to = Vec3.atCenterOf(goal).subtract(this.bot.position());
                 this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
-                this.doDig(level, false); // (never down towards the lava sea)
+                if (to.y > 3.0) {
+                    // The fortress is up there (its bridges stand high): stairs up to it.
+                    this.doDigUp(level);
+                } else {
+                    this.doDig(level, false); // (never down towards the lava sea)
+                }
             }
             this.step = null;
             return;
