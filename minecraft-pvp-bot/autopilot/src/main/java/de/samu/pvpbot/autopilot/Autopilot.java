@@ -626,8 +626,8 @@ public final class Autopilot {
                     Vec3 above = t.position().add(lead).add(0.0, 24.0, 0.0).subtract(p.position());
                     this.face(p, new Vec3(above.x, Mth.clamp(above.y, -4.0, 4.0), above.z), 15.0F);
                     this.boost(mc, p, speed < 1.0 && hDist > 20.0);
-                    double above = p.getY() - (t.getY() + t.getBbHeight());
-                    if (hDist < Math.max(4.0, above * 0.6)) {
+                    double height = p.getY() - (t.getY() + t.getBbHeight());
+                    if (hDist < Math.max(4.0, height * 0.6)) {
                         // Tip over into a steep dive with the elytra still on: while diving the fall
                         // distance keeps growing (smash damage), and a miss just means pulling up.
                         this.nextPhase();
