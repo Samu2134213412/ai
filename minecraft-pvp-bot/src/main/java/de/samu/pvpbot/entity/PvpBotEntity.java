@@ -1421,7 +1421,10 @@ public class PvpBotEntity extends PathfinderMob {
         float damage = (float) this.getAttributeValue(Attributes.ATTACK_DAMAGE);
         var type = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(BOT_ATTACK);
         this.swingMainHand();
-        part.hurtServer(level, new net.minecraft.world.damagesource.DamageSource(type, this), damage);
+        boolean hurt = part.hurtServer(level, new net.minecraft.world.damagesource.DamageSource(type, this), damage);
+        if (DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   dragon hit {} for {} -> hurt={}", part, damage, hurt);
+        }
     }
 
     private static final net.minecraft.resources.ResourceKey<net.minecraft.world.damagesource.DamageType> BOT_ATTACK = net.minecraft.resources.ResourceKey.create(

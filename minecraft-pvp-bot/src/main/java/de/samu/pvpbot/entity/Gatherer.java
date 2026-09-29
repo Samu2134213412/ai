@@ -1140,11 +1140,25 @@ final class Gatherer {
             }
             return null;
         }
+        if (dragon != null) {
+            var phase = dragon.getPhaseManager().getCurrentPhase().getPhase();
+            if (PvpBotEntity.DEBUG && phase != this.lastDragonPhase) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   dragon phase {} hp {} at {}", phase, (int) dragon.getHealth(), dragon.blockPosition().toShortString());
+            }
+            this.lastDragonPhase = phase;
+            // Down at the fountain: that is the moment to hit it, crystals can wait.
+            BlockPos fountain = this.level().getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
+            if (dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16) {
+                return new FightDragon();
+            }
+        }
         if (this.visibleCrystal() != null && this.kit().count(st -> st.is(Items.ARROW)) > 0) {
             return new ShootCrystal();
         }
         return new FightDragon();
     }
+
+    private net.minecraft.world.entity.boss.enderdragon.phases.@Nullable EnderDragonPhase<?> lastDragonPhase;
 
     private net.minecraft.world.entity.boss.enderdragon.@Nullable EndCrystal visibleCrystal() {
         net.minecraft.world.entity.boss.enderdragon.EndCrystal best = null;
@@ -2287,12 +2301,62 @@ final class Gatherer {
 
     // --- scanning & picking up
 
+    /**
+     * Looking around like a player: rays in all directions, up to 96 blocks, stopping at the first
+     * block they hit - so it sees a fortress across a lava lake or a pool of lava in a big cave, but
+     * never anything behind a wall.
+     */
+    private void lookAround(ServerLevel level) {
+        if (this.bot.tickCount % 40 != 0) {
+            return;
+        }
+        Vec3 eye = this.bot.getEyePosition();
+        for (int pitch = -45; pitch <= 45; pitch += 15) {
+            for (int yaw = 0; yaw < 360; yaw += 8) {
+                Vec3 dir = Vec3.directionFromRotation(pitch, yaw + (this.bot.tickCount / 40 % 2) * 4);
+                var hit = level.clip(new net.minecraft.world.level.ClipContext(eye, eye.add(dir.scale(96.0)),
+                        net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.SOURCE_ONLY, this.bot));
+                if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                    continue;
+                }
+                BlockPos p = hit.getBlockPos();
+                BlockState state = level.getBlockState(p);
+                for (Ore ore : Ore.values()) {
+                    if (ore != Ore.STONE && ore != Ore.LOG && ore.match.test(state)) {
+                        List<BlockPos> list = this.known.computeIfAbsent(ore, k -> new ArrayList<>());
+                        if (list.size() < 128 && !list.contains(p)) {
+                            list.add(p.immutable());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     private void scanTick(ServerLevel level) {
+        this.lookAround(level);
         BlockPos here = this.bot.blockPosition();
         if (this.scanCenter == null || this.scanLayer > 12) {
             if (this.scanCenter != null) {
+                // Remember what it has seen (like a player remembers the diamonds around the corner):
+                // keep older sightings that are still there and not too far away.
+                Map<Ore, List<BlockPos>> old = new EnumMap<>(Ore.class);
+                old.putAll(this.known);
                 this.known.clear();
                 this.known.putAll(this.scanning);
+                for (Map.Entry<Ore, List<BlockPos>> e : old.entrySet()) {
+                    if (e.getKey() == Ore.STONE || e.getKey() == Ore.LOG) {
+                        continue;
+                    }
+                    List<BlockPos> list = this.known.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
+                    for (BlockPos p : e.getValue()) {
+                        if (list.size() < 128 && !list.contains(p) && p.distSqr(here) < 64 * 64
+                                && e.getKey().match.test(level.getBlockState(p))) {
+                            list.add(p);
+                        }
+                    }
+                }
             }
             this.scanning.clear();
             this.scanCenter = here;
