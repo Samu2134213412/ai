@@ -265,6 +265,21 @@ final class SelfTest {
             warmup--;
             return;
         }
+        if (index >= 0 && bot != null && bot.isRemoved() && bot.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION) {
+            // Through a portal: the bot lives on as a new entity in the other dimension.
+            for (ServerLevel l : server.getAllLevels()) {
+                if (l.getEntity(bot.getUUID()) instanceof PvpBotEntity moved) {
+                    bot = moved;
+                    spawned.add(moved);
+                    PvpBotMod.LOGGER.info(TAG + "  bot is now in " + l.dimension() + " at " + moved.blockPosition().toShortString());
+                    break;
+                }
+            }
+            if (bot.isRemoved() && ++portalWait < 200) {
+                return; // the copy in the other dimension shows up a moment later
+            }
+        }
+        portalWait = 0;
         ServerLevel level = server.overworld();
         if (index < 0 || finished()) {
             if (index >= 0) {
@@ -286,21 +301,6 @@ final class SelfTest {
             start(level, SCENARIOS.get(index));
             return;
         }
-        if (bot.isRemoved() && bot.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION) {
-            // Through a portal: the bot lives on as a new entity in the other dimension.
-            for (ServerLevel l : server.getAllLevels()) {
-                if (l.getEntity(bot.getUUID()) instanceof PvpBotEntity moved) {
-                    bot = moved;
-                    spawned.add(moved);
-                    PvpBotMod.LOGGER.info(TAG + "  bot is now in " + l.dimension() + " at " + moved.blockPosition().toShortString());
-                    break;
-                }
-            }
-            if (bot.isRemoved() && ++portalWait < 200) {
-                return; // the copy in the other dimension shows up a moment later
-            }
-        }
-        portalWait = 0;
         ticks++;
         if (bot.getY() - origin.getY() > maxHeight) {
             maxHeight = (int) (bot.getY() - origin.getY());

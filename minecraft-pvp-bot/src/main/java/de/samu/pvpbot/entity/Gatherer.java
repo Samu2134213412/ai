@@ -1366,7 +1366,18 @@ final class Gatherer {
                 }
             }
             this.exploreTarget = goal;
-            if (!path) {
+            BlockPos ahead = this.bot.blockPosition().offset(Mth.floor(this.eyeDir.x * 2.0 + 0.5), 0, Mth.floor(this.eyeDir.z * 2.0 + 0.5));
+            boolean water = this.bot.isInWater() || !level.getFluidState(ahead).isEmpty() || !level.getFluidState(ahead.below()).isEmpty();
+            if (!path && water) {
+                // A lake or the sea in the way: swim straight across like a player.
+                Vec3 to = this.bot.position().add(this.eyeDir.scale(3.0));
+                this.bot.getNavigation().stop();
+                this.bot.getMoveControl().setWantedPosition(to.x, this.bot.getY(), to.z, 1.0);
+                if (this.bot.isInWater()) {
+                    this.bot.getJumpControl().jump();
+                }
+                this.legStuckTicks = Math.min(this.legStuckTicks, 60);
+            } else if (!path) {
                 // No way to walk anywhere near the line: tunnel straight on.
                 this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
                 this.doDig(level, false);
