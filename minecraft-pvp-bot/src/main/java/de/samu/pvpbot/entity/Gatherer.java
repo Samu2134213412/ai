@@ -1143,7 +1143,7 @@ final class Gatherer {
         }
         // A new eye only after real headway (or a long time): stuck in one place, another eye shows
         // the same direction and may break.
-        if (this.eyeDir == null || this.legTicks > 1200 && this.legBest > 24.0 || this.legTicks > 6000) {
+        if (this.eyeDir == null || this.legTicks > 1200 && this.legBest > Math.min(24.0, this.eyeLeg - 4.0) || this.legTicks > 6000) {
             return new ThrowEye();
         }
         return new FollowEye();
@@ -1929,6 +1929,7 @@ final class Gatherer {
     private int crystalAimTicks;
     private int digLogTicks;
     private int dragonLogTicks;
+    private double eyeLeg = 180.0;
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
@@ -1962,7 +1963,12 @@ final class Gatherer {
             this.eyeWentDown = true;
             this.bot.tellOwner("§5Das Enderauge fliegt nach unten – die Festung ist hier drunter!", true);
         } else {
-            this.eyeDir = toTarget.normalize();
+            Vec3 dir = toTarget.normalize();
+            if (this.eyeDir != null && dir.dot(this.eyeDir) < 0.0) {
+                // The eye points back: we walked past it. Shorter legs from now on.
+                this.eyeLeg = Math.max(16.0, this.eyeLeg / 2.0);
+            }
+            this.eyeDir = dir;
             this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
         }
         this.step = null;
@@ -1998,7 +2004,7 @@ final class Gatherer {
         }
         this.legTicks++;
         double travelled = this.bot.position().subtract(this.legStart).horizontalDistance();
-        if (travelled > 180.0) {
+        if (travelled > this.eyeLeg) {
             this.legTicks = Integer.MAX_VALUE / 2; // throw the next eye
             this.step = null;
             return;
