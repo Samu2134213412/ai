@@ -33,6 +33,14 @@ public final class BotCommands {
                 .then(Commands.literal("attack")
                         .then(Commands.argument("targets", EntityArgument.entities())
                                 .executes(BotCommands::attack)))
+                .then(Commands.literal("survival")
+                        .executes(ctx -> spawnSurvival(ctx, "Survival-Bot"))
+                        .then(Commands.argument("name", StringArgumentType.greedyString())
+                                .executes(ctx -> spawnSurvival(ctx, StringArgumentType.getString(ctx, "name")))))
+                .then(Commands.literal("gather")
+                        .then(Commands.literal("on").executes(ctx -> setGather(ctx, true)))
+                        .then(Commands.literal("off").executes(ctx -> setGather(ctx, false))))
+                .then(Commands.literal("needs").executes(BotCommands::needs))
                 .then(Commands.literal("duel").executes(BotCommands::duel))
                 .then(Commands.literal("kit")
                         .executes(BotCommands::kitShow)
@@ -76,6 +84,43 @@ public final class BotCommands {
         level.addFreshEntity(bot);
         ctx.getSource().sendSuccess(() -> Component.literal("§a" + name + " ist bereit! §7Sag ihm mit §f/pvpbot attack <Ziel>§7, wen er erledigen soll."), false);
         return 1;
+    }
+
+    private static int spawnSurvival(CommandContext<CommandSourceStack> ctx, String name) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        ServerLevel level = ctx.getSource().getLevel();
+        PvpBotEntity bot = PvpBotMod.PVP_BOT.create(level, EntitySpawnReason.COMMAND);
+        if (bot == null) {
+            return 0;
+        }
+        bot.snapTo(player.getX(), player.getY(), player.getZ(), player.getYRot(), 0.0F);
+        bot.setOwner(player);
+        bot.setCustomName(Component.literal(name));
+        bot.setCustomNameVisible(true);
+        bot.setKit(List.of(), false);
+        bot.setGathering(true);
+        level.addFreshEntity(bot);
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + name + " startet mit leeren Händen und besorgt sich seine Ausrüstung selbst: "
+                + "Holz → Spitzhacke → Stein → Eisen → Schwert, Rüstung, Schild, Essen. §7Status: §f/pvpbot needs"), false);
+        return 1;
+    }
+
+    private static int setGather(CommandContext<CommandSourceStack> ctx, boolean gather) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.setGathering(gather));
+        ctx.getSource().sendSuccess(() -> Component.literal(gather
+                ? "§aBots mit Survival-Kit besorgen sich fehlende Ausrüstung selbst."
+                : "§eBots sammeln nichts mehr."), false);
+        return bots.size();
+    }
+
+    private static int needs(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        for (PvpBotEntity bot : bots) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§f" + bot.getName().getString() + " §7" + bot.describeNeeds()
+                    + " §8| Kit: " + bot.describeKit()), false);
+        }
+        return bots.size();
     }
 
     private static List<PvpBotEntity> myBots(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

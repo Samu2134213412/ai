@@ -95,7 +95,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     private static final double CRUISE_HEIGHT = 26.0;
     private static final double LANCE_HEIGHT = 12.0;
-    private static final boolean DEBUG = Boolean.getBoolean("pvpbot.selftest");
+    static final boolean DEBUG = Boolean.getBoolean("pvpbot.selftest");
     private static final int WIND_COOLDOWN = 45;
     private static final int SPEAR_COOLDOWN = 50;
     private static final int FLIGHT_COOLDOWN = 60;
@@ -108,6 +108,8 @@ public class PvpBotEntity extends PathfinderMob {
     private final Deque<UUID> targetQueue = new ArrayDeque<>();
 
     private final BotKit kit = new BotKit();
+    final Gatherer gatherer = new Gatherer(this);
+    private int foodCooldown;
     private boolean duelOwner;
 
     // Getting unstuck.
@@ -166,9 +168,10 @@ public class PvpBotEntity extends PathfinderMob {
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(1, new CombatGoal());
-        this.goalSelector.addGoal(2, new FollowOwnerGoal());
-        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 10.0F));
-        this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(2, new GatherGoal());
+        this.goalSelector.addGoal(3, new FollowOwnerGoal());
+        this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 10.0F));
+        this.goalSelector.addGoal(5, new RandomLookAroundGoal(this));
     }
 
     // ------------------------------------------------------------------ owner / orders
@@ -359,6 +362,41 @@ public class PvpBotEntity extends PathfinderMob {
         return items;
     }
 
+    public boolean isGathering() {
+        return this.gatherer.isEnabled();
+    }
+
+    public void setGathering(boolean gathering) {
+        this.gatherer.setEnabled(gathering);
+    }
+
+    public String describeNeeds() {
+        return this.gatherer.describe();
+    }
+
+    /** Called after crafting or picking something up: wear the best armor, keep a weapon in hand. */
+    void onKitChanged() {
+        this.kit.equipBest(this, this.isFallFlying());
+        ItemStack hand = this.getMainHandItem();
+        if (hand.isEmpty() || !this.kit.items().contains(hand)) {
+            ItemStack weapon = !this.mace().isEmpty() ? this.mace() : !this.spear().isEmpty() ? this.spear() : this.kit.bestBlade();
+            this.holdItem(weapon);
+        }
+    }
+
+    void holdTool(ItemStack tool) {
+        this.holdItem(tool);
+    }
+
+    void lookAtBlock(BlockPos pos) {
+        this.manualRotation = false;
+        this.getLookControl().setLookAt(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+    }
+
+    void huntTarget(LivingEntity prey) {
+        this.addTarget(prey, true);
+    }
+
     public BotKit getKit() {
         return this.kit;
     }
@@ -512,6 +550,54 @@ public class PvpBotEntity extends PathfinderMob {
             this.kit.equipBest(this, this.isFallFlying());
         }
         this.tickStuck(level);
+        if (!this.kit.isInfinite()) {
+            this.pickUpItems(level);
+            this.eatFood(level);
+        }
+    }
+
+    /** Survival kits: pick up useful drops (materials, loot of kills). */
+    private void pickUpItems(ServerLevel level) {
+        if (this.tickCount % 4 != 0 || !this.kit.hasRoom()) {
+            return;
+        }
+        boolean changed = false;
+        for (net.minecraft.world.entity.item.ItemEntity item : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                this.getBoundingBox().inflate(2.5, 1.0, 2.5))) {
+            if (!item.isAlive() || item.hasPickUpDelay() || !Gatherer.isUseful(item.getItem())) {
+                continue;
+            }
+            ItemStack stack = item.getItem().copy();
+            int before = stack.getCount();
+            ItemStack rest = this.kit.insert(stack);
+            int taken = before - rest.getCount();
+            if (taken > 0) {
+                this.take(item, taken);
+                changed = true;
+                if (rest.isEmpty()) {
+                    item.discard();
+                } else {
+                    item.setItem(rest);
+                }
+            }
+        }
+        if (changed) {
+            this.onKitChanged();
+        }
+    }
+
+    /** Survival kits: eat food to heal outside of fights. */
+    private void eatFood(ServerLevel level) {
+        if (this.foodCooldown > 0) {
+            this.foodCooldown--;
+            return;
+        }
+        if (this.getTarget() == null && this.getHealth() < this.getMaxHealth() - 4.0F
+                && this.kit.remove(Gatherer.Res.COOKED_MEAT.match, 1) == 1) {
+            this.heal(4.0F);
+            this.foodCooldown = 40;
+            level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.GENERIC_EAT, this.getSoundSource(), 1.0F, 1.0F);
+        }
     }
 
     // ------------------------------------------------------------------ getting unstuck
@@ -655,7 +741,7 @@ public class PvpBotEntity extends PathfinderMob {
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ENDERMAN_TELEPORT, this.getSoundSource(), 1.0F, 1.0F);
     }
 
-    private void tellOwner(String message, boolean important) {
+    void tellOwner(String message, boolean important) {
         long now = this.level().getGameTime();
         if (this.talk && (important || now - this.lastMessageTime > 300L) && this.getOwner() instanceof ServerPlayer owner) {
             this.lastMessageTime = now;
@@ -1357,6 +1443,35 @@ public class PvpBotEntity extends PathfinderMob {
         }
     }
 
+    private class GatherGoal extends Goal {
+        GatherGoal() {
+            this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            return PvpBotEntity.this.gatherer.wantsToWork();
+        }
+
+        @Override
+        public boolean requiresUpdateEveryTick() {
+            return true;
+        }
+
+        @Override
+        public void stop() {
+            PvpBotEntity.this.gatherer.reset();
+            PvpBotEntity.this.getNavigation().stop();
+            PvpBotEntity.this.onKitChanged();
+        }
+
+        @Override
+        public void tick() {
+            PvpBotEntity.this.manualRotation = false;
+            PvpBotEntity.this.gatherer.tick();
+        }
+    }
+
     private class FollowOwnerGoal extends Goal {
         FollowOwnerGoal() {
             this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
@@ -1434,6 +1549,8 @@ public class PvpBotEntity extends PathfinderMob {
         output.store("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf(), new ArrayList<>(this.kit.items()));
         output.putBoolean("PvpBotKitInfinite", this.kit.isInfinite());
         output.putBoolean("PvpBotDuel", this.duelOwner);
+        output.putBoolean("PvpBotGather", this.gatherer.isEnabled());
+        output.putInt("PvpBotFuel", this.gatherer.fuel());
     }
 
     @Override
@@ -1456,6 +1573,8 @@ public class PvpBotEntity extends PathfinderMob {
         this.gapples = input.getIntOr("PvpBotGapples", MAX_GAPPLES);
         this.talk = input.getBooleanOr("PvpBotTalk", true);
         this.duelOwner = input.getBooleanOr("PvpBotDuel", false);
+        this.gatherer.setEnabled(input.getBooleanOr("PvpBotGather", true));
+        this.gatherer.setFuel(input.getIntOr("PvpBotFuel", 0));
         List<ItemStack> saved = input.read("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf()).orElse(null);
         this.kit.clear();
         if (saved == null) {

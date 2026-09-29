@@ -168,6 +168,16 @@ public final class Autopilot {
         if (t == null) {
             this.finishAttempt(mc);
             this.landIfFlying(mc, p);
+            if (this.eatWhenHungry(mc, p)) {
+                this.status(p, "§7isst");
+                this.applyKeys(mc);
+                return;
+            }
+            if (this.collectLoot(mc, p)) {
+                this.status(p, "§7sammelt Beute ein");
+                this.applyKeys(mc);
+                return;
+            }
             this.status(p, "§7wartet auf ein Ziel");
             this.applyKeys(mc);
             return;
@@ -608,6 +618,58 @@ public final class Autopilot {
             this.finishAttempt(mc);
         }
         return false;
+    }
+
+    private int hungerEatTicks;
+
+    /** Out of combat: eat normal food when hungry, so health keeps regenerating. */
+    private boolean eatWhenHungry(Minecraft mc, LocalPlayer p) {
+        if (this.hungerEatTicks > 0) {
+            this.hungerEatTicks--;
+            this.kUse = true;
+            return true;
+        }
+        if (p.getFoodData().getFoodLevel() >= 14) {
+            return false;
+        }
+        List<ItemStack> items = p.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < items.size(); i++) {
+            ItemStack stack = items.get(i);
+            if (stack.has(net.minecraft.core.component.DataComponents.FOOD) && Kit.classify(stack) != Role.GAPPLE) {
+                int slot = this.toHotbar(mc, p, i);
+                if (slot >= 0) {
+                    p.getInventory().setSelectedSlot(slot);
+                    this.hungerEatTicks = 36;
+                    this.kUse = true;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Out of combat: walk over dropped items nearby (loot of kills) to pick them up. */
+    private boolean collectLoot(Minecraft mc, LocalPlayer p) {
+        net.minecraft.world.entity.item.ItemEntity closest = null;
+        double best = 12.0 * 12.0;
+        for (net.minecraft.world.entity.item.ItemEntity item : p.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                p.getBoundingBox().inflate(12.0))) {
+            double d = p.distanceToSqr(item);
+            if (item.isAlive() && d < best && Math.abs(item.getY() - p.getY()) < 3.0) {
+                closest = item;
+                best = d;
+            }
+        }
+        if (closest == null) {
+            return false;
+        }
+        this.face(p, closest.position().subtract(p.getEyePosition()).multiply(1.0, 0.0, 1.0), 30.0F);
+        this.kForward = true;
+        this.kSprint = best > 16.0;
+        if (p.horizontalCollision) {
+            this.kJump = true;
+        }
+        return true;
     }
 
     private void keepTotemInOffhand(Minecraft mc, LocalPlayer p) {

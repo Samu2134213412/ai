@@ -42,6 +42,56 @@ public final class BotKit {
         }
     }
 
+    /** Adds picked-up or crafted items, merging into existing stacks. Returns what did not fit. */
+    public ItemStack insert(ItemStack stack) {
+        for (ItemStack existing : this.items()) {
+            if (stack.isEmpty()) {
+                break;
+            }
+            if (ItemStack.isSameItemSameComponents(existing, stack) && existing.getCount() < existing.getMaxStackSize()) {
+                int moved = Math.min(stack.getCount(), existing.getMaxStackSize() - existing.getCount());
+                existing.grow(moved);
+                stack.shrink(moved);
+            }
+        }
+        if (!stack.isEmpty() && this.items.size() < SIZE) {
+            this.items.add(stack.copy());
+            stack.setCount(0);
+        }
+        return stack;
+    }
+
+    public boolean hasRoom() {
+        return this.items().size() < SIZE;
+    }
+
+    public int count(java.util.function.Predicate<ItemStack> match) {
+        int n = 0;
+        for (ItemStack stack : this.items()) {
+            if (match.test(stack)) {
+                n += stack.getCount();
+            }
+        }
+        return n;
+    }
+
+    /** Removes up to {@code amount} matching items; returns how many were removed. */
+    public int remove(java.util.function.Predicate<ItemStack> match, int amount) {
+        int removed = 0;
+        for (ItemStack stack : this.items()) {
+            if (removed >= amount) {
+                break;
+            }
+            if (match.test(stack)) {
+                int take = Math.min(amount - removed, stack.getCount());
+                stack.shrink(take);
+                removed += take;
+            }
+        }
+        this.items();
+        return removed;
+    }
+
     public ItemStack find(Role role) {
         for (ItemStack stack : this.items()) {
             if (Kit.classify(stack) == role) {

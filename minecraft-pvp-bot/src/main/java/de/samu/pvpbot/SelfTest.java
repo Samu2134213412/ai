@@ -31,14 +31,30 @@ final class SelfTest {
     private static final String TAG = "[SELFTEST] ";
 
     private record Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, int baseX,
-                            Function<ServerLevel, List<LivingEntity>> targets, java.util.function.@org.jspecify.annotations.Nullable Supplier<List<ItemStack>> kit) {
+                            Function<ServerLevel, List<LivingEntity>> targets, java.util.function.@org.jspecify.annotations.Nullable Supplier<List<ItemStack>> kit,
+                            java.util.function.@org.jspecify.annotations.Nullable Predicate<PvpBotEntity> goal) {
+        Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, int baseX, Function<ServerLevel, List<LivingEntity>> targets,
+                 java.util.function.@org.jspecify.annotations.Nullable Supplier<List<ItemStack>> kit) {
+            this(name, style, timeoutTicks, baseX, targets, kit, null);
+        }
+
         Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, Function<ServerLevel, List<LivingEntity>> targets) {
-            this(name, style, timeoutTicks, 0, targets, null);
+            this(name, style, timeoutTicks, 0, targets, null, null);
         }
 
         Scenario(String name, PvpBotEntity.Style style, int timeoutTicks, int baseX, Function<ServerLevel, List<LivingEntity>> targets) {
-            this(name, style, timeoutTicks, baseX, targets, null);
+            this(name, style, timeoutTicks, baseX, targets, null, null);
         }
+    }
+
+    /** X offset of a small "resource island": trees, stone, coal, iron (some buried) and cows. */
+    private static final int SURVIVAL_X = -80;
+
+    private static boolean fullyGeared(PvpBotEntity bot) {
+        var kit = bot.getKit();
+        return kit.count(s -> s.is(Items.IRON_SWORD)) > 0 && kit.count(s -> s.is(Items.IRON_CHESTPLATE)) > 0
+                && kit.count(s -> s.is(Items.IRON_HELMET)) > 0 && kit.count(s -> s.is(Items.IRON_LEGGINGS)) > 0
+                && kit.count(s -> s.is(Items.IRON_BOOTS)) > 0 && kit.count(s -> s.is(Items.SHIELD)) > 0;
     }
 
     /** X offset of a 1x1 stone pit (4 high) the bot starts in and has to get out of. */
@@ -112,6 +128,8 @@ final class SelfTest {
                 level -> List.of(golem(level, 20, 3, true)), SelfTest::bowKit));
         SCENARIOS.add(new Scenario("Grube: Schwert-Kit, Ziel draussen", PvpBotEntity.Style.AUTO, 2400, PIT_X,
                 level -> List.of(zombie(level, 7, 2)), SelfTest::swordKit));
+        SCENARIOS.add(new Scenario("Survival: besorgt sich alles selbst", PvpBotEntity.Style.AUTO, 12000, SURVIVAL_X,
+                level -> List.of(), List::of, SelfTest::fullyGeared));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
                 level -> List.of(zombie(level, 6, 6), zombie(level, -7, 5), zombie(level, 12, -9), zombie(level, -3, -14))));
 
@@ -149,6 +167,7 @@ final class SelfTest {
                 level.setBlock(roofCorner.offset(x, 0, z), Blocks.STONE.defaultBlockState(), 3);
             }
         }
+        buildResourceIsland(level, origin.offset(SURVIVAL_X, 0, 0));
         BlockPos pit = origin.offset(PIT_X, 0, 0);
         for (int py = 0; py <= 3; py++) {
             for (int px = -1; px <= 1; px++) {
@@ -160,6 +179,41 @@ final class SelfTest {
             }
         }
         PvpBotMod.LOGGER.info(TAG + "origin " + origin);
+    }
+
+    private static void buildResourceIsland(ServerLevel level, BlockPos c) {
+        for (int x : new int[]{4, -5}) {
+            for (int y = 0; y < 6; y++) {
+                level.setBlock(c.offset(x, y, 5), Blocks.OAK_LOG.defaultBlockState(), 3);
+            }
+        }
+        for (int x = 0; x < 3; x++) {
+            for (int z = 0; z < 3; z++) {
+                for (int y = 0; y < 2; y++) {
+                    level.setBlock(c.offset(6 + x, y, -5 + z), Blocks.STONE.defaultBlockState(), 3);
+                }
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            level.setBlock(c.offset(-1 + i, 0, -8), Blocks.COAL_ORE.defaultBlockState(), 3);
+        }
+        for (int x = 0; x < 5; x++) {
+            for (int z = 0; z < 3; z++) {
+                for (int y = 0; y < 2; y++) {
+                    level.setBlock(c.offset(-9 + x, y, -5 + z), Blocks.IRON_ORE.defaultBlockState(), 3);
+                }
+            }
+        }
+        // A few ores buried under the grass: the bot has to dig down to them.
+        for (int i = 0; i < 3; i++) {
+            level.setBlock(c.offset(-2 + i, -2, 9), Blocks.IRON_ORE.defaultBlockState(), 3);
+        }
+        for (int i = 0; i < 3; i++) {
+            Mob cow = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
+            cow.snapTo(c.getX() + 8.5 + i, c.getY(), c.getZ() + 8.5, 0.0F, 0.0F);
+            cow.setPersistenceRequired();
+            level.addFreshEntity(cow);
+        }
     }
 
     private static LivingEntity golem(ServerLevel level, int dx, int dz, boolean noAi) {
@@ -254,6 +308,15 @@ final class SelfTest {
     }
 
     private static boolean finished() {
+        Scenario current = SCENARIOS.get(index);
+        if (current.goal() != null) {
+            if (ticks % 400 == 0) {
+                PvpBotMod.LOGGER.info(TAG + "  kit: " + bot.getKit().items().stream()
+                        .map(st -> st.getCount() + "x" + st.getItem().toString().replace("minecraft:", "")).toList()
+                        + " | " + bot.describeNeeds());
+            }
+            return current.goal().test(bot) || !bot.isAlive() || ticks >= current.timeoutTicks();
+        }
         boolean allDead = targets.stream().noneMatch(LivingEntity::isAlive);
         // Give the bot a moment after the last kill so it can learn from the finishing blow.
         graceTicks = allDead ? graceTicks + 1 : 0;
@@ -263,7 +326,11 @@ final class SelfTest {
     private static void report() {
         Scenario scenario = SCENARIOS.get(index);
         long killed = targets.stream().filter(t -> !t.isAlive()).count();
-        boolean pass = killed == targets.size() && bot.isAlive();
+        boolean pass = scenario.goal() != null ? scenario.goal().test(bot) && bot.isAlive() : killed == targets.size() && bot.isAlive();
+        if (scenario.goal() != null) {
+            PvpBotMod.LOGGER.info(TAG + "  final kit: " + bot.getKit().items().stream()
+                    .map(st -> st.getCount() + "x" + st.getItem().toString().replace("minecraft:", "")).toList());
+        }
         String line = String.format("%s %-40s kills=%d/%d time=%.1fs botAlive=%s botHp=%.1f smash=%d spear=%d other=%d maxHit=%.1f maxHeight=%d flew=%s",
                 pass ? "PASS" : "FAIL", scenario.name(), killed, targets.size(), ticks / 20.0, bot.isAlive(),
                 bot.getHealth(), smashHits, spearHits, otherHits, maxHit, maxHeight, flew);
