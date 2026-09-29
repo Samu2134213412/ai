@@ -661,6 +661,8 @@ public class PvpBotEntity extends PathfinderMob {
 
     /** Its arrows in flight: in the game only players (and explosions) can hurt the dragon. */
     private final List<AbstractArrow> dragonArrows = new ArrayList<>();
+    private final java.util.Map<AbstractArrow, Vec3> arrowTargets = new java.util.HashMap<>();
+    private int arrowLogs;
 
     /**
      * Arrows the bot shot hit the dragon like a player's arrows would (same damage as the game gives
@@ -674,6 +676,12 @@ public class PvpBotEntity extends PathfinderMob {
             AbstractArrow arrow = it.next();
             Vec3 motion = arrow.getDeltaMovement();
             if (arrow.isRemoved() || arrow.tickCount > 200 || motion.lengthSqr() < 0.01) {
+                Vec3 aimed = this.arrowTargets.remove(arrow);
+                if (DEBUG && aimed != null && ++this.arrowLogs % 3 == 1) {
+                    PvpBotMod.LOGGER.info("[SELFTEST]   arrow landed at {} (aimed at {}, off by {} , removed {}, age {})",
+                            arrow.blockPosition().toShortString(), BlockPos.containing(aimed).toShortString(),
+                            String.format("%.1f", arrow.position().distanceTo(aimed)), arrow.isRemoved(), arrow.tickCount);
+                }
                 it.remove();
                 continue;
             }
@@ -1415,6 +1423,7 @@ public class PvpBotEntity extends PathfinderMob {
         Projectile.spawnProjectileUsingShoot(arrow, level, ammo, xd, Math.tan(pitch) * horizontal, zd, 3.0F, 0.5F);
         if (this.dragonArrows.size() < 32) {
             this.dragonArrows.add(arrow);
+            this.arrowTargets.put(arrow, point);
         }
         this.swingMainHand();
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(), 1.0F, 1.0F);
