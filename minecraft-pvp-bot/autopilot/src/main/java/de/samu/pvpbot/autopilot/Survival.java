@@ -81,8 +81,8 @@ final class Survival {
         for (int pitch = -70; pitch <= 40; pitch += 10) {
             for (int yaw = 0; yaw < 360; yaw += 10) {
                 Vec3 dir = Vec3.directionFromRotation(pitch, yaw + offset);
-                BlockHitResult hit = level.clip(new ClipContext(eye, eye.add(dir.scale(48.0)), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
-                if (hit.getType() != HitResult.Type.BLOCK) {
+                BlockHitResult hit = level.clip(new ClipContext(eye, eye.add(dir.scale(48.0)), ClipContext.Block.OUTLINE, ClipContext.Fluid.ANY, p));
+                if (hit.getType() != HitResult.Type.BLOCK || !level.getFluidState(hit.getBlockPos()).isEmpty()) {
                     continue;
                 }
                 Kind kind = kindOf(level.getBlockState(hit.getBlockPos()));
@@ -723,11 +723,29 @@ final class Survival {
     }
 
     private @Nullable BlockPos breaking;
+    private @Nullable BlockPos mineTarget;
+    private int mineTicks;
 
     /** Walks into reach of the block and holds "attack" on it until it breaks. */
     private boolean mine(Minecraft mc, LocalPlayer p, Level level, BlockPos pos) {
         if (level.getBlockState(pos).isAir()) {
             this.breaking = null;
+            return false;
+        }
+        // The same block for 10 seconds and still there: give up on it, take another one.
+        if (!pos.equals(this.mineTarget)) {
+            this.mineTarget = pos;
+            this.mineTicks = 0;
+        }
+        if (++this.mineTicks > 200) {
+            HitResult h = mc.hitResult;
+            Autopilot.LOGGER.info("[AUTOPILOT] survival: gives up mining {} ({}) - reach={} aim={} {} path={}", pos.toShortString(),
+                    level.getBlockState(pos).getBlock(), this.reach(p, pos), h == null ? "-" : h.getType(),
+                    h instanceof BlockHitResult bh ? bh.getBlockPos().toShortString() + " " + level.getBlockState(bh.getBlockPos()).getBlock() : "",
+                    this.path == null ? "-" : this.pathIndex + "/" + this.path.size());
+            this.unreachable.add(pos.asLong());
+            this.mineTarget = null;
+            this.path = null;
             return false;
         }
         if (!this.reach(p, pos)) {
