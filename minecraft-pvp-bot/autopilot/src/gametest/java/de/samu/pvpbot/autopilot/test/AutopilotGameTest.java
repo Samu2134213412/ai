@@ -349,6 +349,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
         run(sp, "clear @a");
         run(sp, "effect clear @a");
         run(sp, "effect give @a minecraft:instant_health 1 10");
+        run(sp, "effect give @a minecraft:saturation 1 20 true");
         run(sp, "tp @a 0 ~ 0 -90 0");
         ctx.waitTicks(10);
         run(sp, kit);

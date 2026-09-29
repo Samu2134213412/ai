@@ -203,6 +203,15 @@ public final class Autopilot {
                 this.finishAttempt(mc);
             }
         }
+        if (this.pattern == null && this.hungerEatTicks > 0
+                || this.pattern == null && p.getFoodData().getFoodLevel() <= 6 && p.onGround() && p.distanceTo(t) > 7.0) {
+            // Too hungry to sprint or lunge: eat quickly while the enemy is not right here.
+            if (this.eatWhenHungry(mc, p)) {
+                this.status(p, "§7isst (für Sprint/Lunge)");
+                this.applyKeys(mc);
+                return;
+            }
+        }
         if (this.pattern == null) {
             this.choosePattern(mc, p, t);
         }
@@ -696,7 +705,8 @@ public final class Autopilot {
                     double height = p.getY() - (t.getY() + t.getBbHeight());
                     Vec3 hVel = p.getDeltaMovement().multiply(1.0, 0.0, 1.0);
                     boolean heading = hVel.dot(toTarget.multiply(1.0, 0.0, 1.0).normalize()) > 0.3 * Math.max(0.1, hVel.length());
-                    if (hDist < 4.0 && heading && height > 8.0) {
+                    // Start braking early enough: we keep drifting forward for a while.
+                    if (hDist < 3.0 + hVel.length() * 6.0 && heading && height > 8.0) {
                         // Tip over into a steep dive with the elytra still on: while diving the fall
                         // distance keeps growing (smash damage), and a miss just means pulling up.
                         this.nextPhase();
@@ -734,7 +744,13 @@ public final class Autopilot {
                     float yaw = (float) (Mth.atan2(toTarget.z, toTarget.x) * (180.0 / Math.PI)) - 90.0F;
                     this.lookAt(p, yaw, -55.0F, 30.0F);
                     double hSpeed = p.getDeltaMovement().horizontalDistance();
-                    if (hSpeed < 0.3 || this.phaseTicks > 30) {
+                    if ((hSpeed < 0.3 || this.phaseTicks > 30) && hDist > 3.0 && this.shots < 3) {
+                        // Not above the target after braking: go round again instead of dropping beside it.
+                        LOGGER.info("[AUTOPILOT] brake missed (hDist={}), going round", String.format("%.1f", hDist));
+                        this.shots++;
+                        this.phase = 4;
+                        this.phaseTicks = 0;
+                    } else if (hSpeed < 0.3 || this.phaseTicks > 30) {
                         LOGGER.info("[AUTOPILOT] drop: hSpeed={} hDist={} height={}", String.format("%.2f", hSpeed),
                                 String.format("%.1f", hDist), String.format("%.1f", p.getY() - t.getY()));
                         this.wearChest(mc, p, Role.ARMOR);
@@ -768,8 +784,8 @@ public final class Autopilot {
                         this.swapAttack(mc, p, t, Role.MACE);
                     }
                     double above = p.getY() - (t.getY() + t.getBbHeight());
-                    boolean missing = hDist > 2.2 && above < 10.0 && above > 1.0;
-                    if (missing && p.fallDistance > 8.0 && p.getDeltaMovement().y < -0.4 && this.has(p, Role.ELYTRA)) {
+                    boolean missing = hDist > 2.5 && above < 22.0 && above > 1.0;
+                    if (missing && p.fallDistance > 4.0 && p.getDeltaMovement().y < -0.4 && this.has(p, Role.ELYTRA)) {
                         this.phase = 10;
                         this.phaseTicks = 0;
                     } else if (p.onGround() && this.phaseTicks > 3 || this.phaseTicks > 160) {
