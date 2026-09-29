@@ -379,6 +379,8 @@ final class SelfTest {
                 var dragon = net.minecraft.world.entity.EntityTypes.ENDER_DRAGON.create(level, EntitySpawnReason.COMMAND);
                 if (dragon != null) {
                     dragon.snapTo(0.5, 90.0, 0.5, 0.0F, 0.0F);
+                    // A summoned dragon just hovers; the real fight starts it circling like this.
+                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN);
                     level.addFreshEntity(dragon);
                     spawned.add(dragon);
                 }
@@ -387,6 +389,10 @@ final class SelfTest {
             bot.setSpeedrun(true);
         }
         if (scenario.name().startsWith("Zuhause")) {
+            // Out of the spawn area: keep the chunks ticking.
+            level.setChunkForced(bot.getBlockX() >> 4, bot.getBlockZ() >> 4, true);
+            level.setChunkForced((bot.getBlockX() + 12) >> 4, bot.getBlockZ() >> 4, true);
+            level.setChunkForced((bot.getBlockX() - 12) >> 4, bot.getBlockZ() >> 4, true);
             bot.setHome(bot.blockPosition().offset(4, 0, 0));
             bot.setAutonomous(true);
         }
