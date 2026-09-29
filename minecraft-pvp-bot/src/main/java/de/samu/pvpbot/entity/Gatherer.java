@@ -2586,6 +2586,7 @@ final class Gatherer {
             this.bot.getNavigation().stop();
             if (this.breakBlock(level, target)) {
                 this.mineTarget = null;
+                this.mineSince = null; // (gravel falling into the same spot is a new block, not "no progress")
                 this.step = null;
             }
             return;
