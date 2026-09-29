@@ -1506,7 +1506,17 @@ final class Gatherer {
             BlockState state = level.getBlockState(p);
             boolean danger = this.nearLava(level, p) || !level.getFluidState(p).isEmpty() || state.getDestroySpeed(level, p) < 0.0F;
             if (danger) {
-                // Lava, water or bedrock ahead: take another direction.
+                // Lava, water or bedrock ahead: take another direction. Lava right behind the next
+                // block is noticed (that is where obsidian comes from).
+                for (Direction d : Direction.values()) {
+                    BlockPos l = p.relative(d);
+                    if (Ore.LAVA.match.test(level.getBlockState(l))) {
+                        List<BlockPos> list = this.known.computeIfAbsent(Ore.LAVA, k -> new ArrayList<>());
+                        if (!list.contains(l)) {
+                            list.add(l.immutable());
+                        }
+                    }
+                }
                 this.stopBreaking();
                 this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
                 this.digBlocked++;
@@ -1703,6 +1713,12 @@ final class Gatherer {
      * fortress blocks and spawners once they are in sight.
      */
     private void doExploreNether(ServerLevel level) {
+        if (this.bot.getY() < 40.0 && this.nearest(Ore.FORTRESS) == null) {
+            // Down at the lava sea (y 31): climb back up before going on.
+            this.doDigUp(level);
+            this.step = null;
+            return;
+        }
         BlockPos goal = this.nearest(Ore.SPAWNER);
         if (goal == null) {
             goal = this.nearest(Ore.FORTRESS);
@@ -1849,11 +1865,16 @@ final class Gatherer {
             if (this.bot.onGround() && !this.nearLava(level, feet) && !this.nearLava(level, feet.below())) {
                 this.lastSafe = feet;
             }
+            if (this.bot.isOnFire() && this.bot.getHealth() < 14.0F) {
+                this.drinkFireResistance(level);
+            }
             return false;
         }
         this.stopBreaking();
         this.bot.getNavigation().stop();
-        if (this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0 && level.getBlockState(feet).getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
+        this.drinkFireResistance(level);
+        if (!level.dimensionType().ultraWarm() && this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0
+                && level.getBlockState(feet).getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
             level.setBlock(feet, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
             level.playSound(null, feet, SoundEvents.BUCKET_EMPTY, this.bot.getSoundSource(), 1.0F, 1.0F);
             if (!this.kit().isInfinite()) {
@@ -1874,6 +1895,28 @@ final class Gatherer {
         }
         this.step = null;
         return true;
+    }
+
+    /** Drinks a fire resistance potion from the kit (once, while the effect is not active). */
+    private void drinkFireResistance(ServerLevel level) {
+        if (this.bot.hasEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE)) {
+            return;
+        }
+        for (ItemStack st : this.kit().items()) {
+            var contents = st.get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+            if (st.is(Items.POTION) && contents != null && contents.is(net.minecraft.world.item.alchemy.Potions.FIRE_RESISTANCE)
+                    || st.is(Items.POTION) && contents != null && contents.is(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE)) {
+                int duration = contents.is(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE) ? 9600 : 3600;
+                this.bot.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, duration));
+                level.playSound(null, this.bot.blockPosition(), SoundEvents.GENERIC_DRINK.value(), this.bot.getSoundSource(), 1.0F, 1.0F);
+                if (!this.kit().isInfinite()) {
+                    st.shrink(1);
+                    this.kit().insert(new ItemStack(Items.GLASS_BOTTLE));
+                }
+                this.bot.tellOwner("§6Feuerresistenz getrunken.", false);
+                return;
+            }
+        }
     }
 
     private boolean noProgress() {
