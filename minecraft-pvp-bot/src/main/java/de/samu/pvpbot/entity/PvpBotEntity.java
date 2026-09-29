@@ -684,7 +684,7 @@ public class PvpBotEntity extends PathfinderMob {
                 for (var part : dragon.getSubEntities()) {
                     AABB box = part.getBoundingBox().inflate(0.3);
                     if (box.contains(from) || box.clip(from, to).isPresent()) {
-                        float damage = (float) Math.ceil(motion.length() * arrow.getBaseDamage());
+                        float damage = (float) Math.ceil(motion.length() * 2.0); // 2 = an arrow's base damage
                         var type = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(BOT_ATTACK);
                         boolean hurt = part.hurtServer(level, new net.minecraft.world.damagesource.DamageSource(type, arrow, this), damage);
                         if (DEBUG) {
