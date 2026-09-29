@@ -303,7 +303,10 @@ final class SelfTest {
                 dragonLastPos = dragon.position();
                 if (frozen) {
                     // A summoned dragon sometimes loses its flight path and just hangs there: start it again.
-                    PvpBotMod.LOGGER.info(TAG + "  (test) dragon hung in " + phase.getPhase() + " at " + dragon.blockPosition().toShortString() + " - restarting its flight");
+                    PvpBotMod.LOGGER.info(TAG + "  (test) dragon hung in " + phase.getPhase() + " at " + dragon.blockPosition().toShortString()
+                            + " - restarting its flight (tickCount " + dragon.tickCount + ", noAi " + dragon.isNoAi() + ", entity ticking "
+                            + end.isPositionEntityTicking(dragon.blockPosition()) + ", removed " + dragon.isRemoved() + ", same level " + (dragon.level() == end)
+                            + ", dragons in level " + end.getDragons().size() + ")");
                     dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.TAKEOFF);
                 } else if (phase.getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
                     dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING);

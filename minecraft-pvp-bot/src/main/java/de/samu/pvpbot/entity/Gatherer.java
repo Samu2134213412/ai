@@ -1799,7 +1799,15 @@ final class Gatherer {
 
     // --- stage 2: nether
 
+    private int wantPortalTick = -1000;
+
+    /** While playing through, portals are only taken on purpose (not by walking through one by chance). */
+    boolean mayUsePortal() {
+        return !this.speedrun || this.bot.tickCount - this.wantPortalTick < 60;
+    }
+
     private void doUsePortal(ServerLevel level, boolean toNether) {
+        this.wantPortalTick = this.bot.tickCount;
         BlockPos portal = toNether ? this.overworldPortal : this.netherPortal;
         if (portal == null || !level.getBlockState(portal).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
             // Look for the portal we can see.
@@ -2267,6 +2275,7 @@ final class Gatherer {
     }
 
     private void doUseEndPortal() {
+        this.wantPortalTick = this.bot.tickCount;
         BlockPos portal = this.nearest(Ore.END_PORTAL);
         if (portal == null) {
             this.step = null;

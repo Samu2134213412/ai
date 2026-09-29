@@ -319,6 +319,11 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     @Override
+    public boolean canUsePortal(boolean allowPassengers) {
+        return super.canUsePortal(allowPassengers) && this.gatherer.mayUsePortal();
+    }
+
+    @Override
     public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
         float before = this.getHealth() + this.getAbsorptionAmount();
         boolean hurt = super.hurtServer(level, source, amount);
