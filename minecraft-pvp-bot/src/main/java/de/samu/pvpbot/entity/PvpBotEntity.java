@@ -677,10 +677,11 @@ public class PvpBotEntity extends PathfinderMob {
             Vec3 motion = arrow.getDeltaMovement();
             if (arrow.isRemoved() || arrow.tickCount > 200 || motion.lengthSqr() < 0.01) {
                 Vec3 aimed = this.arrowTargets.remove(arrow);
-                if (DEBUG && aimed != null && ++this.arrowLogs % 3 == 1) {
-                    PvpBotMod.LOGGER.info("[SELFTEST]   arrow landed at {} (aimed at {}, off by {} , removed {}, age {})",
-                            arrow.blockPosition().toShortString(), BlockPos.containing(aimed).toShortString(),
-                            String.format("%.1f", arrow.position().distanceTo(aimed)), arrow.isRemoved(), arrow.tickCount);
+                if (DEBUG && aimed != null && ++this.arrowLogs < 60) {
+                    Vec3 d = arrow.position().subtract(aimed);
+                    PvpBotMod.LOGGER.info("[SELFTEST]   arrow landed off by dx {} dy {} dz {} (aimed {} from {}, age {}, removed {})",
+                            String.format("%.1f", d.x), String.format("%.1f", d.y), String.format("%.1f", d.z),
+                            BlockPos.containing(aimed).toShortString(), this.blockPosition().toShortString(), arrow.tickCount, arrow.isRemoved());
                 }
                 it.remove();
                 continue;
