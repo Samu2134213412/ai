@@ -2261,8 +2261,23 @@ final class Gatherer {
             }
         }
         this.bot.getJumpControl().jump();
-        if (this.lastSafe != null) {
-            this.bot.getMoveControl().setWantedPosition(this.lastSafe.getX() + 0.5, this.lastSafe.getY(), this.lastSafe.getZ() + 0.5, 1.3);
+        // Out the nearest way: the closest shore around (the last safe spot may be far up a cliff).
+        BlockPos shore = null;
+        double best = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(feet.offset(-12, -2, -12), feet.offset(12, 3, 12))) {
+            if (level.getFluidState(p).isEmpty() && level.getFluidState(p.above()).isEmpty()
+                    && level.getBlockState(p).getCollisionShape(level, p).isEmpty() && level.getBlockState(p.above()).getCollisionShape(level, p.above()).isEmpty()
+                    && !level.getBlockState(p.below()).getCollisionShape(level, p.below()).isEmpty() && level.getFluidState(p.below()).isEmpty()) {
+                double d = p.distSqr(feet);
+                if (d < best) {
+                    best = d;
+                    shore = p.immutable();
+                }
+            }
+        }
+        BlockPos out = shore != null && (this.lastSafe == null || best < this.lastSafe.distSqr(feet)) ? shore : this.lastSafe;
+        if (out != null) {
+            this.bot.getMoveControl().setWantedPosition(out.getX() + 0.5, out.getY(), out.getZ() + 0.5, 1.3);
         }
         // Whatever it was doing there is not worth it: forget that spot.
         if (this.mineTarget != null) {
