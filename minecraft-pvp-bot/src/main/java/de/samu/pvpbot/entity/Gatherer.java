@@ -1563,6 +1563,10 @@ final class Gatherer {
         this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
         BlockPos front = feet.relative(this.digDir);
+        if (PvpBotEntity.DEBUG && ++this.digStateLog % 200 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   dig: at {} dir {} down {} front {} / {} blocked {} actionTicks {}", feet.toShortString(), this.digDir, down,
+                    this.level().getBlockState(front).getBlock(), this.level().getBlockState(front.above()).getBlock(), this.digBlocked, this.actionTicks);
+        }
         List<BlockPos> toClear = new ArrayList<>();
         toClear.add(front.above());
         toClear.add(front);
@@ -1992,6 +1996,7 @@ final class Gatherer {
     private int dragonShotTicks;
     private int netherLogTicks;
     private int fireTicks;
+    private int digStateLog;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
