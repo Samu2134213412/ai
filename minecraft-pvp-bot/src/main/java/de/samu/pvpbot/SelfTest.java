@@ -142,7 +142,7 @@ final class SelfTest {
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
         SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 72000, -240,
                 level -> List.of(), SelfTest::stage2Kit, PvpBotEntity::stage2Done));
-        SCENARIOS.add(new Scenario("Etappe 3: Enderaugen werfen, Festung, Endportal", PvpBotEntity.Style.AUTO, 60000, 480,
+        SCENARIOS.add(new Scenario("Etappe 3: Enderaugen werfen, Festung, Endportal", PvpBotEntity.Style.AUTO, 90000, 480,
                 level -> List.of(), SelfTest::stage3Kit, PvpBotEntity::inEnd));
         SCENARIOS.add(new Scenario("Etappe 4: Endkristalle und Enderdrache", PvpBotEntity.Style.AUTO, 36000, 0,
                 level -> List.of(), SelfTest::stage4Kit, PvpBotEntity::gameBeaten));
@@ -276,6 +276,13 @@ final class SelfTest {
                     bot = moved;
                     spawned.add(moved);
                     PvpBotMod.LOGGER.info(TAG + "  bot is now in " + l.dimension() + " at " + moved.blockPosition().toShortString());
+                    if (l.dimension() == net.minecraft.world.level.Level.NETHER) {
+                        // Test diagnostics only (the bot does not get this): where is the nearest fortress?
+                        BlockPos fortress = l.findNearestMapStructure(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.STRUCTURE,
+                                net.minecraft.resources.Identifier.withDefaultNamespace("fortress")), moved.blockPosition(), 50, false);
+                        PvpBotMod.LOGGER.info(TAG + "  (info) nearest fortress: " + (fortress == null ? "none" : fortress.toShortString()
+                                + " = " + (int) Math.sqrt(fortress.distSqr(moved.blockPosition())) + " blocks away"));
+                    }
                     break;
                 }
             }

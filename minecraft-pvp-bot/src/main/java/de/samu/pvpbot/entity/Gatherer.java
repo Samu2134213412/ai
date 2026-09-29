@@ -1278,6 +1278,19 @@ final class Gatherer {
             return;
         }
         this.findHomeChests(level);
+        if (!this.kit().hasRoom() && this.bot.tickCount % 20 == 0) {
+            // Full: throw away dug-up junk (keeps one stack of cobblestone for building).
+            int kept = 0;
+            for (ItemStack st : this.kit().items()) {
+                if (JUNK.test(st)) {
+                    if (st.is(Items.COBBLESTONE) && kept++ == 0) {
+                        continue;
+                    }
+                    st.setCount(0);
+                }
+            }
+            this.kit().items();
+        }
         if (this.speedrun && this.inNether() && this.netherPortal == null) {
             // Just arrived: remember the way home.
             for (BlockPos p : BlockPos.betweenClosed(this.bot.blockPosition().offset(-2, -1, -2), this.bot.blockPosition().offset(2, 3, 2))) {
@@ -2138,7 +2151,15 @@ final class Gatherer {
             return;
         }
         BlockPos fountain = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
-        boolean low = nearest != null && nearest.getY() < fountain.getY() + 8 && nearestDist < 24 * 24;
+        boolean sitting = dragon.getPhaseManager().getCurrentPhase().isSitting();
+        if (!sitting && nearest != null && nearestDist < 10 * 10) {
+            // Only close in while it sits: flying or landing, its head and wings hit hard.
+            Vec3 away = this.bot.position().subtract(nearest.position()).multiply(1.0, 0.0, 1.0).normalize().scale(8.0);
+            this.bot.getNavigation().moveTo(this.bot.getX() + away.x, this.bot.getY(), this.bot.getZ() + away.z, 1.3);
+            this.step = null;
+            return;
+        }
+        boolean low = sitting && nearest != null && nearestDist < 24 * 24;
         Vec3 goal = low ? nearest.position() : new Vec3(fountain.getX() + 4.5, fountain.getY(), fountain.getZ() + 4.5);
         if (this.bot.position().distanceToSqr(goal) > 4.0 && (this.bot.getNavigation().isDone() || low)) {
             this.bot.getNavigation().moveTo(goal.x, goal.y, goal.z, low ? 1.3 : 1.0);
