@@ -1550,6 +1550,16 @@ final class Gatherer {
 
     /** Staircase down (descend) or a straight 2-high tunnel (strip mine); turns away from lava and bedrock. */
     private void doDig(ServerLevel level, boolean down) {
+        if (down && this.digBlocked >= 4 && this.bot.getY() < 50.0) {
+            // Water or lava on every side of the way down: tunnel away sideways for a bit, then go on down.
+            this.digBlocked = 0;
+            this.sidewaysTicks = 300;
+            this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
+        }
+        if (this.sidewaysTicks > 0) {
+            this.sidewaysTicks--;
+            down = false;
+        }
         if (this.digBlocked >= 4 || this.bot.isInWater()) {
             // Water (or lava) on every side, e.g. standing in the lake it just scooped from: walk to
             // dry ground first, then dig.
@@ -2003,6 +2013,7 @@ final class Gatherer {
     private int netherLogTicks;
     private int fireTicks;
     private int digStateLog;
+    private int sidewaysTicks;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
