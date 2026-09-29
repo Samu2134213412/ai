@@ -1188,8 +1188,9 @@ final class Gatherer {
             boolean landing = phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING
                     && dragon.position().horizontalDistanceSqr() < 40 * 40
                     || dragon.getPhaseManager().getCurrentPhase().isSitting();
-            if ((landing || dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16)
-                    && (!crystalsLeft || this.bot.position().horizontalDistanceSqr() < 24 * 24)) {
+            boolean sitting = dragon.getPhaseManager().getCurrentPhase().isSitting();
+            if (crystalsLeft ? sitting && this.bot.position().horizontalDistanceSqr() < 24 * 24
+                    : landing || dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16) {
                 return new FightDragon();
             }
         }

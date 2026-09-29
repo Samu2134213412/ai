@@ -294,7 +294,7 @@ final class SelfTest {
             }
         }
         portalWait = 0;
-        if (index >= 0 && bot != null && ticks % 1200 == 600 && SCENARIOS.get(index).name().startsWith("Etappe 4")
+        if (index >= 0 && bot != null && ticks % 3600 == 600 && SCENARIOS.get(index).name().startsWith("Etappe 4")
                 && bot.level() instanceof ServerLevel end) {
             // Without a player the dragon hardly ever lands; in a real fight it does - make it land now and then.
             for (var dragon : end.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, bot.getBoundingBox().inflate(300.0))) {
