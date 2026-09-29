@@ -291,6 +291,7 @@ final class Gatherer {
     private int noProgressTicks;
     private @Nullable Vec3 lastPos;
     private @Nullable Vec3 exploreTarget;
+    private double exploreHeading = Double.NaN;
     private @Nullable Vec3 anchor;
     private @Nullable String lastAnnounced;
 
@@ -976,9 +977,18 @@ final class Gatherer {
             this.anchor = owner != null ? owner.position() : pos;
         }
         if (this.exploreTarget == null || pos.distanceToSqr(this.exploreTarget) < 9.0 || this.bot.getNavigation().isDone() && ++this.actionTicks > 60) {
+            boolean stuck = this.exploreTarget != null && pos.distanceToSqr(this.exploreTarget) >= 9.0;
             this.actionTicks = 0;
             double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
-            Vec3 candidate = pos.add(Math.cos(angle) * 24.0, 0.0, Math.sin(angle) * 24.0);
+            if (this.speedrun) {
+                // Far from home: keep one heading like a player would, turn only when the way is blocked.
+                if (Double.isNaN(this.exploreHeading) || stuck) {
+                    this.exploreHeading = Double.isNaN(this.exploreHeading) ? angle
+                            : this.exploreHeading + (this.bot.getRandom().nextBoolean() ? 1 : -1) * (Math.PI / 4 + this.bot.getRandom().nextDouble() * Math.PI / 2);
+                }
+                angle = this.exploreHeading;
+            }
+            Vec3 candidate = pos.add(Math.cos(angle) * 32.0, 0.0, Math.sin(angle) * 32.0);
             if (!this.speedrun && candidate.distanceTo(this.anchor) > 96.0) {
                 candidate = this.anchor.add(pos.subtract(this.anchor).scale(-0.5));
             }
