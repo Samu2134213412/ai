@@ -330,6 +330,10 @@ public final class Autopilot {
     private void finishAttempt(Minecraft mc) {
         Pattern done = this.pattern;
         BotBrain.Context ctx = this.attemptContext;
+        if (done != null && mc.player != null) {
+            LOGGER.info("[AUTOPILOT] finish {} in phase {} (fly={}, y={}, caller {})", done.label, this.phase, mc.player.isFallFlying(),
+                    String.format("%.1f", mc.player.getY()), StackWalker.getInstance().walk(f -> f.skip(1).findFirst().map(x -> x.getMethodName() + ":" + x.getLineNumber()).orElse("?")));
+        }
         this.pattern = null;
         this.kUse = false;
         if (done == null || ctx == null) {
@@ -665,6 +669,8 @@ public final class Autopilot {
                     }
                     boolean willMiss = above < 6.0 && p.distanceTo(t) > 3.3 + Math.max(0.0, -p.getDeltaMovement().y);
                     if (hit || willMiss || this.phaseTicks > 80) {
+                        LOGGER.info("[AUTOPILOT] dive ends: hit={} willMiss={} height={} dist={}", hit, willMiss,
+                                String.format("%.1f", above), String.format("%.1f", p.distanceTo(t)));
                         this.phase = 20;
                         this.phaseTicks = 0;
                     }
@@ -782,7 +788,9 @@ public final class Autopilot {
         List<ItemStack> items = p.getInventory().getNonEquipmentItems();
         for (int i = 0; i < items.size(); i++) {
             ItemStack stack = items.get(i);
-            if (stack.has(net.minecraft.core.component.DataComponents.FOOD) && Kit.classify(stack) != Role.GAPPLE) {
+            if (stack.has(net.minecraft.core.component.DataComponents.FOOD) && Kit.classify(stack) != Role.GAPPLE
+                    && !stack.is(net.minecraft.world.item.Items.ROTTEN_FLESH) && !stack.is(net.minecraft.world.item.Items.SPIDER_EYE)
+                    && !stack.is(net.minecraft.world.item.Items.POISONOUS_POTATO)) {
                 int slot = this.toHotbar(mc, p, i);
                 if (slot >= 0) {
                     p.getInventory().setSelectedSlot(slot);
@@ -1054,6 +1062,7 @@ public final class Autopilot {
     private void nextPhase() {
         this.phase++;
         this.phaseTicks = 0;
+        LOGGER.info("[AUTOPILOT] {} -> phase {}", this.pattern == null ? "-" : this.pattern.label, this.phase);
     }
 
     private void strafeAround(LocalPlayer p, boolean backOff) {

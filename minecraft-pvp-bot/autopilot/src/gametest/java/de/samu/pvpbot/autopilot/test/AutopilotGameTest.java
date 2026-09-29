@@ -302,6 +302,17 @@ public class AutopilotGameTest implements FabricClientGameTest {
         run(sp, "effect give @e[type=minecraft:zombie] minecraft:fire_resistance infinite 0 true");
         ctx.waitTicks(10);
 
+        // Remember exactly which enemies were summoned: the fight is won when all of them are dead
+        // on the server (not merely out of sight).
+        List<java.util.UUID> enemyIds = ctx.computeOnClient(mc -> {
+            List<java.util.UUID> ids = new ArrayList<>();
+            for (Entity e : mc.level.getEntities(mc.player, new AABB(mc.player.blockPosition()).inflate(80.0))) {
+                if (e instanceof LivingEntity && !(e instanceof Player) && !e.getType().toString().contains("item")) {
+                    ids.add(e.getUUID());
+                }
+            }
+            return ids;
+        });
         boolean started = ctx.computeOnClient(mc -> {
             LivingEntity enemy = nearestEnemy(mc);
             if (enemy == null) {
@@ -349,7 +360,15 @@ public class AutopilotGameTest implements FabricClientGameTest {
                         Autopilot.INSTANCE.status().replaceAll("§.", ""));
             });
             System.out.println(TAG + state.replace("t=  0s", String.format("t=%3ds", waited / 20)));
-            boolean enemyLeft = ctx.computeOnClient(mc -> nearestEnemy(mc) != null);
+            boolean enemyLeft = sp.getServer().computeOnServer(server -> {
+                for (java.util.UUID id : enemyIds) {
+                    Entity e = server.overworld().getEntity(id);
+                    if (e != null && e.isAlive()) {
+                        return true;
+                    }
+                }
+                return false;
+            });
             boolean dead = ctx.computeOnClient(mc -> mc.player == null || !mc.player.isAlive() || mc.player.getHealth() <= 0.0F);
             if (dead) {
                 lost = true;
