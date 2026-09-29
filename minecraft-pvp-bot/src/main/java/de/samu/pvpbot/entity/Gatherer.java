@@ -1991,6 +1991,7 @@ final class Gatherer {
     private int strongholdLogTicks;
     private int dragonShotTicks;
     private int netherLogTicks;
+    private int fireTicks;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
@@ -2163,8 +2164,34 @@ final class Gatherer {
             if (this.bot.onGround() && !this.nearLava(level, feet) && !this.nearLava(level, feet.below())) {
                 this.lastSafe = feet;
             }
-            if (this.bot.isOnFire() && this.bot.getHealth() < 14.0F) {
-                this.drinkFireResistance(level);
+            if (this.bot.isOnFire() && !this.bot.hasEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE)) {
+                if (this.bot.getHealth() < 14.0F) {
+                    this.drinkFireResistance(level);
+                }
+                if (this.bot.isOnFire() && level.dimension() != net.minecraft.world.level.Level.NETHER
+                        && this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0 && level.getBlockState(feet).canBeReplaced()
+                        && level.getFluidState(feet).isEmpty()) {
+                    // Burning: water at its feet puts it out (the bucket is filled again later).
+                    level.setBlock(feet, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+                    level.playSound(null, feet, SoundEvents.BUCKET_EMPTY, this.bot.getSoundSource(), 1.0F, 1.0F);
+                    if (!this.kit().isInfinite()) {
+                        this.kit().remove(st -> st.is(Items.WATER_BUCKET), 1);
+                        this.kit().insert(new ItemStack(Items.BUCKET));
+                        this.bot.onKitChanged();
+                    }
+                } else if (this.lastSafe != null && this.lastSafe.distSqr(feet) > 1 && ++this.fireTicks > 20) {
+                    // Still burning after a second: back to the last safe spot, away from what burns.
+                    this.bot.getNavigation().stop();
+                    this.bot.getMoveControl().setWantedPosition(this.lastSafe.getX() + 0.5, this.lastSafe.getY(), this.lastSafe.getZ() + 0.5, 1.2);
+                    if (this.mineTarget != null) {
+                        this.blacklist.add(this.mineTarget);
+                        this.mineTarget = null;
+                    }
+                    this.step = null;
+                    return true;
+                }
+            } else {
+                this.fireTicks = 0;
             }
             return false;
         }
@@ -2403,6 +2430,10 @@ final class Gatherer {
             // Closer shots miss less, but right below the pillar its edge is in the way: about 24
             // blocks out, further when the pillar still hides it.
             Vec3 spot = crystal.position().add(away.normalize().scale(los ? 30.0 : Math.min(h + 8.0, 40.0)));
+            if (spot.horizontalDistance() > 60.0) {
+                // Not out near the edge of the island (the dragon knocks it into the void there).
+                spot = spot.multiply(60.0 / spot.horizontalDistance(), 1.0, 60.0 / spot.horizontalDistance());
+            }
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
             if (this.bot.getNavigation().isDone() || stuck) {
                 this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
