@@ -1409,7 +1409,7 @@ public class PvpBotEntity extends PathfinderMob {
             out.add(Pattern.SPEAR_CHARGE);
         }
         if (!flying && this.wantsMace() && this.wantsSpear() && Kit.lungeLevel(this.spear()) > 0 && this.kit.has(Role.WIND_CHARGE)
-                && this.onGround() && this.windCooldown == 0 && sees && hDist > 4.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0) {
+                && this.onGround() && this.windCooldown == 0 && sees && hDist > 3.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0) {
             // Combo: wind charge up, lunge across with the spear at the top, smash down with the mace.
             out.add(Pattern.WIND_LUNGE_SMASH);
         }

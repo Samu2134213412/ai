@@ -289,7 +289,7 @@ public final class Autopilot {
             out.add(Pattern.SPEAR_CHARGE);
         }
         if (!flying && mace && spear && this.spearLunge(p) > 0 && this.has(p, Role.WIND_CHARGE) && p.onGround() && this.windCooldown == 0
-                && sees && hDist > 4.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0 && this.ceiling(p, 8) > 7
+                && sees && hDist > 3.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0 && this.ceiling(p, 8) > 7
                 && p.getFoodData().getFoodLevel() > 6) {
             out.add(Pattern.WIND_LUNGE_SMASH);
         }

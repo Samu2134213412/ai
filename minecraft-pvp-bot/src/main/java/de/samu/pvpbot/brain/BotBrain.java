@@ -121,7 +121,7 @@ public final class BotBrain {
         switch (ctx.range()) {
             case CLOSE -> v += switch (p) {
                 case WIND_SMASH -> 3.0;
-                case WIND_LUNGE_SMASH -> 1.0;
+                case WIND_LUNGE_SMASH -> 4.0;
                 case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> 1.5;
                 case BOW_SNIPE -> -3.0;
                 case SPEAR_CHARGE -> 1.0;
@@ -129,7 +129,7 @@ public final class BotBrain {
             };
             case MID -> v += switch (p) {
                 case WIND_SMASH, SPEAR_CHARGE -> 3.0;
-                case WIND_LUNGE_SMASH -> 4.0;
+                case WIND_LUNGE_SMASH -> 6.0;
                 case ELYTRA_DIVE, BOW_SNIPE -> 1.0;
                 default -> 0.0;
             };

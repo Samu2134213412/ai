@@ -241,7 +241,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             for (int i = 0; i < 10; i++) {
                 ctx.waitTicks(2);
                 waited += 2;
-                orbitCamera(sp, 1.2 + waited * 0.003, 7.0, 4.0);
+                orbitCamera(sp, 1.2 + waited * 0.003, 5.0, 3.0);
                 capture(ctx);
             }
             golemLeft = sp.getServer().computeOnServer(server -> {
@@ -255,7 +255,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
         }
         for (int i = 0; i < 15; i++) {
             ctx.waitTicks(2);
-            orbitCamera(sp, 1.2 + (waited + 2 * i) * 0.003, 7.0, 4.0);
+            orbitCamera(sp, 1.2 + (waited + 2 * i) * 0.003, 5.0, 3.0);
             capture(ctx);
         }
         clip = null;
