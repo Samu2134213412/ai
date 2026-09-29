@@ -1358,6 +1358,7 @@ public final class Autopilot {
         this.face(p, center.subtract(p.getEyePosition()), 45.0F);
         if (mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) {
             this.kAttack = true;
+            mc.gameMode.continueDestroyBlock(hit.getBlockPos(), hit.getDirection());
         }
         this.kForward = true;
     }
