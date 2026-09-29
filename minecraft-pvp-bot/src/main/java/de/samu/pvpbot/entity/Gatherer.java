@@ -1984,6 +1984,7 @@ final class Gatherer {
     private int spiralBest;
     private int crystalLogTicks;
     private int crystalAimTicks;
+    private int crystalNoLos;
     private int digLogTicks;
     private int dragonLogTicks;
     private double eyeLeg = 180.0;
@@ -2389,6 +2390,15 @@ final class Gatherer {
         double h = away.length();
         boolean stuck = this.noProgress();
         boolean los = this.bot.hasLineOfSight(crystal);
+        this.crystalNoLos = los ? 0 : this.crystalNoLos + 1;
+        if (this.crystalNoLos > 600) {
+            // No spot to see it from (caged, or the pillar is too tall): leave that one for later.
+            this.crystalShots.put(crystal.getUUID(), 12);
+            this.crystalTarget = null;
+            this.crystalNoLos = 0;
+            this.step = null;
+            return;
+        }
         if (!los || h > 30.0 && !(stuck && h < 44.0)) {
             // Closer shots miss less, but right below the pillar its edge is in the way: about 24
             // blocks out, further when the pillar still hides it.
