@@ -1930,6 +1930,7 @@ final class Gatherer {
     private int digLogTicks;
     private int dragonLogTicks;
     private double eyeLeg = 180.0;
+    private int strongholdLogTicks;
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
@@ -2179,6 +2180,11 @@ final class Gatherer {
             this.doDig(level, false);
             this.step = null;
             return;
+        }
+        if (PvpBotEntity.DEBUG && ++this.strongholdLogTicks % 200 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   stronghold: at {} target {} known bricks {} visited cells {} frames {}", here.toShortString(),
+                    best.toShortString(), this.known.getOrDefault(Ore.STRONGHOLD, List.of()).size(), this.visitedCells.size(),
+                    this.known.getOrDefault(Ore.END_FRAME, List.of()).size());
         }
         // The same wall for too long (the path ends short of it, it jiggles on the spot): next one.
         if (!best.equals(this.strongholdTarget)) {
