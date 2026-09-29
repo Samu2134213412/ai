@@ -1225,15 +1225,30 @@ final class Survival {
         BlockPos goal = new BlockPos(far.getX(), y, far.getZ());
         if (this.path == null || this.pathGoal == null || this.pathGoal.distSqr(goal) > 16 * 16) {
             this.path = PathFinder.find(level, p.blockPosition(), goal, pos -> pos.distSqr(goal) < 9, 4000, false);
+            if (this.path == null || this.path.isEmpty()) {
+                // Boxed in (a pit, a pocket under a lake): allow digging and swimming out.
+                this.path = PathFinder.find(level, p.blockPosition(), goal, pos -> pos.distSqr(goal) < 9, 4000, true);
+            }
             this.pathGoal = goal;
             this.pathIndex = 0;
             if (this.path == null || this.path.isEmpty()) {
                 this.exploreTicks = 0;
                 this.path = null;
+                if (++this.blindTicks > 100 && !this.climbing && p.getBlockY() < level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ()) - 1) {
+                    // Still nowhere to go and under the surface: build up and out.
+                    this.climbing = true;
+                    try {
+                        return this.digUp(mc, p, level); // (it walks sideways itself when water is overhead)
+                    } finally {
+                        this.climbing = false;
+                    }
+                }
+                this.ap.face(p, dir, 30.0F);
                 this.ap.kForward = true;
-                this.ap.kJump = p.horizontalCollision;
+                this.ap.kJump = p.horizontalCollision || p.isInWater();
                 return true;
             }
+            this.blindTicks = 0;
         }
         this.exploring = true;
         try {
@@ -1247,4 +1262,6 @@ final class Survival {
     }
 
     private boolean exploring;
+    private int blindTicks;
+    private boolean climbing;
 }
