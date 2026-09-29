@@ -288,6 +288,11 @@ public final class Autopilot {
         if (!flying && spear && p.onGround() && this.spearCooldown == 0 && sees && hDist < 18.0) {
             out.add(Pattern.SPEAR_CHARGE);
         }
+        if (!flying && mace && spear && this.spearLunge(p) > 0 && this.has(p, Role.WIND_CHARGE) && p.onGround() && this.windCooldown == 0
+                && sees && hDist > 4.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0 && this.ceiling(p, 8) > 7
+                && p.getFoodData().getFoodLevel() > 6) {
+            out.add(Pattern.WIND_LUNGE_SMASH);
+        }
         if (flying || this.canFlyHere(p) && p.onGround() && hDist > 5.0) {
             if (mace && this.hasChestArmor(p)) {
                 out.add(Pattern.ELYTRA_DIVE);
@@ -369,7 +374,7 @@ public final class Autopilot {
             case MACE_MELEE, BLADE_MELEE -> this.tickMelee(mc, p, t);
             case SPEAR_KITE -> this.tickSpearKite(mc, p, t);
             case SPEAR_CHARGE -> this.tickSpearCharge(mc, p, t);
-            case WIND_SMASH -> this.tickWindSmash(mc, p, t);
+            case WIND_SMASH, WIND_LUNGE_SMASH -> this.tickWindSmash(mc, p, t);
             case ELYTRA_DIVE, ELYTRA_LANCE -> this.tickFlight(mc, p, t);
             case BOW_SNIPE -> this.tickBow(mc, p, t);
         }
@@ -398,7 +403,12 @@ public final class Autopilot {
                 // Jump first so the hit lands as a critical hit on the way down.
                 this.kJump = true;
             } else if (p.getDeltaMovement().y < -0.05 || p.isInWater()) {
-                this.attack(mc, p, t);
+                if (t.isBlocking() && this.has(p, Role.AXE) && Kit.classify(p.getMainHandItem()) != Role.AXE) {
+                    // Attribute swap onto the axe for this hit: it knocks the shield out of their hands.
+                    this.swapAttack(mc, p, t, Role.AXE);
+                } else {
+                    this.attack(mc, p, t);
+                }
             }
         }
         if (this.attemptTicks > 50) {
@@ -565,13 +575,32 @@ public final class Autopilot {
                     this.nextPhase();
                 }
             }
+            case 2 -> {
+                if (this.pattern != Pattern.WIND_LUNGE_SMASH) {
+                    this.nextPhase();
+                    return;
+                }
+                // Combo: spear in hand on the way up, lunge across at the top of the jump.
+                this.select(mc, p, Role.SPEAR);
+                Vec3 toT = t.position().subtract(p.position());
+                this.face(p, new Vec3(toT.x, 0.0, toT.z), 60.0F);
+                boolean top = p.getDeltaMovement().y < 0.15;
+                if (top && !p.cannotAttackWithItem(p.getMainHandItem(), 0)) {
+                    this.attack(mc, p, t);
+                    LOGGER.info("[AUTOPILOT] lunge at the top of the wind jump");
+                    this.nextPhase();
+                } else if (p.getDeltaMovement().y < -0.4 || p.onGround() && this.phaseTicks > 5) {
+                    this.nextPhase(); // too late for the lunge, just smash
+                }
+            }
             default -> {
-                this.select(mc, p, Role.MACE);
+                this.holdSmashCarrier(mc, p);
                 this.faceEntity(p, t, 60.0F);
                 double hDist = p.position().subtract(t.position()).horizontalDistance();
                 this.kForward = hDist > 0.8;
-                if (!p.onGround() && p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && p.distanceTo(t) <= 3.3) {
-                    this.attack(mc, p, t);
+                double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
+                if (!p.onGround() && p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && (reach <= 3.0 || p.distanceTo(t) <= 3.3)) {
+                    this.swapAttack(mc, p, t, Role.MACE);
                 }
                 if (p.onGround() && this.phaseTicks > 5 || this.phaseTicks > 80) {
                     this.finishAttempt(mc);
@@ -703,12 +732,12 @@ public final class Autopilot {
                         this.finishAttempt(mc);
                     }
                 } else {
-                    this.select(mc, p, Role.MACE);
+                    this.holdSmashCarrier(mc, p);
                     this.faceEntity(p, t, 60.0F);
                     this.kForward = hDist > 0.8;
                     double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
                     if (p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && (reach <= 3.0 || p.distanceTo(t) <= 3.3)) {
-                        this.attack(mc, p, t);
+                        this.swapAttack(mc, p, t, Role.MACE);
                     }
                     double above = p.getY() - (t.getY() + t.getBbHeight());
                     boolean missing = hDist > 2.2 && above < 10.0 && above > 1.0;
@@ -956,6 +985,11 @@ public final class Autopilot {
         return this.findInventory(p, role) >= 0 || role == Role.ELYTRA && Kit.classify(p.getItemBySlot(EquipmentSlot.CHEST)) == Role.ELYTRA;
     }
 
+    private int spearLunge(LocalPlayer p) {
+        int index = this.findInventory(p, Role.SPEAR);
+        return index < 0 ? 0 : Kit.lungeLevel(p.getInventory().getItem(index));
+    }
+
     private boolean hasChestArmor(LocalPlayer p) {
         for (ItemStack stack : p.getInventory().getNonEquipmentItems()) {
             if (Kit.armorSlot(stack) == EquipmentSlot.CHEST && Kit.classify(stack) == Role.ARMOR) {
@@ -1049,6 +1083,39 @@ public final class Autopilot {
         this.faceEntity(p, t, 180.0F);
         mc.hitResult = p.raycastHitResult(1.0F, p);
         ((MinecraftInvoker) mc).pvpbot$startAttack();
+    }
+
+    /**
+     * Attribute swap: switch to another weapon and attack in the same tick. The server still uses the
+     * attack damage attribute and the attack charge of the weapon held until now (they only update on
+     * its next tick), but the new weapon's enchantments, mace smash bonus and shield breaking.
+     */
+    private void swapAttack(Minecraft mc, LocalPlayer p, LivingEntity t, Role role) {
+        ItemStack before = p.getMainHandItem();
+        if (Kit.classify(before) != role && this.select(mc, p, role)) {
+            LOGGER.info("[AUTOPILOT] attribute swap {} -> {}", before.getItem(), p.getMainHandItem().getItem());
+            this.say(mc, "§dAttribute-Swap: §f" + before.getHoverName().getString() + " §7→ §f" + p.getMainHandItem().getHoverName().getString());
+        }
+        this.attack(mc, p, t);
+    }
+
+    /** While falling towards a mace smash: hold the weapon with the highest attack damage (usually an axe). */
+    private void holdSmashCarrier(Minecraft mc, LocalPlayer p) {
+        int mace = this.findInventory(p, Role.MACE);
+        double maceDamage = mace < 0 ? 0.0 : Kit.attackDamage(p.getInventory().getItem(mace));
+        List<ItemStack> items = p.getInventory().getNonEquipmentItems();
+        double best = 0.0;
+        for (ItemStack stack : items) {
+            Role role = Kit.classify(stack);
+            if (role == Role.SWORD || role == Role.AXE) {
+                best = Math.max(best, Kit.attackDamage(stack));
+            }
+        }
+        if (best > maceDamage) {
+            this.selectBestBlade(mc, p);
+        } else {
+            this.select(mc, p, Role.MACE);
+        }
     }
 
     private void useItemOnce(Minecraft mc) {

@@ -126,6 +126,8 @@ public class PvpBotEntity extends PathfinderMob {
     private @Nullable Vec3 retreatPos;
     /** Retreating only to get a run-up for a spear charge. */
     private boolean chargeAfterRetreat;
+    /** Wind-lunge-smash combo: lunge with the spear at the top of the wind jump. */
+    private boolean lungePlanned;
     /** Ticks left of running past the target after a jab (hit and run). */
     private int spearRunTicks;
     private int windCooldown;
@@ -329,6 +331,8 @@ public class PvpBotEntity extends PathfinderMob {
         items.add(enchanted(new ItemStack(Items.MACE),
                 Enchantments.DENSITY, 5, Enchantments.WIND_BURST, 3, Enchantments.FIRE_ASPECT, 2, Enchantments.UNBREAKING, 3));
         items.add(enchanted(new ItemStack(Items.NETHERITE_SPEAR), Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3, Enchantments.LUNGE, 3));
+        // The axe is for attribute swapping: its damage for mace smashes, and shield breaking.
+        items.add(enchanted(new ItemStack(Items.NETHERITE_AXE), Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3));
         items.add(enchanted(new ItemStack(Items.ELYTRA), Enchantments.UNBREAKING, 3));
         items.add(enchanted(new ItemStack(Items.NETHERITE_HELMET), Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
         items.add(enchanted(new ItemStack(Items.NETHERITE_CHESTPLATE), Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
@@ -777,6 +781,9 @@ public class PvpBotEntity extends PathfinderMob {
     private void setMode(Mode mode) {
         this.mode = mode;
         this.modeTicks = 0;
+        if (mode == Mode.GROUND) {
+            this.lungePlanned = false;
+        }
         if (mode == Mode.GROUND && this.pattern != null && !this.pattern.melee) {
             this.finishAttempt();
         }
@@ -859,13 +866,28 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private boolean trySmash(ServerLevel level, LivingEntity target) {
-        if (this.getMainHandItem() == this.mace() && MaceItem.canSmashAttack(this) && this.inSmashReach(target)) {
+        if (!this.mace().isEmpty() && MaceItem.canSmashAttack(this) && this.inSmashReach(target)) {
             this.faceEntity(target, 180.0F);
+            if (this.getMainHandItem() != this.mace()) {
+                // Attribute swap: the attack damage attribute still belongs to the weapon held until
+                // now (equipment attributes only update on the next tick), the mace adds its smash
+                // bonus and enchantments.
+                if (DEBUG) {
+                    PvpBotMod.LOGGER.info("[PvPBot] attribute swap {} -> mace", this.getMainHandItem().getItem());
+                }
+                this.holdWeapon(this.mace());
+            }
             this.swingMainHand();
             this.doHurtTarget(level, target);
             return true;
         }
         return false;
+    }
+
+    /** What to hold while falling towards a mace smash: the weapon with the highest attack damage. */
+    private ItemStack smashCarrier() {
+        ItemStack blade = this.kit.bestBlade();
+        return !blade.isEmpty() && Kit.attackDamage(blade) > Kit.attackDamage(this.mace()) ? blade : this.mace();
     }
 
     // ------------------------------------------------------------------ combat
@@ -980,6 +1002,11 @@ public class PvpBotEntity extends PathfinderMob {
                 this.meleeCooldown = 10;
             } else if (!this.holdingSpear() && dist <= 3.2) {
                 this.faceEntity(target, 180.0F);
+                ItemStack axe = this.kit.find(Role.AXE);
+                if (target.isBlocking() && !axe.isEmpty() && this.getMainHandItem() != axe) {
+                    // Attribute swap onto the axe for this one hit: it knocks the shield out.
+                    this.holdWeapon(axe);
+                }
                 this.swingMainHand();
                 this.doHurtTarget(level, target);
                 // Same attack cooldown a player has with this weapon.
@@ -1055,7 +1082,7 @@ public class PvpBotEntity extends PathfinderMob {
         this.holdWeapon(this.mace());
         this.getNavigation().stop();
         Vec3 horizontal = target.position().subtract(this.position()).multiply(1.0, 0.0, 1.0);
-        Vec3 push = horizontal.lengthSqr() > 1.0E-4 ? horizontal.normalize().scale(0.15) : Vec3.ZERO;
+        Vec3 push = horizontal.lengthSqr() > 1.0E-4 ? horizontal.normalize().scale(this.lungePlanned ? 0.05 : 0.15) : Vec3.ZERO;
         this.kit.take(Role.WIND_CHARGE);
         this.windBurst(level, new Vec3(push.x, 1.15, push.z));
         this.windCooldown = WIND_COOLDOWN;
@@ -1064,7 +1091,15 @@ public class PvpBotEntity extends PathfinderMob {
 
     /** Airborne after a wind jump or a dive: steer onto the target and smash it on the way down. */
     private void tickAirSmash(ServerLevel level, LivingEntity target) {
-        this.holdWeapon(this.mace());
+        if (this.lungePlanned && this.mode == Mode.WIND_JUMP && this.modeTicks > 3 && this.getDeltaMovement().y < 0.15) {
+            // Top of the jump: jab with the Lunge spear to shoot across towards the target, then
+            // straight back to the mace for the smash.
+            this.lungePlanned = false;
+            this.holdWeapon(this.spear());
+            this.jab(target);
+            this.tellOwner("§7Lunge!", false);
+        }
+        this.holdWeapon(this.smashCarrier());
         this.faceEntity(target, 40.0F);
         this.getNavigation().stop();
 
@@ -1373,6 +1408,11 @@ public class PvpBotEntity extends PathfinderMob {
         if (!flying && this.wantsSpear() && this.onGround() && this.spearCooldown == 0 && sees && hDist < 18.0) {
             out.add(Pattern.SPEAR_CHARGE);
         }
+        if (!flying && this.wantsMace() && this.wantsSpear() && Kit.lungeLevel(this.spear()) > 0 && this.kit.has(Role.WIND_CHARGE)
+                && this.onGround() && this.windCooldown == 0 && sees && hDist > 4.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0) {
+            // Combo: wind charge up, lunge across with the spear at the top, smash down with the mace.
+            out.add(Pattern.WIND_LUNGE_SMASH);
+        }
         boolean canFly = flying || this.onGround() && this.flightCooldown == 0 && this.canFlyHere() && hDist > 5.0;
         if (canFly) {
             if (this.wantsMace()) {
@@ -1403,6 +1443,10 @@ public class PvpBotEntity extends PathfinderMob {
     private void startPattern(ServerLevel level, LivingEntity target, Pattern chosen) {
         switch (chosen) {
             case WIND_SMASH -> this.startWindJump(level, target);
+            case WIND_LUNGE_SMASH -> {
+                this.lungePlanned = true;
+                this.startWindJump(level, target);
+            }
             case SPEAR_CHARGE -> this.startSpearCharge(target);
             case ELYTRA_DIVE, ELYTRA_LANCE -> {
                 this.lancePlan = chosen == Pattern.ELYTRA_LANCE;

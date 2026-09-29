@@ -34,7 +34,8 @@ public final class BotBrain {
         ELYTRA_DIVE("Elytra-Mace-Sturzflug", false),
         ELYTRA_LANCE("Elytra-Speerflug", false),
         BLADE_MELEE("Schwert/Axt-Nahkampf", true),
-        BOW_SNIPE("Bogenschüsse", true);
+        BOW_SNIPE("Bogenschüsse", true),
+        WIND_LUNGE_SMASH("Windladung → Lunge → Mace", false);
 
         public final String label;
         public final boolean melee;
@@ -120,6 +121,7 @@ public final class BotBrain {
         switch (ctx.range()) {
             case CLOSE -> v += switch (p) {
                 case WIND_SMASH -> 3.0;
+                case WIND_LUNGE_SMASH -> 1.0;
                 case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> 1.5;
                 case BOW_SNIPE -> -3.0;
                 case SPEAR_CHARGE -> 1.0;
@@ -127,6 +129,7 @@ public final class BotBrain {
             };
             case MID -> v += switch (p) {
                 case WIND_SMASH, SPEAR_CHARGE -> 3.0;
+                case WIND_LUNGE_SMASH -> 4.0;
                 case ELYTRA_DIVE, BOW_SNIPE -> 1.0;
                 default -> 0.0;
             };
@@ -147,7 +150,7 @@ public final class BotBrain {
                 default -> 0.0;
             };
         }
-        if (ctx.env() == Env.CAVE && p == Pattern.WIND_SMASH) {
+        if (ctx.env() == Env.CAVE && (p == Pattern.WIND_SMASH || p == Pattern.WIND_LUNGE_SMASH)) {
             v -= 1.0;
         }
         return v;
