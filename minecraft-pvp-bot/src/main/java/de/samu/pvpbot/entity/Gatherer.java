@@ -1175,11 +1175,14 @@ final class Gatherer {
             this.lastDragonPhase = phase;
             // Down at the fountain: that is the moment to hit it, crystals can wait.
             BlockPos fountain = this.level().getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
-            // Coming in to land: be waiting there (it only sits a few seconds).
-            boolean landing = phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING_APPROACH
-                    || phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING
+            // Crystals first (they heal it); only when it is really coming down right now, be at the
+            // fountain (it sits just a few seconds).
+            boolean crystalsLeft = this.visibleCrystal() != null && this.kit().count(st -> st.is(Items.ARROW)) > 0;
+            boolean landing = phase == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING
+                    && dragon.position().horizontalDistanceSqr() < 40 * 40
                     || dragon.getPhaseManager().getCurrentPhase().isSitting();
-            if (landing || dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16) {
+            if ((landing || dragon.getY() < fountain.getY() + 12 && dragon.position().horizontalDistanceSqr() < 16 * 16)
+                    && (!crystalsLeft || this.bot.position().horizontalDistanceSqr() < 24 * 24)) {
                 return new FightDragon();
             }
         }
@@ -1574,6 +1577,9 @@ final class Gatherer {
                     }
                 }
                 this.stopBreaking();
+                if (PvpBotEntity.DEBUG && ++this.digLogTicks % 20 == 1) {
+                    PvpBotMod.LOGGER.info("[SELFTEST]   dig: danger at {} ({}) -> turns", p.toShortString(), state);
+                }
                 this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
                 this.digBlocked++;
                 this.bot.tellOwner("§7Gefahr voraus – ich grabe in eine andere Richtung.", false);
@@ -1595,6 +1601,10 @@ final class Gatherer {
                 lavaBelow |= !level.getFluidState(front.below(depth)).isEmpty() && level.getFluidState(front.below(depth)).is(net.minecraft.tags.FluidTags.LAVA);
             }
             boolean bad = lavaBelow || depth >= 4 || level.getFluidState(front.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA);
+            if (PvpBotEntity.DEBUG && (bad || depth >= 2) && ++this.digLogTicks % 20 == 1) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   dig: gap ahead at {} depth {} lava {} -> {}", front.toShortString(), depth, bad,
+                        this.kit().count(BRIDGE_BLOCK) > 0 ? "bridge" : "no blocks, turn");
+            }
             if ((bad || depth >= 2) && this.bridge(level, front.below())) {
                 // Bridged the gap like a player (block under the next step), go on.
                 this.step = null;
@@ -1909,6 +1919,8 @@ final class Gatherer {
     private int spiralLeg;
     private int spiralBest;
     private int crystalLogTicks;
+    private int crystalAimTicks;
+    private int digLogTicks;
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
@@ -2263,7 +2275,7 @@ final class Gatherer {
         Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
         double h = away.length();
         boolean stuck = this.noProgress();
-        if (h > 28.0 && !(stuck && h < 64.0)) {
+        if (h > 48.0 && !(stuck && h < 64.0)) {
             // Closer shots miss less: walk to a spot about 20 blocks from the pillar (not into it).
             Vec3 spot = crystal.position().add(away.normalize().scale(20.0));
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
@@ -2272,8 +2284,8 @@ final class Gatherer {
             }
         } else {
             this.bot.getNavigation().stop();
-            if (++this.actionTicks >= 25) {
-                this.actionTicks = 0;
+            if (++this.crystalAimTicks >= 20) {
+                this.crystalAimTicks = 0;
                 if (this.bot.shootAt(crystal.position().add(0.0, 1.0, 0.0))) {
                     this.crystalShots.merge(crystal.getUUID(), 1, Integer::sum);
                 }
