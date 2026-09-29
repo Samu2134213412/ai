@@ -1,1 +1,5 @@
-{ "entity.pvpbot.pvp_bot": "PvP-Bot" }
+{
+  "entity.pvpbot.pvp_bot": "PvP-Bot",
+  "key.pvpbot.menu": "PvP-Bot-Menü öffnen",
+  "key.category.pvpbot.pvpbot": "PvP-Bot"
+}

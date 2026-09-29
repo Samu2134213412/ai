@@ -22,6 +22,8 @@ public class AutopilotClient implements ClientModInitializer {
     // Key codes are SDL scancodes in this Minecraft version (W = 26, space = 44).
     private static final int KEY_J = 13;
     private static final int KEY_K = 14;
+    private static final int KEY_N = 17;
+    private static KeyMapping menuKey;
     private static KeyMapping toggleKey;
     private static KeyMapping targetKey;
 
@@ -32,6 +34,9 @@ public class AutopilotClient implements ClientModInitializer {
                 new KeyMapping("key.pvpbot_autopilot.toggle", KEY_K, category));
         targetKey = KeyMappingHelper.registerKeyMapping(
                 new KeyMapping("key.pvpbot_autopilot.target", KEY_J, category));
+        menuKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.pvpbot_autopilot.menu", KEY_N, category));
+        AutopilotSettings.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-autopilot.properties"));
 
         BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-autopilot-memory.json"));
         ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> BotBrain.INSTANCE.save());
@@ -46,6 +51,11 @@ public class AutopilotClient implements ClientModInitializer {
             }
             while (targetKey.consumeClick()) {
                 lookTarget(mc);
+            }
+            while (menuKey.consumeClick()) {
+                if (mc.player != null && mc.gui.screen() == null) {
+                    mc.gui.setScreen(new AutopilotScreen());
+                }
             }
             Autopilot.INSTANCE.tick(mc);
             if (mc.player != null && mc.player.tickCount % 1200 == 0) {
@@ -147,7 +157,7 @@ public class AutopilotClient implements ClientModInitializer {
         return 1;
     }
 
-    private static void lookTarget(Minecraft mc) {
+    static void lookTarget(Minecraft mc) {
         if (mc.player == null) {
             return;
         }

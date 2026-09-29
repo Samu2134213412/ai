@@ -197,12 +197,12 @@ public final class Autopilot {
         if (t == null) {
             this.finishAttempt(mc);
             this.landIfFlying(mc, p);
-            if (this.eatWhenHungry(mc, p)) {
+            if (AutopilotSettings.INSTANCE.autoEat && this.eatWhenHungry(mc, p)) {
                 this.status(p, "§7isst");
                 this.applyKeys(mc);
                 return;
             }
-            if (this.collectLoot(mc, p)) {
+            if (AutopilotSettings.INSTANCE.lootPickup && this.collectLoot(mc, p)) {
                 this.status(p, "§7sammelt Beute ein");
                 this.applyKeys(mc);
                 return;
@@ -222,7 +222,7 @@ public final class Autopilot {
         if (this.pattern == null && this.hungerEatTicks > 0
                 || this.pattern == null && p.getFoodData().getFoodLevel() <= 6 && p.onGround() && p.distanceTo(t) > 7.0) {
             // Too hungry to sprint or lunge: eat quickly while the enemy is not right here.
-            if (this.eatWhenHungry(mc, p)) {
+            if (AutopilotSettings.INSTANCE.autoEat && this.eatWhenHungry(mc, p)) {
                 this.status(p, "§7isst (für Sprint/Lunge)");
                 this.applyKeys(mc);
                 return;
@@ -296,7 +296,7 @@ public final class Autopilot {
     }
 
     private boolean canFlyHere(LocalPlayer p) {
-        return this.has(p, Role.ELYTRA) && this.has(p, Role.ROCKET) && !p.isInWater()
+        return AutopilotSettings.INSTANCE.elytra && this.has(p, Role.ELYTRA) && this.has(p, Role.ROCKET) && !p.isInWater()
                 && p.level().canSeeSky(p.blockPosition().above()) && this.flightCooldown == 0;
     }
 
@@ -307,7 +307,7 @@ public final class Autopilot {
         boolean flying = p.isFallFlying();
         List<Pattern> out = new ArrayList<>();
         boolean mace = this.has(p, Role.MACE);
-        boolean spear = this.has(p, Role.SPEAR);
+        boolean spear = AutopilotSettings.INSTANCE.spear && this.has(p, Role.SPEAR);
         if (mace) {
             out.add(Pattern.MACE_MELEE);
         }
@@ -317,17 +317,17 @@ public final class Autopilot {
         if (this.has(p, Role.SWORD) || this.has(p, Role.AXE) || this.has(p, Role.TRIDENT) || out.isEmpty()) {
             out.add(Pattern.BLADE_MELEE);
         }
-        if ((this.has(p, Role.BOW) || this.has(p, Role.CROSSBOW)) && this.has(p, Role.ARROW) && sees && hDist > 2.5) {
+        if (AutopilotSettings.INSTANCE.bow && (this.has(p, Role.BOW) || this.has(p, Role.CROSSBOW)) && this.has(p, Role.ARROW) && sees && hDist > 2.5) {
             out.add(Pattern.BOW_SNIPE);
         }
-        if (!flying && mace && this.has(p, Role.WIND_CHARGE) && p.onGround() && this.windCooldown == 0 && sees
+        if (!flying && mace && AutopilotSettings.INSTANCE.windCharges && this.has(p, Role.WIND_CHARGE) && p.onGround() && this.windCooldown == 0 && sees
                 && hDist > 1.0 && hDist < 8.0 && dy < 3.0 && dy > -4.0 && this.ceiling(p, 8) > 7) {
             out.add(Pattern.WIND_SMASH);
         }
         if (!flying && spear && p.onGround() && this.spearCooldown == 0 && sees && hDist < 18.0) {
             out.add(Pattern.SPEAR_CHARGE);
         }
-        if (!flying && mace && spear && this.spearLunge(p) > 0 && this.has(p, Role.WIND_CHARGE) && p.onGround() && this.windCooldown == 0
+        if (!flying && mace && spear && AutopilotSettings.INSTANCE.windCharges && this.spearLunge(p) > 0 && this.has(p, Role.WIND_CHARGE) && p.onGround() && this.windCooldown == 0
                 && sees && hDist > 3.0 && hDist < 12.0 && dy < 3.0 && dy > -4.0 && this.ceiling(p, 8) > 7
                 && p.getFoodData().getFoodLevel() > 6) {
             out.add(Pattern.WIND_LUNGE_SMASH);
@@ -470,7 +470,7 @@ public final class Autopilot {
                 } else {
                     this.attack(mc, p, t);
                 }
-                this.wtapTicks = 2;
+                this.wtapTicks = AutopilotSettings.INSTANCE.wTap ? 2 : 0;
             }
         }
         if (this.wtapTicks > 0) {
@@ -896,6 +896,9 @@ public final class Autopilot {
 
     /** Falling hard without elytra: pour water right before the ground, then pick it up again. */
     private boolean waterClutch(Minecraft mc, LocalPlayer p, @Nullable LivingEntity t) {
+        if (!AutopilotSettings.INSTANCE.waterClutch && this.waterPickupTicks == 0) {
+            return false;
+        }
         if (this.waterPickupTicks > 0) {
             this.waterPickupTicks--;
             if (p.onGround() || p.isInWater()) {
@@ -929,6 +932,9 @@ public final class Autopilot {
      * away, healing when low.
      */
     private boolean drinkPotion(Minecraft mc, LocalPlayer p, @Nullable LivingEntity t) {
+        if (!AutopilotSettings.INSTANCE.potions && this.drinkTicks == 0) {
+            return false;
+        }
         if (this.drinkTicks > 0) {
             this.drinkTicks--;
             this.kUse = true;
@@ -985,6 +991,9 @@ public final class Autopilot {
 
     /** Ender pearls: chase a far target on foot, or get away when low and without a totem. */
     private boolean throwPearl(Minecraft mc, LocalPlayer p, LivingEntity t) {
+        if (!AutopilotSettings.INSTANCE.pearls) {
+            return false;
+        }
         if (this.pearlCooldown > 0 || !p.onGround() || !this.has(p, Role.PEARL)) {
             return false;
         }
@@ -1207,6 +1216,9 @@ public final class Autopilot {
      * when they draw a bow. Never with a usable item in the main hand (that would be used instead).
      */
     private boolean shouldBlock(LocalPlayer p, LivingEntity t, boolean ready) {
+        if (!AutopilotSettings.INSTANCE.shield) {
+            return false;
+        }
         if (Kit.classify(p.getItemBySlot(EquipmentSlot.OFFHAND)) != Role.SHIELD || !p.onGround()) {
             return false;
         }
@@ -1329,6 +1341,11 @@ public final class Autopilot {
         if (role == Role.MACE) {
             this.smashed = true;
         }
+        if (!AutopilotSettings.INSTANCE.attributeSwap && Kit.classify(before) != role) {
+            // Without attribute swapping: switch now, hit next tick.
+            this.select(mc, p, role);
+            return;
+        }
         if (Kit.classify(before) != role && this.select(mc, p, role)) {
             LOGGER.info("[AUTOPILOT] attribute swap {} -> {}", before.getItem(), p.getMainHandItem().getItem());
             this.say(mc, "§dAttribute-Swap: §f" + before.getHoverName().getString() + " §7→ §f" + p.getMainHandItem().getHoverName().getString());
@@ -1342,7 +1359,7 @@ public final class Autopilot {
      * bonus is not scaled by the charge.
      */
     private void smashHit(Minecraft mc, LocalPlayer p, LivingEntity t) {
-        if (t.isBlocking() && this.has(p, Role.AXE)) {
+        if (AutopilotSettings.INSTANCE.attributeSwap && t.isBlocking() && this.has(p, Role.AXE)) {
             this.swapAttack(mc, p, t, Role.AXE);
             this.say(mc, "§dStun-Slam!");
         }
@@ -1351,7 +1368,7 @@ public final class Autopilot {
 
     /** While falling towards a mace smash: hold the weapon with the highest attack damage (usually an axe). */
     private void holdSmashCarrier(Minecraft mc, LocalPlayer p) {
-        if (this.smashed) {
+        if (this.smashed || !AutopilotSettings.INSTANCE.attributeSwap) {
             this.select(mc, p, Role.MACE);
             return;
         }
@@ -1473,7 +1490,7 @@ public final class Autopilot {
     }
 
     void say(Minecraft mc, String text) {
-        if (mc.player != null) {
+        if (mc.player != null && AutopilotSettings.INSTANCE.chat) {
             mc.player.sendSystemMessage(Component.literal("§6[Autopilot] §r" + text));
         }
     }
