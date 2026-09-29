@@ -844,6 +844,13 @@ public final class Autopilot {
             this.stuckTicks = 0;
             this.attemptTaken += 3.0F;
             if (p.isFallFlying()) {
+                if (this.heightAboveGround(p) > 3) {
+                    // Stalled in the air: never take the elytra off up here, dive to pick up speed.
+                    this.lookAt(p, p.getYRot(), 35.0F, 90.0F);
+                    this.boost(mc, p, true);
+                    LOGGER.info("[AUTOPILOT] stalled in flight -> dive");
+                    return;
+                }
                 this.wearChest(mc, p, Role.ARMOR);
                 this.flightCooldown = 100;
                 this.finishAttempt(mc);
@@ -853,6 +860,16 @@ public final class Autopilot {
             this.strafe = -this.strafe;
             LOGGER.info("[AUTOPILOT] stuck -> {}", this.unstuckMode == 1 ? "jump aside" : "dig");
         }
+    }
+
+    private int heightAboveGround(LocalPlayer p) {
+        BlockPos pos = p.blockPosition();
+        for (int i = 1; i <= 8; i++) {
+            if (!p.level().getBlockState(pos.below(i)).isAir()) {
+                return i - 1;
+            }
+        }
+        return 8;
     }
 
     private void digForward(Minecraft mc, LocalPlayer p) {
