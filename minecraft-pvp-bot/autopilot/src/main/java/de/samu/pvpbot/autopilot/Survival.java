@@ -257,7 +257,7 @@ final class Survival {
             this.watchPos = p.position();
             this.watchItems = items;
             this.watchTicks = 0;
-        } else if (++this.watchTicks > 1200) {
+        } else if (this.smeltingCount == 0 && ++this.watchTicks > 1200) {
             Autopilot.LOGGER.info("[AUTOPILOT] survival: WATCHDOG - no progress for 60 s while '{}' at {} -> walks elsewhere",
                     this.doing, p.blockPosition().toShortString());
             this.watchTicks = 0;
