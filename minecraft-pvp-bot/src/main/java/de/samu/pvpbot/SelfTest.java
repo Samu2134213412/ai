@@ -386,8 +386,11 @@ final class SelfTest {
         level.addFreshEntity(bot);
         spawned.add(bot);
         if (stage && scenario.name().startsWith("Etappe 2")) {
-            // Start next to a lit portal (what stage 1 leaves behind).
-            BlockPos base = bot.blockPosition().offset(2, 0, 0);
+            // Start next to a lit portal (what stage 1 leaves behind), on a flat patch so it can walk in.
+            BlockPos base = bot.blockPosition().offset(2, -1, 0);
+            for (BlockPos p : BlockPos.betweenClosed(base.offset(-3, 0, -2), base.offset(3, 6, 5))) {
+                level.setBlock(p, p.getY() == base.getY() ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 18);
+            }
             // Frame first, then the portal blocks (a portal block next to an unfinished frame breaks).
             for (int pass = 0; pass < 2; pass++) {
                 for (int i = 0; i < 4; i++) {
@@ -405,6 +408,14 @@ final class SelfTest {
             bot.startAtStage2(base.offset(0, 1, 1));
         } else if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
             bot.startAtStage3();
+            if (end) {
+                // No player here: keep the island ticking (the dragon freezes in unticked chunks).
+                for (int cx = -7; cx <= 6; cx++) {
+                    for (int cz = -7; cz <= 6; cz++) {
+                        level.setChunkForced(cx, cz, true);
+                    }
+                }
+            }
             if (end && level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class,
                     new net.minecraft.world.phys.AABB(-300, -64, -300, 300, 320, 300)).isEmpty()) {
                 // Without a player nearby the End never spawns its dragon on its own.

@@ -1876,15 +1876,21 @@ final class Gatherer {
             this.exploreTarget = goal;
             BlockPos ahead = this.bot.blockPosition().offset(Mth.floor(this.eyeDir.x * 2.0 + 0.5), 0, Mth.floor(this.eyeDir.z * 2.0 + 0.5));
             boolean water = this.bot.isInWater() || !level.getFluidState(ahead).isEmpty() || !level.getFluidState(ahead.below()).isEmpty();
-            if (!path && water) {
+            // In the water and not getting anywhere (a steep bank, an overhang): swim straight on
+            // first, then dig into the bank, then swim along the shore for a bit, and again.
+            int waterPhase = this.legStuckTicks < 200 ? 0 : this.legStuckTicks < 300 ? 1 : 2;
+            if (this.legStuckTicks >= 400) {
+                this.legStuckTicks = 100;
+            }
+            if (!path && water && waterPhase != 1) {
                 // A lake or the sea in the way: swim straight across like a player.
-                Vec3 to = this.bot.position().add(this.eyeDir.scale(3.0));
+                Vec3 dir = waterPhase == 0 ? this.eyeDir : this.eyeDir.yRot((float) Math.toRadians((this.legTicks / 400) % 2 == 0 ? 90.0 : -90.0));
+                Vec3 to = this.bot.position().add(dir.scale(3.0));
                 this.bot.getNavigation().stop();
                 this.bot.getMoveControl().setWantedPosition(to.x, this.bot.getY(), to.z, 1.0);
-                if (this.bot.isInWater()) {
+                if (this.bot.isInWater() || this.bot.horizontalCollision) {
                     this.bot.getJumpControl().jump();
                 }
-                this.legStuckTicks = Math.min(this.legStuckTicks, 60);
             } else if (!path) {
                 // No way to walk anywhere near the line: tunnel straight on.
                 this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
