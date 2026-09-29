@@ -340,6 +340,12 @@ public final class Autopilot {
             return;
         }
         LivingEntity t = this.attemptTarget;
+        boolean selfDead = mc.player == null || !mc.player.isAlive() || mc.player.getHealth() <= 0.0F;
+        if (selfDead) {
+            // Our own death: the target vanishing from view says nothing about it being dead.
+            this.attemptTaken += 20.0F;
+            t = null;
+        }
         boolean killed = t != null && (!t.isAlive() || t.isRemoved() && t.getHealth() <= 0.0F);
         float hpNow = t == null ? this.attemptTargetHp : killed ? 0.0F : t.getHealth() + t.getAbsorptionAmount();
         double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
@@ -670,12 +676,14 @@ public final class Autopilot {
                             .subtract(p.getEyePosition());
                     this.face(p, aim, 30.0F);
                     double above = p.getY() - (t.getY() + t.getBbHeight());
+                    // Reach is measured like the game does: from the eyes to the target's hitbox.
+                    double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
                     boolean hit = false;
-                    if (p.distanceTo(t) <= 3.3 && p.fallDistance > 1.5) {
+                    if (reach <= 3.0 && p.fallDistance > 1.5) {
                         this.attack(mc, p, t);
                         hit = true;
                     }
-                    boolean willMiss = above < 4.0 && p.distanceTo(t) > 3.3 + Math.max(0.0, -p.getDeltaMovement().y);
+                    boolean willMiss = above < 1.0 && reach > 3.0;
                     if (hit || willMiss || this.phaseTicks > 80) {
                         LOGGER.info("[AUTOPILOT] dive ends: hit={} willMiss={} height={} dist={}", hit, willMiss,
                                 String.format("%.1f", above), String.format("%.1f", p.distanceTo(t)));
