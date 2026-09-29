@@ -72,6 +72,12 @@ public class AutopilotGameTest implements FabricClientGameTest {
                     ARMOR + ";give @a minecraft:mace;give @a minecraft:netherite_spear[enchantments={lunge:3}];give @a minecraft:wind_charge 32;"
                             + "give @a minecraft:netherite_axe",
                     "summon minecraft:iron_golem 8 ~ 0 {NoAI:1b}", 900);
+            recordNext = "09_perle_und_trank";
+            fight(ctx, sp, "Traenke + Enderperle hinterher (40 Bloecke)",
+                    ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:ender_pearl 8;"
+                            + "give @a minecraft:potion[potion_contents={potion:\"minecraft:strength\"}];"
+                            + "give @a minecraft:potion[potion_contents={potion:\"minecraft:swiftness\"}]",
+                    "summon minecraft:iron_golem 40 ~ 0 {NoAI:1b}", 900);
             recordNext = "04_elytra_mace_sturzflug";
             fight(ctx, sp, "Elytra + Mace (+Axt-Swap) vs Golem (35 Bloecke)",
                     ARMOR + ";give @a minecraft:mace;give @a minecraft:elytra;give @a minecraft:firework_rocket 64;give @a minecraft:netherite_axe",
@@ -79,13 +85,15 @@ public class AutopilotGameTest implements FabricClientGameTest {
             fight(ctx, sp, "Schwert vs 3 Zombies", ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:golden_apple 4",
                     "summon minecraft:zombie 6 ~ 3;summon minecraft:zombie 7 ~ -3;summon minecraft:zombie 9 ~ 0", 900, true);
             if (FabricLoader.getInstance().isModLoaded("pvpbot")) {
+                waterScene(ctx, sp);
                 survivalScene(ctx, sp);
                 botSpearScene(ctx, sp);
                 botComboScene(ctx, sp);
                 botCloseUp(ctx, sp);
                 // Fair mirror match: the bot gets an exact copy of the player's kit.
+                // Shield instead of a totem: both sides block, stun and break shields with the axe.
                 String duelKit = ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:mace;give @a minecraft:wind_charge 16;"
-                        + "give @a minecraft:golden_apple 4;give @a minecraft:totem_of_undying";
+                        + "give @a minecraft:golden_apple 4;give @a minecraft:netherite_axe;give @a minecraft:shield";
                 for (int round = 1; round <= 2; round++) {
                     if (round == 1) {
                         recordNext = "05_duell_autopilot_vs_bot";
@@ -220,6 +228,38 @@ public class AutopilotGameTest implements FabricClientGameTest {
         run(sp, "gamemode survival @a");
         run(sp, "tp @a 0 -60 0 -90 0");
         ctx.waitTicks(40);
+    }
+
+    /** Water bucket clutch: dropped from 35 blocks with only a water bucket. */
+    private void waterScene(ClientGameTestContext ctx, TestSingleplayerContext sp) {
+        System.out.println(TAG + "==================== Wassereimer-Clutch (35 Bloecke)");
+        run(sp, "kill @e[type=!minecraft:player]");
+        run(sp, "clear @a");
+        run(sp, "gamemode survival @a");
+        run(sp, "effect clear @a");
+        run(sp, "effect give @a minecraft:instant_health 1 10");
+        run(sp, "tp @a 20 -60 20 0 30");
+        ctx.waitTicks(20);
+        run(sp, "give @a minecraft:water_bucket");
+        ctx.runOnClient(mc -> {
+            Autopilot.INSTANCE.setTarget(mc, null);
+            Autopilot.INSTANCE.setEnabled(mc, true);
+        });
+        run(sp, "tp @a 20 -25 20 0 30");
+        startClip("10_wassereimer_clutch", 10);
+        for (int i = 0; i < 50; i++) {
+            ctx.waitTicks(2);
+            capture(ctx);
+        }
+        clip = null;
+        float hp = ctx.computeOnClient(mc -> mc.player.getHealth());
+        String line = String.format("%s Wassereimer-Clutch aus 35 Bloecken: %.1f Leben uebrig", hp >= 19.0F ? "PASS" : "FAIL", hp);
+        results.add(line);
+        System.out.println(TAG + line);
+        ctx.runOnClient(mc -> Autopilot.INSTANCE.setEnabled(mc, false));
+        run(sp, "fill 15 -60 15 25 -58 25 minecraft:air replace minecraft:water");
+        run(sp, "tp @a 0 -60 0 -90 0");
+        ctx.waitTicks(20);
     }
 
     /** The PvP bot with its default kit (mace, Lunge spear, axe, wind charges) against a golem. */

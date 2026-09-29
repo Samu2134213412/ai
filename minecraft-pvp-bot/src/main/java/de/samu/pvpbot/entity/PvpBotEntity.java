@@ -30,6 +30,8 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -131,6 +133,11 @@ public class PvpBotEntity extends PathfinderMob {
     /** A trick the owner asked for (/pvpbot trick): used as soon as it is possible. */
     private @Nullable Pattern forcedPattern;
     private int forcedTicks;
+    // Extra tactics: ender pearls and potions.
+    private int pearlCooldown;
+    private @Nullable Projectile thrownPearl;
+    private @Nullable Vec3 pearlPos;
+    private int potionCooldown;
     /** Ticks left of running past the target after a jab (hit and run). */
     private int spearRunTicks;
     private int windCooldown;
@@ -505,6 +512,9 @@ public class PvpBotEntity extends PathfinderMob {
         this.refreshTarget(level);
 
         if (this.windCooldown > 0) this.windCooldown--;
+        if (this.pearlCooldown > 0) this.pearlCooldown--;
+        if (this.potionCooldown > 0) this.potionCooldown--;
+        this.tickPearl();
         if (this.spearCooldown > 0) this.spearCooldown--;
         if (this.meleeCooldown > 0) this.meleeCooldown--;
         if (this.rocketCooldown > 0) this.rocketCooldown--;
@@ -871,6 +881,14 @@ public class PvpBotEntity extends PathfinderMob {
     private boolean trySmash(ServerLevel level, LivingEntity target) {
         if (!this.mace().isEmpty() && MaceItem.canSmashAttack(this) && this.inSmashReach(target)) {
             this.faceEntity(target, 180.0F);
+            ItemStack axe = this.kit.find(Role.AXE);
+            if (target.isBlocking() && !axe.isEmpty()) {
+                // Stun slam: an axe hit knocks the shield out, the smash lands in the same tick.
+                this.holdWeapon(axe);
+                this.swingMainHand();
+                this.doHurtTarget(level, target);
+                this.tellOwner("§dStun-Slam!", false);
+            }
             if (this.getMainHandItem() != this.mace()) {
                 // Attribute swap: the attack damage attribute still belongs to the weapon held until
                 // now (equipment attributes only update on the next tick), the mace adds its smash
@@ -888,6 +906,113 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     /** What to hold while falling towards a mace smash: the weapon with the highest attack damage. */
+    /** Raise the shield while the weapon recharges and the enemy is close, or when they draw a bow. */
+    private void tickShield(LivingEntity target, double dist) {
+        if (Kit.classify(this.getItemBySlot(EquipmentSlot.OFFHAND)) != Role.SHIELD) {
+            return;
+        }
+        boolean aiming = target.isUsingItem() && (Kit.classify(target.getUseItem()) == Role.BOW || Kit.classify(target.getUseItem()) == Role.CROSSBOW);
+        boolean melee = this.pattern != null && this.pattern.melee && this.pattern != Pattern.SPEAR_KITE && this.pattern != Pattern.BOW_SNIPE;
+        boolean block = melee && this.meleeCooldown > 3 && dist < 4.5 || aiming && dist > 5.0;
+        if (block && !this.isUsingItem()) {
+            this.startUsingItem(InteractionHand.OFF_HAND);
+        } else if (!block && this.isUsingItem() && this.getUsedItemHand() == InteractionHand.OFF_HAND) {
+            this.stopUsingItem();
+        }
+    }
+
+    /** Potions from the kit: buffs at the start of a fight, healing when low. */
+    private void usePotions(LivingEntity target, double dist) {
+        if (this.potionCooldown > 0) {
+            return;
+        }
+        boolean low = this.getHealth() < 8.0F;
+        for (ItemStack stack : this.kit.items()) {
+            if (Kit.classify(stack) != Role.POTION) {
+                continue;
+            }
+            var contents = stack.get(DataComponents.POTION_CONTENTS);
+            if (contents == null) {
+                continue;
+            }
+            boolean heals = false;
+            boolean missing = false;
+            for (MobEffectInstance effect : contents.getAllEffects()) {
+                if (effect.getEffect().equals(MobEffects.INSTANT_HEALTH) || effect.getEffect().equals(MobEffects.REGENERATION)) {
+                    heals = true;
+                } else if (!this.hasEffect(effect.getEffect())) {
+                    missing = true;
+                }
+            }
+            if (low && heals || missing && dist > 6.0) {
+                for (MobEffectInstance effect : contents.getAllEffects()) {
+                    if (effect.getEffect().value().isInstantenous()) {
+                        this.heal(effect.getAmplifier() >= 1 ? 8.0F : 4.0F);
+                    } else {
+                        this.addEffect(new MobEffectInstance(effect));
+                    }
+                }
+                this.tellOwner("§dTrinkt " + stack.getHoverName().getString(), false);
+                if (!this.kit.isInfinite()) {
+                    stack.shrink(1);
+                }
+                this.potionCooldown = 40;
+                return;
+            }
+        }
+    }
+
+    /** Ender pearls: chase a target that is far away on foot, or escape when low without a totem. */
+    private boolean tryPearl(ServerLevel level, LivingEntity target, double dist, boolean sees) {
+        if (this.pearlCooldown > 0 || !this.onGround() || !this.kit.has(Role.PEARL) || this.thrownPearl != null) {
+            return false;
+        }
+        boolean flee = this.getHealth() < 7.0F && !this.kit.has(Role.TOTEM) && dist < 8.0;
+        boolean chase = sees && dist > 22.0 && dist < 60.0 && !this.canFlyHere();
+        if (!flee && !chase) {
+            return false;
+        }
+        Vec3 dir = flee ? this.position().subtract(target.position()) : target.position().subtract(this.position());
+        double h = Math.min(dir.horizontalDistance(), flee ? 25.0 : dist);
+        double up = (flee ? 0.0 : target.getY() - this.getY()) + h * h / 80.0;
+        float yaw = (float) (Mth.atan2(dir.z, dir.x) * Mth.RAD_TO_DEG) - 90.0F;
+        float pitch = (float) -(Mth.atan2(up, h) * Mth.RAD_TO_DEG);
+        if (!(EntityTypes.ENDER_PEARL.create(level, EntitySpawnReason.COMMAND) instanceof Projectile pearl)) {
+            return false;
+        }
+        pearl.setOwner(this);
+        pearl.setPos(this.getX(), this.getEyeY() - 0.1, this.getZ());
+        pearl.shootFromRotation(this, pitch, yaw, 0.0F, 1.5F, 0.5F);
+        level.addFreshEntity(pearl);
+        this.kit.take(Role.PEARL);
+        this.swingMainHand();
+        this.thrownPearl = pearl;
+        this.pearlCooldown = 40;
+        this.tellOwner(flee ? "§ePerle weg vom Gegner!" : "§ePerle hinterher!", false);
+        return true;
+    }
+
+    /** Where our pearl lands, we land (also works if the game only teleports players). */
+    private void tickPearl() {
+        if (this.thrownPearl == null) {
+            return;
+        }
+        if (!this.thrownPearl.isRemoved()) {
+            this.pearlPos = this.thrownPearl.position();
+            if (this.thrownPearl.tickCount > 200) {
+                this.thrownPearl.discard();
+                this.thrownPearl = null;
+            }
+            return;
+        }
+        if (this.pearlPos != null && this.pearlPos.distanceToSqr(this.position()) > 4.0) {
+            this.teleportTo(this.pearlPos.x, this.pearlPos.y, this.pearlPos.z);
+            this.resetFallDistance();
+        }
+        this.thrownPearl = null;
+        this.pearlPos = null;
+    }
+
     public void forcePattern(Pattern pattern) {
         this.forcedPattern = pattern;
         this.forcedTicks = 0;
@@ -929,6 +1054,11 @@ public class PvpBotEntity extends PathfinderMob {
         double hDist = this.position().subtract(target.position()).horizontalDistance();
         double dy = target.getY() - this.getY();
         boolean sees = this.getSensing().hasLineOfSight(target);
+        this.usePotions(target, dist);
+        if (this.pattern == null && this.tryPearl(level, target, dist, sees)) {
+            return;
+        }
+        this.tickShield(target, dist);
 
         // Decide what to do next: the brain picks an attack pattern for this situation.
         if (this.pattern == null) {
@@ -1021,12 +1151,25 @@ public class PvpBotEntity extends PathfinderMob {
             } else if (!this.holdingSpear() && dist <= 3.2) {
                 this.faceEntity(target, 180.0F);
                 ItemStack axe = this.kit.find(Role.AXE);
-                if (target.isBlocking() && !axe.isEmpty() && this.getMainHandItem() != axe) {
-                    // Attribute swap onto the axe for this one hit: it knocks the shield out.
+                ItemStack main = this.getMainHandItem();
+                if (target.isBlocking() && !axe.isEmpty() && main != axe) {
+                    // Stun: an axe hit knocks the shield out, the real weapon hits in the same tick.
                     this.holdWeapon(axe);
+                    this.swingMainHand();
+                    this.doHurtTarget(level, target);
+                    this.holdWeapon(main);
+                    this.tellOwner("§7Schild weg!", false);
+                } else if (Kit.classify(main) != Role.MACE && Kit.enchantLevel(this.mace(), "breach") > 0 && target.getArmorValue() >= 8) {
+                    // Breach swap: this weapon's damage with the mace's Breach.
+                    this.holdWeapon(this.mace());
                 }
+                boolean fast = this.getDeltaMovement().horizontalDistance() > 0.12;
                 this.swingMainHand();
                 this.doHurtTarget(level, target);
+                if (fast) {
+                    // Like a player's sprint hit (w-tap): extra knockback.
+                    target.knockback(0.4, Mth.sin(this.getYRot() * Mth.DEG_TO_RAD), -Mth.cos(this.getYRot() * Mth.DEG_TO_RAD));
+                }
                 // Same attack cooldown a player has with this weapon.
                 double speed = Kit.attackSpeed(this.getMainHandItem());
                 this.meleeCooldown = Math.max(8, (int) Math.round(20.0 / Math.max(0.5, speed)));

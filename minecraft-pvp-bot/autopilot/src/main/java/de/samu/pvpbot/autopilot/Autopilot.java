@@ -71,6 +71,11 @@ public final class Autopilot {
     private int forcedTicks;
     /** The smash of this attempt was already swung (no more attribute swaps back and forth). */
     private boolean smashed;
+    // Extra tactics.
+    private int wtapTicks;
+    private int pearlCooldown;
+    private int waterPickupTicks;
+    private int drinkTicks;
     private int flightCooldown;
     private int eatTicks;
 
@@ -174,6 +179,17 @@ public final class Autopilot {
         this.keepTotemInOffhand(mc, p);
 
         LivingEntity t = this.target instanceof LivingEntity living ? living : null;
+        if (this.pearlCooldown > 0) this.pearlCooldown--;
+        if (this.waterClutch(mc, p, t)) {
+            this.status(p, "§bWassereimer-Clutch");
+            this.applyKeys(mc);
+            return;
+        }
+        if (this.drinkPotion(mc, p, t)) {
+            this.status(p, "§dtrinkt");
+            this.applyKeys(mc);
+            return;
+        }
         if (this.eatIfLow(mc, p, t)) {
             this.applyKeys(mc);
             return;
@@ -211,6 +227,10 @@ public final class Autopilot {
                 this.applyKeys(mc);
                 return;
             }
+        }
+        if (this.pattern == null && this.throwPearl(mc, p, t)) {
+            this.applyKeys(mc);
+            return;
         }
         if (this.pattern == null) {
             this.choosePattern(mc, p, t);
@@ -440,14 +460,27 @@ public final class Autopilot {
                 // Jump first so the hit lands as a critical hit on the way down.
                 this.kJump = true;
             } else if (p.getDeltaMovement().y < -0.05 || p.isInWater()) {
-                if (t.isBlocking() && this.has(p, Role.AXE) && Kit.classify(p.getMainHandItem()) != Role.AXE) {
+                Role held = Kit.classify(p.getMainHandItem());
+                if (t.isBlocking() && this.has(p, Role.AXE) && held != Role.AXE) {
                     // Attribute swap onto the axe for this hit: it knocks the shield out of their hands.
                     this.swapAttack(mc, p, t, Role.AXE);
+                } else if ((held == Role.SWORD || held == Role.AXE) && t.getArmorValue() >= 8 && this.maceBreach(p) > 0) {
+                    // Breach swap: the blade's damage with the mace's Breach (ignores part of the armor).
+                    this.swapAttack(mc, p, t, Role.MACE);
                 } else {
                     this.attack(mc, p, t);
                 }
+                this.wtapTicks = 2;
             }
         }
+        if (this.wtapTicks > 0) {
+            // W-tap: let go of forward/sprint for a moment after a hit, so the next hit is a sprint hit
+            // again (extra knockback keeps the enemy from hitting back).
+            this.wtapTicks--;
+            this.kForward = false;
+            this.kSprint = false;
+        }
+        this.kUse = this.shouldBlock(p, t, ready);
         if (this.attemptTicks > 50) {
             this.finishAttempt(mc);
         }
@@ -617,14 +650,16 @@ public final class Autopilot {
                     this.nextPhase();
                     return;
                 }
-                // Combo: spear in hand on the way up, lunge across at the top of the jump.
-                this.select(mc, p, Role.SPEAR);
+                // Combo: keep a charged weapon in hand on the way up and swap to the spear only in the
+                // tick of the jab (lunge swap): the jab uses the old weapon's charge, so it is allowed
+                // right away, and Lunge throws us across.
+                this.holdSmashCarrier(mc, p);
                 Vec3 toT = t.position().subtract(p.position());
                 this.face(p, new Vec3(toT.x, 0.0, toT.z), 60.0F);
                 boolean top = p.getDeltaMovement().y < 0.15;
-                if (top && !p.cannotAttackWithItem(p.getMainHandItem(), 0)) {
-                    this.attack(mc, p, t);
-                    LOGGER.info("[AUTOPILOT] lunge at the top of the wind jump");
+                if (top) {
+                    this.swapAttack(mc, p, t, Role.SPEAR);
+                    LOGGER.info("[AUTOPILOT] lunge swap at the top of the wind jump");
                     this.nextPhase();
                 } else if (p.getDeltaMovement().y < -0.4 || p.onGround() && this.phaseTicks > 5) {
                     this.nextPhase(); // too late for the lunge, just smash
@@ -637,7 +672,7 @@ public final class Autopilot {
                 this.kForward = hDist > 0.8;
                 double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
                 if (!p.onGround() && p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && (reach <= 3.0 || p.distanceTo(t) <= 3.3)) {
-                    this.swapAttack(mc, p, t, Role.MACE);
+                    this.smashHit(mc, p, t);
                 }
                 if (p.onGround() && this.phaseTicks > 5 || this.phaseTicks > 80) {
                     this.finishAttempt(mc);
@@ -781,7 +816,7 @@ public final class Autopilot {
                     this.kForward = hDist > 0.8;
                     double reach = Math.sqrt(t.getBoundingBox().distanceToSqr(p.getEyePosition()));
                     if (p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && (reach <= 3.0 || p.distanceTo(t) <= 3.3)) {
-                        this.swapAttack(mc, p, t, Role.MACE);
+                        this.smashHit(mc, p, t);
                     }
                     double above = p.getY() - (t.getY() + t.getBbHeight());
                     boolean missing = hDist > 2.5 && above < 22.0 && above > 1.0;
@@ -859,6 +894,136 @@ public final class Autopilot {
 
     private int hungerEatTicks;
 
+    /** Falling hard without elytra: pour water right before the ground, then pick it up again. */
+    private boolean waterClutch(Minecraft mc, LocalPlayer p, @Nullable LivingEntity t) {
+        if (this.waterPickupTicks > 0) {
+            this.waterPickupTicks--;
+            if (p.onGround() || p.isInWater()) {
+                this.lookAt(p, p.getYRot(), 90.0F, 90.0F);
+                if (this.selectItem(mc, p, s -> s.is(net.minecraft.world.item.Items.BUCKET)) && this.waterPickupTicks % 3 == 0) {
+                    this.useItemOnce(mc); // scoop the water back up
+                }
+                if (this.has(p, Role.WATER_BUCKET)) {
+                    this.waterPickupTicks = 0;
+                }
+                return this.waterPickupTicks > 0;
+            }
+            return false;
+        }
+        boolean smashComing = t != null && p.position().subtract(t.position()).horizontalDistance() < 3.0
+                && (this.pattern == Pattern.WIND_SMASH || this.pattern == Pattern.WIND_LUNGE_SMASH || this.pattern == Pattern.ELYTRA_DIVE);
+        if (p.isFallFlying() || smashComing || p.fallDistance < 10.0 || p.getDeltaMovement().y > -0.5
+                || !this.has(p, Role.WATER_BUCKET) || this.heightAboveGround(p) > 3) {
+            return false;
+        }
+        this.select(mc, p, Role.WATER_BUCKET);
+        this.lookAt(p, p.getYRot(), 90.0F, 180.0F);
+        this.useItemOnce(mc);
+        this.waterPickupTicks = 20;
+        this.say(mc, "§bWassereimer-Clutch!");
+        return true;
+    }
+
+    /**
+     * Potions: buffs (strength, speed, fire resistance ...) before the fight while the enemy is still
+     * away, healing when low.
+     */
+    private boolean drinkPotion(Minecraft mc, LocalPlayer p, @Nullable LivingEntity t) {
+        if (this.drinkTicks > 0) {
+            this.drinkTicks--;
+            this.kUse = true;
+            if (t != null && p.distanceTo(t) < 6.0) {
+                this.kBack = true;
+            }
+            if (this.drinkTicks == 0) {
+                this.kUse = false;
+            }
+            return true;
+        }
+        if (t == null || p.isFallFlying() || !p.onGround()) {
+            return false;
+        }
+        boolean low = p.getHealth() < 8.0F;
+        boolean calm = p.distanceTo(t) > 10.0 && this.pattern == null;
+        if (!low && !calm) {
+            return false;
+        }
+        List<ItemStack> items = p.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < items.size(); i++) {
+            ItemStack stack = items.get(i);
+            if (Kit.classify(stack) != Role.POTION) {
+                continue;
+            }
+            var contents = stack.get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+            if (contents == null) {
+                continue;
+            }
+            boolean heals = false;
+            boolean missing = false;
+            for (var effect : contents.getAllEffects()) {
+                var type = effect.getEffect();
+                if (type.equals(net.minecraft.world.effect.MobEffects.INSTANT_HEALTH) || type.equals(net.minecraft.world.effect.MobEffects.REGENERATION)) {
+                    heals = true;
+                } else if (!p.hasEffect(type)) {
+                    missing = true;
+                }
+            }
+            if (low && heals || calm && missing) {
+                int slot = this.toHotbar(mc, p, i);
+                if (slot >= 0) {
+                    p.getInventory().setSelectedSlot(slot);
+                    this.finishAttempt(mc);
+                    this.drinkTicks = 34;
+                    this.kUse = true;
+                    this.say(mc, "§dTrinkt " + stack.getHoverName().getString());
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Ender pearls: chase a far target on foot, or get away when low and without a totem. */
+    private boolean throwPearl(Minecraft mc, LocalPlayer p, LivingEntity t) {
+        if (this.pearlCooldown > 0 || !p.onGround() || !this.has(p, Role.PEARL)) {
+            return false;
+        }
+        double dist = p.distanceTo(t);
+        boolean flee = p.getHealth() < 7.0F && !this.has(p, Role.TOTEM) && Kit.classify(p.getItemBySlot(EquipmentSlot.OFFHAND)) != Role.TOTEM
+                && dist < 8.0;
+        boolean chase = dist > 22.0 && dist < 60.0 && p.hasLineOfSight(t) && !this.canFlyHere(p);
+        if (!flee && !chase) {
+            return false;
+        }
+        Vec3 dir = flee ? p.position().subtract(t.position()) : t.position().subtract(p.position());
+        double h = Math.min(dir.horizontalDistance(), flee ? 25.0 : dist);
+        Vec3 horizontal = dir.multiply(1.0, 0.0, 1.0).normalize().scale(h);
+        // A pearl flies at about 1.5 blocks per tick and drops fast: aim higher the further it goes.
+        double up = (flee ? 0.0 : t.getY() - p.getY()) + h * h / 80.0;
+        if (!this.select(mc, p, Role.PEARL)) {
+            return false;
+        }
+        this.face(p, new Vec3(horizontal.x, up, horizontal.z), 180.0F);
+        this.useItemOnce(mc);
+        this.pearlCooldown = 40;
+        this.say(mc, flee ? "§ePerle weg vom Gegner!" : "§ePerle hinterher!");
+        return true;
+    }
+
+    private boolean selectItem(Minecraft mc, LocalPlayer p, java.util.function.Predicate<ItemStack> match) {
+        List<ItemStack> items = p.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < items.size(); i++) {
+            if (match.test(items.get(i))) {
+                int slot = this.toHotbar(mc, p, i);
+                if (slot >= 0) {
+                    p.getInventory().setSelectedSlot(slot);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /** Out of combat: eat normal food when hungry, so health keeps regenerating. */
     private boolean eatWhenHungry(Minecraft mc, LocalPlayer p) {
         if (this.hungerEatTicks > 0) {
@@ -918,6 +1083,9 @@ public final class Autopilot {
         int slot = this.findInventory(p, Role.TOTEM);
         if (slot >= 0) {
             // Button 40 = swap with off hand, like pressing F in the inventory.
+            this.click(mc, p, menuSlot(slot), 40);
+        } else if (p.getItemBySlot(EquipmentSlot.OFFHAND).isEmpty() && (slot = this.findInventory(p, Role.SHIELD)) >= 0) {
+            // No totem: a shield in the off hand for blocking.
             this.click(mc, p, menuSlot(slot), 40);
         }
     }
@@ -1027,6 +1195,28 @@ public final class Autopilot {
 
     private boolean has(LocalPlayer p, Role role) {
         return this.findInventory(p, role) >= 0 || role == Role.ELYTRA && Kit.classify(p.getItemBySlot(EquipmentSlot.CHEST)) == Role.ELYTRA;
+    }
+
+    private int maceBreach(LocalPlayer p) {
+        int index = this.findInventory(p, Role.MACE);
+        return index < 0 ? 0 : Kit.enchantLevel(p.getInventory().getItem(index), "breach");
+    }
+
+    /**
+     * Raise the shield (off hand) while our own weapon is recharging and the enemy is in reach, or
+     * when they draw a bow. Never with a usable item in the main hand (that would be used instead).
+     */
+    private boolean shouldBlock(LocalPlayer p, LivingEntity t, boolean ready) {
+        if (Kit.classify(p.getItemBySlot(EquipmentSlot.OFFHAND)) != Role.SHIELD || !p.onGround()) {
+            return false;
+        }
+        Role held = Kit.classify(p.getMainHandItem());
+        if (held != Role.SWORD && held != Role.AXE && held != Role.MACE) {
+            return false;
+        }
+        double dist = p.distanceTo(t);
+        boolean aiming = t.isUsingItem() && (Kit.classify(t.getUseItem()) == Role.BOW || Kit.classify(t.getUseItem()) == Role.CROSSBOW);
+        return !ready && p.getAttackStrengthScale(0.5F) < 0.6F && dist < 4.0 || aiming && dist > 5.0;
     }
 
     private int spearLunge(LocalPlayer p) {
@@ -1144,6 +1334,19 @@ public final class Autopilot {
             this.say(mc, "§dAttribute-Swap: §f" + before.getHoverName().getString() + " §7→ §f" + p.getMainHandItem().getHoverName().getString());
         }
         this.attack(mc, p, t);
+    }
+
+    /**
+     * The mace smash. Against a raised shield it becomes a stun slam: an axe hit (knocks the shield
+     * out) and the smash in the same tick. The second hit has no attack charge, but the mace's fall
+     * bonus is not scaled by the charge.
+     */
+    private void smashHit(Minecraft mc, LocalPlayer p, LivingEntity t) {
+        if (t.isBlocking() && this.has(p, Role.AXE)) {
+            this.swapAttack(mc, p, t, Role.AXE);
+            this.say(mc, "§dStun-Slam!");
+        }
+        this.swapAttack(mc, p, t, Role.MACE);
     }
 
     /** While falling towards a mace smash: hold the weapon with the highest attack damage (usually an axe). */

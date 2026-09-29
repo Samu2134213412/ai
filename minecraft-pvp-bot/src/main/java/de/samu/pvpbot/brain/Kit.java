@@ -15,7 +15,7 @@ public final class Kit {
 
     public enum Role {
         MACE, SPEAR, SWORD, AXE, TRIDENT, BOW, CROSSBOW, ARROW, ELYTRA, ROCKET, WIND_CHARGE,
-        GAPPLE, TOTEM, SHIELD, ARMOR, OTHER
+        GAPPLE, TOTEM, SHIELD, ARMOR, PEARL, WATER_BUCKET, POTION, OTHER
     }
 
     private Kit() {
@@ -67,6 +67,15 @@ public final class Kit {
         if (stack.is(Items.SHIELD)) {
             return Role.SHIELD;
         }
+        if (stack.is(Items.ENDER_PEARL)) {
+            return Role.PEARL;
+        }
+        if (stack.is(Items.WATER_BUCKET)) {
+            return Role.WATER_BUCKET;
+        }
+        if (stack.is(Items.POTION)) {
+            return Role.POTION;
+        }
         if (armorSlot(stack) != null) {
             return Role.ARMOR;
         }
@@ -89,6 +98,16 @@ public final class Kit {
     }
 
     /** Attacks per second with this item in the main hand (4 = fists). */
+    /** Level of an enchantment by its name (e.g. "breach"), 0 if none. */
+    public static int enchantLevel(ItemStack stack, String name) {
+        for (var entry : stack.getEnchantments().entrySet()) {
+            if (entry.getKey().getRegisteredName().endsWith(name)) {
+                return entry.getIntValue();
+            }
+        }
+        return 0;
+    }
+
     /** Level of the Lunge enchantment (spear jabs throw the wielder forward), 0 if none. */
     public static int lungeLevel(ItemStack stack) {
         for (var entry : stack.getEnchantments().entrySet()) {
