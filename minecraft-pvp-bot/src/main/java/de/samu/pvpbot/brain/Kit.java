@@ -8,6 +8,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.MaceItem;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
+import net.minecraft.world.item.enchantment.Enchantments;
 
 /** Sorts items into combat roles, so both bots can work with whatever PvP kit they have. */
 public final class Kit {
@@ -88,6 +89,16 @@ public final class Kit {
     }
 
     /** Attacks per second with this item in the main hand (4 = fists). */
+    /** Level of the Lunge enchantment (spear jabs throw the wielder forward), 0 if none. */
+    public static int lungeLevel(ItemStack stack) {
+        for (var entry : stack.getEnchantments().entrySet()) {
+            if (entry.getKey().is(Enchantments.LUNGE)) {
+                return entry.getIntValue();
+            }
+        }
+        return 0;
+    }
+
     public static double attackSpeed(ItemStack stack) {
         ItemAttributeModifiers mods = stack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY);
         return mods.compute(Attributes.ATTACK_SPEED, 4.0, EquipmentSlot.MAINHAND);

@@ -124,6 +124,10 @@ public class PvpBotEntity extends PathfinderMob {
     private boolean lancePlan;
     private boolean lancePassed;
     private @Nullable Vec3 retreatPos;
+    /** Retreating only to get a run-up for a spear charge. */
+    private boolean chargeAfterRetreat;
+    /** Ticks left of running past the target after a jab (hit and run). */
+    private int spearRunTicks;
     private int windCooldown;
     private int spearCooldown;
     private int meleeCooldown;
@@ -324,7 +328,7 @@ public class PvpBotEntity extends PathfinderMob {
         List<ItemStack> items = new ArrayList<>();
         items.add(enchanted(new ItemStack(Items.MACE),
                 Enchantments.DENSITY, 5, Enchantments.WIND_BURST, 3, Enchantments.FIRE_ASPECT, 2, Enchantments.UNBREAKING, 3));
-        items.add(enchanted(new ItemStack(Items.NETHERITE_SPEAR), Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3));
+        items.add(enchanted(new ItemStack(Items.NETHERITE_SPEAR), Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3, Enchantments.LUNGE, 3));
         items.add(enchanted(new ItemStack(Items.ELYTRA), Enchantments.UNBREAKING, 3));
         items.add(enchanted(new ItemStack(Items.NETHERITE_HELMET), Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
         items.add(enchanted(new ItemStack(Items.NETHERITE_CHESTPLATE), Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3));
@@ -931,14 +935,29 @@ public class PvpBotEntity extends PathfinderMob {
             this.strafeDir = -this.strafeDir;
         }
         if (useSpear) {
-            // Kite at the edge of the spear's reach.
-            if (dist > 4.0) {
-                this.setSprinting(true);
-                this.getNavigation().moveTo(target, 1.25);
-            } else {
-                this.setSprinting(false);
+            // Hit and run: never stand still in front of the target. Run in, jab at the edge of the
+            // reach (2 - 4.5 blocks), run past it, curve around and come again.
+            this.setSprinting(true);
+            Vec3 toT = target.position().subtract(this.position()).multiply(1.0, 0.0, 1.0);
+            Vec3 dir = toT.lengthSqr() > 1.0E-4 ? toT.normalize() : this.getLookAngle();
+            Vec3 side = new Vec3(-dir.z, 0.0, dir.x).scale(this.strafeDir);
+            if (this.spearRunTicks > 0) {
+                this.spearRunTicks--;
+                Vec3 goal = this.spearRunTicks > 10
+                        ? target.position().add(dir.scale(4.0)).add(side.scale(2.5))
+                        : this.position().add(side.scale(4.0)).subtract(dir.scale(3.0));
                 this.getNavigation().stop();
-                this.getMoveControl().strafe(dist < 2.8 ? -0.7F : 0.1F, this.strafeDir * 0.5F);
+                this.getMoveControl().setWantedPosition(goal.x, this.getY(), goal.z, 1.5);
+            } else if (dist < 2.0) {
+                this.spearRunTicks = 14;
+            } else if (sees) {
+                this.getNavigation().stop();
+                this.getMoveControl().setWantedPosition(target.getX(), target.getY(), target.getZ(), 1.5);
+            } else {
+                this.getNavigation().moveTo(target, 1.4);
+            }
+            if (this.horizontalCollision && this.onGround()) {
+                this.getJumpControl().jump();
             }
         } else if (dist > 2.6) {
             this.setSprinting(true);
@@ -950,9 +969,15 @@ public class PvpBotEntity extends PathfinderMob {
         }
 
         if (this.meleeCooldown == 0 && sees) {
-            if (this.holdingSpear() && dist <= 4.4) {
+            int lunge = Kit.lungeLevel(this.spear());
+            if (this.holdingSpear() && dist >= 2.0 && dist <= 4.4) {
                 this.jab(target);
                 this.meleeCooldown = 12;
+                this.spearRunTicks = 22;
+            } else if (this.holdingSpear() && lunge > 0 && dist > 5.0 && dist < 5.0 + 1.4 * lunge && this.onGround() && !this.isInWater()) {
+                // Lunge as a gap closer: the jab throws the bot right into striking distance.
+                this.jab(target);
+                this.meleeCooldown = 10;
             } else if (!this.holdingSpear() && dist <= 3.2) {
                 this.faceEntity(target, 180.0F);
                 this.swingMainHand();
@@ -1068,9 +1093,23 @@ public class PvpBotEntity extends PathfinderMob {
 
     private void startSpearCharge(LivingEntity target) {
         this.holdWeapon(this.spear());
+        this.setSprinting(true);
+        if (this.distanceTo(target) < 9.0) {
+            // Too close to build up speed: run away first, then turn and charge.
+            Vec3 away = this.position().subtract(target.position()).multiply(1.0, 0.0, 1.0);
+            away = away.lengthSqr() > 1.0E-4 ? away.normalize() : this.getLookAngle().scale(-1.0);
+            this.retreatPos = target.position().add(away.scale(12.0));
+            this.chargeAfterRetreat = true;
+            this.setMode(Mode.SPEAR_RETREAT);
+            return;
+        }
+        this.beginCharge();
+    }
+
+    private void beginCharge() {
+        this.chargeAfterRetreat = false;
         this.getNavigation().stop();
         this.setSprinting(true);
-        this.startUsingItem(InteractionHand.MAIN_HAND);
         this.setMode(Mode.SPEAR_CHARGE);
     }
 
@@ -1079,39 +1118,67 @@ public class PvpBotEntity extends PathfinderMob {
         return kinetic != null ? Math.max(20, kinetic.computeDamageUseDuration()) : 60;
     }
 
+    /**
+     * The charge deals base damage plus closing speed times a multiplier, so the bot sprints (and
+     * jumps) straight at the target and only lowers the spear when it will arrive in time.
+     */
     private void tickSpearCharge(ServerLevel level, LivingEntity target) {
+        this.holdWeapon(this.spear());
         this.faceEntity(target, 30.0F);
         this.setSprinting(true);
         this.getMoveControl().setWantedPosition(target.getX(), target.getY(), target.getZ(), 1.9);
-        if (this.horizontalCollision && this.onGround()) {
+        if (this.onGround() && (this.horizontalCollision || this.modeTicks % 12 == 6)) {
             this.getJumpControl().jump();
         }
-
         double dist = this.distanceTo(target);
-        if (!this.isUsingItem() && this.modeTicks < 4) {
-            // Weapon swaps can cancel the use on the same tick; just try again.
-            this.startUsingItem(InteractionHand.MAIN_HAND);
+        double speed = Math.max(0.15, this.getDeltaMovement().multiply(1.0, 0.0, 1.0).length());
+        double eta = Math.max(0.0, dist - 3.0) / speed;
+        if (!this.isUsingItem()) {
+            if (eta <= this.spearUseDuration() - 4 || this.modeTicks > 60) {
+                this.startUsingItem(InteractionHand.MAIN_HAND);
+            }
+            if (this.modeTicks > 80) {
+                this.finishCharge(target);
+            }
             return;
         }
-        if (!this.isUsingItem() || this.modeTicks > this.spearUseDuration() || dist < 1.3) {
-            this.stopUsingItem();
-            this.spearCooldown = SPEAR_COOLDOWN;
-            this.retreatPos = LandRandomPos.getPosAway(this, 6, 10, 7, target.position());
-            this.setMode(Mode.SPEAR_RETREAT);
+        boolean hit = target.hurtTime > 0 && this.getTicksUsingItem() > 4;
+        if (hit || this.getTicksUsingItem() > this.spearUseDuration() || dist < 1.3) {
+            this.finishCharge(target);
         }
+    }
+
+    /** Run straight through and past the target, then turn around. */
+    private void finishCharge(LivingEntity target) {
+        this.stopUsingItem();
+        this.spearCooldown = SPEAR_COOLDOWN;
+        Vec3 dir = target.position().subtract(this.position()).multiply(1.0, 0.0, 1.0);
+        dir = dir.lengthSqr() > 1.0E-4 ? dir.normalize() : this.getLookAngle();
+        this.retreatPos = target.position().add(dir.scale(7.0));
+        this.chargeAfterRetreat = false;
+        this.setMode(Mode.SPEAR_RETREAT);
     }
 
     private void tickSpearRetreat(LivingEntity target) {
         this.manualRotation = false;
         this.getLookControl().setLookAt(target, 60.0F, 60.0F);
-        if (this.retreatPos == null || this.modeTicks > 40 || this.distanceTo(target) > 12.0) {
+        double dist = this.distanceTo(target);
+        if (this.chargeAfterRetreat && (dist >= 10.0 || this.modeTicks > 40)) {
+            this.beginCharge();
+            return;
+        }
+        if (this.retreatPos == null || this.modeTicks > 40 || !this.chargeAfterRetreat && dist > 12.0) {
             this.setMode(Mode.GROUND);
             return;
         }
         this.setSprinting(true);
-        this.getNavigation().moveTo(this.retreatPos.x, this.retreatPos.y, this.retreatPos.z, 1.4);
+        this.getNavigation().moveTo(this.retreatPos.x, this.retreatPos.y, this.retreatPos.z, 1.5);
         if (this.modeTicks > 5 && this.getNavigation().isDone()) {
-            this.setMode(Mode.GROUND);
+            if (this.chargeAfterRetreat) {
+                this.beginCharge();
+            } else {
+                this.setMode(Mode.GROUND);
+            }
         }
     }
 
@@ -1303,7 +1370,7 @@ public class PvpBotEntity extends PathfinderMob {
                 && hDist > 1.0 && hDist < 8.0 && dy < 3.0 && dy > -4.0) {
             out.add(Pattern.WIND_SMASH);
         }
-        if (!flying && this.wantsSpear() && this.onGround() && this.spearCooldown == 0 && sees && hDist > 4.0 && hDist < 18.0) {
+        if (!flying && this.wantsSpear() && this.onGround() && this.spearCooldown == 0 && sees && hDist < 18.0) {
             out.add(Pattern.SPEAR_CHARGE);
         }
         boolean canFly = flying || this.onGround() && this.flightCooldown == 0 && this.canFlyHere() && hDist > 5.0;

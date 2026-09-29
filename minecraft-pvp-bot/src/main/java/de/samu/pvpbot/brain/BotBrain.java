@@ -28,7 +28,7 @@ public final class BotBrain {
 
     public enum Pattern {
         MACE_MELEE("Mace-Nahkampf", true),
-        SPEAR_KITE("Speer-Stiche", true),
+        SPEAR_KITE("Speer-Stiche im Vorbeirennen", true),
         WIND_SMASH("Windladungs-Smash", false),
         SPEAR_CHARGE("Speer-Ansturm", false),
         ELYTRA_DIVE("Elytra-Mace-Sturzflug", false),
@@ -122,12 +122,11 @@ public final class BotBrain {
                 case WIND_SMASH -> 3.0;
                 case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> 1.5;
                 case BOW_SNIPE -> -3.0;
-                case SPEAR_CHARGE -> -1.0;
+                case SPEAR_CHARGE -> 1.0;
                 default -> -2.0;
             };
             case MID -> v += switch (p) {
-                case WIND_SMASH -> 3.0;
-                case SPEAR_CHARGE -> 2.0;
+                case WIND_SMASH, SPEAR_CHARGE -> 3.0;
                 case ELYTRA_DIVE, BOW_SNIPE -> 1.0;
                 default -> 0.0;
             };

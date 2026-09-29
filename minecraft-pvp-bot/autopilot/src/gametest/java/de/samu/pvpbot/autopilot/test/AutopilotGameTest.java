@@ -58,8 +58,11 @@ public class AutopilotGameTest implements FabricClientGameTest {
             fight(ctx, sp, "Mace + Windladungen vs Golem", ARMOR + ";give @a minecraft:mace;give @a minecraft:wind_charge 32",
                     "summon minecraft:iron_golem 6 ~ 0 {NoAI:1b}", 600);
             recordNext = "03_speer";
-            fight(ctx, sp, "Speer vs Golem", ARMOR + ";give @a minecraft:netherite_spear",
+            fight(ctx, sp, "Speer (Lunge III) vs Golem", ARMOR + ";give @a minecraft:netherite_spear[enchantments={lunge:3}]",
                     "summon minecraft:iron_golem 9 ~ 0 {NoAI:1b}", 600);
+            recordNext = "03b_speer_zombies";
+            fight(ctx, sp, "Speer (Lunge III) vs 3 Zombies", ARMOR + ";give @a minecraft:netherite_spear[enchantments={lunge:3}];give @a minecraft:golden_apple 4",
+                    "summon minecraft:zombie 10 ~ 4 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};summon minecraft:zombie 12 ~ -4 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};summon minecraft:zombie 14 ~ 0 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}}", 900, true);
             fight(ctx, sp, "Bogen vs Golem", ARMOR + ";give @a minecraft:bow;give @a minecraft:arrow 64",
                     "summon minecraft:iron_golem 16 ~ 0 {NoAI:1b}", 900);
             recordNext = "04_elytra_mace_sturzflug";
@@ -70,6 +73,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
                     "summon minecraft:zombie 6 ~ 3;summon minecraft:zombie 7 ~ -3;summon minecraft:zombie 9 ~ 0", 900, true);
             if (FabricLoader.getInstance().isModLoaded("pvpbot")) {
                 survivalScene(ctx, sp);
+                botSpearScene(ctx, sp);
                 botCloseUp(ctx, sp);
                 // Fair mirror match: the bot gets an exact copy of the player's kit.
                 String duelKit = ARMOR + ";give @a minecraft:netherite_sword;give @a minecraft:mace;give @a minecraft:wind_charge 16;"
@@ -116,11 +120,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             for (int i = 0; i < 5; i++) {
                 ctx.waitTicks(4);
                 waited += 4;
-                double angle = waited * 0.0015;
-                String dx = String.format(java.util.Locale.ROOT, "%.2f", -7.0 * Math.cos(angle));
-                String dz = String.format(java.util.Locale.ROOT, "%.2f", -7.0 * Math.sin(angle));
-                sp.getServer().runCommand("execute as @a at @e[type=pvpbot:pvp_bot,limit=1] run tp @s ~" + dx + " ~4 ~" + dz
-                        + " facing entity @e[type=pvpbot:pvp_bot,limit=1] feet");
+                orbitCamera(sp, waited * 0.0015, 7.0, 4.0);
                 capture(ctx);
             }
             geared = ctx.computeOnClient(mc -> {
@@ -148,6 +148,66 @@ public class AutopilotGameTest implements FabricClientGameTest {
         results.add(line);
         System.out.println(TAG + line);
         run(sp, "kill @e[type=pvpbot:pvp_bot]");
+        run(sp, "gamemode survival @a");
+        run(sp, "tp @a 0 -60 0 -90 0");
+        ctx.waitTicks(40);
+    }
+
+    /** Puts the (spectating) player at a point circling the bot, looking at it. */
+    private static void orbitCamera(TestSingleplayerContext sp, double angle, double radius, double height) {
+        String dx = String.format(java.util.Locale.ROOT, "%.2f", -radius * Math.cos(angle));
+        String dz = String.format(java.util.Locale.ROOT, "%.2f", -radius * Math.sin(angle));
+        sp.getServer().runCommand("execute as @a at @e[type=pvpbot:pvp_bot,limit=1] run tp @s ~" + dx + " ~" + height + " ~" + dz
+                + " facing entity @e[type=pvpbot:pvp_bot,limit=1] feet");
+    }
+
+    /** The PvP bot with only its spear (Lunge III) against zombies, filmed from outside. */
+    private void botSpearScene(ClientGameTestContext ctx, TestSingleplayerContext sp) {
+        System.out.println(TAG + "==================== PvP-Bot mit Speer vs Zombies");
+        ctx.runOnClient(mc -> Autopilot.INSTANCE.setEnabled(mc, false));
+        run(sp, "kill @e[type=!minecraft:player]");
+        run(sp, "gamemode survival @a");
+        run(sp, "tp @a 0 -60 60 0 0");
+        ctx.waitTicks(40);
+        run(sp, "execute as @p at @p run pvpbot spawn Lanze");
+        run(sp, "execute as @p run pvpbot weapon spear");
+        run(sp, "execute as @p run pvpbot assist off");
+        run(sp, "execute at @p run summon minecraft:zombie ~12 ~ ~5 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};execute at @p run summon minecraft:zombie ~14 ~ ~-4 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}};"
+                + "execute at @p run summon minecraft:zombie ~16 ~ ~1 {equipment:{head:{id:\"minecraft:iron_helmet\",count:1}}}");
+        run(sp, "effect give @e[type=minecraft:zombie] minecraft:fire_resistance infinite 0 true");
+        run(sp, "execute as @p run pvpbot attack @e[type=minecraft:zombie]");
+        run(sp, "gamemode spectator @a");
+        ctx.waitTicks(4);
+        startClip("06_pvpbot_speer", 10);
+        int waited = 0;
+        boolean zombiesLeft = true;
+        while (waited < 900 && zombiesLeft) {
+            for (int i = 0; i < 10; i++) {
+                ctx.waitTicks(2);
+                waited += 2;
+                orbitCamera(sp, 0.6 + waited * 0.003, 8.0, 3.0);
+                capture(ctx);
+            }
+            zombiesLeft = ctx.computeOnClient(mc -> {
+                for (Entity e : mc.level.getEntities(mc.player, new AABB(mc.player.blockPosition()).inflate(80.0))) {
+                    if (e.getType().toString().contains("zombie") && e.isAlive()) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        }
+        for (int i = 0; i < 15; i++) {
+            ctx.waitTicks(2);
+            orbitCamera(sp, 0.6 + (waited + 2 * i) * 0.003, 8.0, 3.0);
+            capture(ctx);
+        }
+        clip = null;
+        String line = String.format("INFO PvP-Bot Speer vs 3 Zombies: %s nach %.1fs", zombiesLeft ? "Zeit abgelaufen" : "alle erledigt", waited / 20.0);
+        results.add(line);
+        System.out.println(TAG + line);
+        run(sp, "kill @e[type=pvpbot:pvp_bot]");
+        run(sp, "kill @e[type=minecraft:zombie]");
         run(sp, "gamemode survival @a");
         run(sp, "tp @a 0 -60 0 -90 0");
         ctx.waitTicks(40);
@@ -238,6 +298,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             String command = enemy.trim().startsWith("execute") ? enemy.trim() : "execute at @p run " + enemy.trim();
             sp.getServer().runCommand(command);
         }
+        run(sp, "effect give @e[type=minecraft:zombie] minecraft:fire_resistance infinite 0 true");
         ctx.waitTicks(10);
 
         boolean started = ctx.computeOnClient(mc -> {
@@ -289,12 +350,12 @@ public class AutopilotGameTest implements FabricClientGameTest {
             System.out.println(TAG + state.replace("t=  0s", String.format("t=%3ds", waited / 20)));
             boolean enemyLeft = ctx.computeOnClient(mc -> nearestEnemy(mc) != null);
             boolean dead = ctx.computeOnClient(mc -> mc.player == null || !mc.player.isAlive() || mc.player.getHealth() <= 0.0F);
-            if (!enemyLeft) {
-                won = true;
-                break;
-            }
             if (dead) {
                 lost = true;
+                break;
+            }
+            if (!enemyLeft) {
+                won = true;
                 break;
             }
         }

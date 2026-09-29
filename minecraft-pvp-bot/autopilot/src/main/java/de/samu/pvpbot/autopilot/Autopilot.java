@@ -12,6 +12,7 @@ import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
@@ -22,6 +23,7 @@ import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.KineticWeapon;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -63,6 +65,7 @@ public final class Autopilot {
     private int windCooldown;
     private int rocketCooldown;
     private int spearCooldown;
+    private int useTicks;
     private int flightCooldown;
     private int eatTicks;
 
@@ -282,7 +285,7 @@ public final class Autopilot {
                 && hDist > 1.0 && hDist < 8.0 && dy < 3.0 && dy > -4.0 && this.ceiling(p, 8) > 7) {
             out.add(Pattern.WIND_SMASH);
         }
-        if (!flying && spear && p.onGround() && this.spearCooldown == 0 && sees && hDist > 4.0 && hDist < 18.0) {
+        if (!flying && spear && p.onGround() && this.spearCooldown == 0 && sees && hDist < 18.0) {
             out.add(Pattern.SPEAR_CHARGE);
         }
         if (flying || this.canFlyHere(p) && p.onGround() && hDist > 5.0) {
@@ -393,46 +396,139 @@ public final class Autopilot {
         }
     }
 
+    // Spear facts (26.3): a jab only hits between 2 and 4.5 blocks and needs a full attack charge.
+    // The charge (holding use) deals base damage + closing speed x multiplier, so speed is damage.
+    // Lunge throws the wielder forward on every jab (not in water, not while gliding, costs hunger).
+    private static final double JAB_MIN = 2.0;
+    private static final double JAB_MAX = 4.4;
+
+    /** Hit and run: sprint in, jab at the edge of the reach, run past the target, curve around, repeat. */
     private void tickSpearKite(Minecraft mc, LocalPlayer p, LivingEntity t) {
         this.select(mc, p, Role.SPEAR);
-        this.faceEntity(p, t, 40.0F);
         double dist = p.distanceTo(t);
-        if (dist > 4.0) {
-            this.kForward = true;
-            this.kSprint = true;
-        } else {
-            this.strafeAround(p, dist < 2.8);
+        int lunge = Kit.lungeLevel(p.getMainHandItem());
+        boolean canLunge = lunge > 0 && p.onGround() && !p.isInWater() && p.getFoodData().getFoodLevel() > 6;
+        boolean ready = p.getAttackStrengthScale(0.5F) >= 1.0F;
+        this.kForward = true;
+        this.kSprint = true;
+        switch (this.phase) {
+            case 0 -> {
+                // Run in. Sprint-jump on long straight stretches for extra speed.
+                this.faceEntity(p, t, 35.0F);
+                if (p.onGround() && (dist > 7.0 || p.horizontalCollision)) {
+                    this.kJump = true;
+                }
+                if (ready && dist >= JAB_MIN && dist <= JAB_MAX && p.hasLineOfSight(t)) {
+                    this.attack(mc, p, t);
+                    this.nextPhase();
+                } else if (ready && canLunge && dist > 5.0 && dist < 5.0 + 1.4 * lunge && p.hasLineOfSight(t)) {
+                    // Lunge as a gap closer: the jab throws us right into striking distance.
+                    this.attack(mc, p, t);
+                } else if (dist < JAB_MIN) {
+                    // Too close for the spear: keep moving and swing around.
+                    this.nextPhase();
+                }
+            }
+            case 1 -> {
+                // Run past the target, a little to the side, instead of stopping in front of it.
+                Vec3 toT = t.position().subtract(p.position()).multiply(1.0, 0.0, 1.0);
+                Vec3 side = new Vec3(-toT.z, 0.0, toT.x).normalize().scale(this.strafe * 2.5);
+                this.face(p, toT.add(side), 30.0F);
+                this.kLeft = this.strafe < 0;
+                this.kRight = this.strafe > 0;
+                boolean passed = toT.dot(p.getLookAngle().multiply(1.0, 0.0, 1.0)) < 0.0;
+                if (passed && dist > 3.5 || this.phaseTicks > 25) {
+                    this.nextPhase();
+                }
+            }
+            default -> {
+                // Curve around to get a fresh run-up, then go again.
+                Vec3 toT = t.position().subtract(p.position()).multiply(1.0, 0.0, 1.0);
+                Vec3 away = toT.scale(-1.0);
+                Vec3 side = new Vec3(-toT.z, 0.0, toT.x).normalize().scale(this.strafe * toT.length());
+                this.face(p, dist < 6.0 ? away.add(side) : toT, 25.0F);
+                if (p.horizontalCollision) {
+                    this.kJump = true;
+                }
+                if (dist >= 6.0 && this.phaseTicks > 6 || this.phaseTicks > 40) {
+                    if (p.getRandom().nextInt(3) == 0) {
+                        this.strafe = -this.strafe;
+                    }
+                    this.phase = 0;
+                    this.phaseTicks = 0;
+                }
+            }
         }
-        if (p.getAttackStrengthScale(0.5F) >= 0.9F && dist <= 4.5 && p.hasLineOfSight(t)) {
-            this.attack(mc, p, t);
-        }
-        if (this.attemptTicks > 50) {
+        if (this.attemptTicks > 80) {
             this.finishAttempt(mc);
         }
     }
 
+    /** Couched charge: get a run-up, then sprint(-jump) straight through the target holding the spear. */
     private void tickSpearCharge(Minecraft mc, LocalPlayer p, LivingEntity t) {
         this.select(mc, p, Role.SPEAR);
-        this.faceEntity(p, t, 30.0F);
         double dist = p.distanceTo(t);
-        if (this.phase == 0) {
-            // Get a run-up.
-            if (dist < 8.0 && this.phaseTicks < 30) {
-                this.kBack = true;
-            } else {
-                this.nextPhase();
-            }
-        } else {
-            this.kUse = true;
-            this.kForward = true;
-            this.kSprint = true;
-            if (p.horizontalCollision) {
-                this.kJump = true;
-            }
-            if (this.phaseTicks > 60 || dist < 1.2) {
+        switch (this.phase) {
+            case 0 -> {
+                // Run-up: sprint away until there is room to build up speed.
                 this.kUse = false;
-                this.spearCooldown = 40;
-                this.finishAttempt(mc);
+                Vec3 away = p.position().subtract(t.position()).multiply(1.0, 0.0, 1.0);
+                this.face(p, away, 40.0F);
+                this.kForward = true;
+                this.kSprint = true;
+                if (p.horizontalCollision) {
+                    this.kJump = true;
+                }
+                if (dist >= 11.0 || this.phaseTicks > 45) {
+                    this.nextPhase();
+                }
+            }
+            case 1 -> {
+                // Turn around.
+                this.faceEntity(p, t, 45.0F);
+                Vec3 toT = t.getEyePosition().subtract(p.getEyePosition()).normalize();
+                if (toT.dot(p.getLookAngle()) > 0.95 || this.phaseTicks > 8) {
+                    this.nextPhase();
+                }
+            }
+            case 2 -> {
+                // Charge. The damage counts the speed along the look direction, so look straight at the target.
+                this.faceEntity(p, t, 25.0F);
+                this.kForward = true;
+                this.kSprint = true;
+                if (p.onGround()) {
+                    this.kJump = true;
+                }
+                KineticWeapon kinetic = p.getMainHandItem().get(DataComponents.KINETIC_WEAPON);
+                int delay = kinetic == null ? 0 : kinetic.delayTicks();
+                int window = kinetic == null ? 60 : kinetic.computeDamageUseDuration();
+                double speed = Math.max(0.15, p.getDeltaMovement().multiply(1.0, 0.0, 1.0).length());
+                double eta = Math.max(0.0, dist - 3.0) / speed;
+                if (!this.kUse && eta <= window - 4) {
+                    this.kUse = true;
+                    this.useTicks = 0;
+                }
+                if (this.kUse) {
+                    this.useTicks++;
+                }
+                boolean hit = t.hurtTime > 0 && this.useTicks > delay;
+                if (hit || dist < 1.5 || this.useTicks > window + 2 || this.phaseTicks > 100) {
+                    this.nextPhase();
+                }
+            }
+            default -> {
+                // Run through and away, then let go.
+                Vec3 toT = t.position().subtract(p.position()).multiply(1.0, 0.0, 1.0);
+                if (dist < 5.0) {
+                    this.face(p, toT.scale(-1.0), 20.0F);
+                }
+                this.kForward = true;
+                this.kSprint = true;
+                if (this.phaseTicks > 8) {
+                    this.kUse = false;
+                    this.spearCooldown = 10;
+                    this.finishAttempt(mc);
+                }
             }
         }
     }
@@ -544,6 +640,24 @@ public final class Autopilot {
                     if (this.phaseTicks > 20) {
                         this.finishAttempt(mc);
                     }
+                } else if (this.phase >= 10) {
+                    // Rescue: the smash is going to miss, open the elytra again before hitting the ground.
+                    if (this.phase == 10) {
+                        this.wearChest(mc, p, Role.ELYTRA);
+                        this.nextPhase();
+                    } else if (this.phase == 11) {
+                        this.nextPhase(); // jump key released for a tick
+                    } else if (!p.isFallFlying() && !p.onGround()) {
+                        this.kJump = true;
+                    } else {
+                        this.face(p, p.getDeltaMovement().multiply(1.0, 0.0, 1.0).add(0.0, 0.3, 0.0), 25.0F);
+                        this.boost(mc, p, this.phaseTicks > 4);
+                    }
+                    if (p.onGround() || this.phaseTicks > 40) {
+                        this.wearChest(mc, p, Role.ARMOR);
+                        this.flightCooldown = 60;
+                        this.finishAttempt(mc);
+                    }
                 } else {
                     this.select(mc, p, Role.MACE);
                     this.faceEntity(p, t, 60.0F);
@@ -551,7 +665,12 @@ public final class Autopilot {
                     if (p.getDeltaMovement().y < 0.0 && p.fallDistance > 1.5 && p.distanceTo(t) <= 3.3) {
                         this.attack(mc, p, t);
                     }
-                    if (p.onGround() && this.phaseTicks > 3 || this.phaseTicks > 160) {
+                    double above = p.getY() - (t.getY() + t.getBbHeight());
+                    boolean missing = hDist > 2.2 && above < 10.0 && above > 1.0;
+                    if (missing && p.fallDistance > 8.0 && p.getDeltaMovement().y < -0.4 && this.has(p, Role.ELYTRA)) {
+                        this.phase = 10;
+                        this.phaseTicks = 0;
+                    } else if (p.onGround() && this.phaseTicks > 3 || this.phaseTicks > 160) {
                         this.finishAttempt(mc);
                     }
                 }
