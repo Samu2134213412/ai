@@ -266,6 +266,8 @@ final class Survival {
             this.path = null;
             this.stairStep = null;
             this.exploreYaw = Float.NaN;
+            // Stuck digging the same way again: dig in another direction from now on.
+            this.digDir = p.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
         }
         if (this.unstickTicks > 0) {
             this.unstickTicks--;
@@ -897,6 +899,7 @@ final class Survival {
     private @Nullable BlockPos stairStep;
     private int digTurns;
     private int dryWalk;
+    private int stairLog;
 
     /**
      * Staircase down ({@code down}) or a straight 2-high tunnel. Each step is one block forward
@@ -917,6 +920,16 @@ final class Survival {
         }
         BlockPos step = this.stairStep;
         BlockPos[] clear = {step.above(2), step.above(), step, step.below()};
+        if (++this.stairLog % 100 == 0) {
+            StringBuilder sb = new StringBuilder();
+            for (BlockPos b : clear) {
+                sb.append(level.getBlockState(b).getBlock().getName().getString()).append(PathFinder.body(level, b) ? "(frei) " : " ");
+            }
+            HitResult h = mc.hitResult;
+            Autopilot.LOGGER.info("[AUTOPILOT] survival: stairs at {} step {} dir {} [{}] aim {} hand {} ground {} water {}", feet.toShortString(),
+                    step.toShortString(), this.digDir, sb.toString().trim(),
+                    h instanceof BlockHitResult bh ? bh.getBlockPos().toShortString() : "-", p.getMainHandItem().getItem(), p.onGround(), p.isInWater());
+        }
         for (BlockPos b : clear) {
             if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || level.getBlockState(b).getDestroySpeed(level, b) < 0.0F) {
                 // Water, lava or bedrock that way: try the next direction; all four bad -> walk elsewhere.
