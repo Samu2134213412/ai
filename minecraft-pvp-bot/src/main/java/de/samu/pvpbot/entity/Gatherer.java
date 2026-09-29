@@ -47,6 +47,8 @@ final class Gatherer {
         RAW_IRON("Roheisen", s -> s.is(Items.RAW_IRON)),
         IRON("Eisenbarren", s -> s.is(Items.IRON_INGOT)),
         DIAMOND("Diamanten", s -> s.is(Items.DIAMOND)),
+        OBSIDIAN("Obsidian", s -> s.is(Items.OBSIDIAN)),
+        FLINT("Feuerstein", s -> s.is(Items.FLINT)),
         RAW_MEAT("rohes Fleisch", s -> s.is(Items.BEEF) || s.is(Items.PORKCHOP) || s.is(Items.CHICKEN) || s.is(Items.MUTTON) || s.is(Items.RABBIT)),
         COOKED_MEAT("gebratenes Fleisch", s -> s.is(Items.COOKED_BEEF) || s.is(Items.COOKED_PORKCHOP) || s.is(Items.COOKED_CHICKEN)
                 || s.is(Items.COOKED_MUTTON) || s.is(Items.COOKED_RABBIT) || s.is(Items.BREAD));
@@ -66,7 +68,11 @@ final class Gatherer {
         STONE("Stein", Res.COBBLE, s -> s.is(BlockTags.BASE_STONE_OVERWORLD) || s.is(net.minecraft.world.level.block.Blocks.COBBLESTONE)),
         COAL("Kohleerz", Res.COAL, s -> s.is(net.minecraft.world.level.block.Blocks.COAL_ORE) || s.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_COAL_ORE)),
         IRON("Eisenerz", Res.RAW_IRON, s -> s.is(BlockTags.IRON_ORES)),
-        DIAMOND("Diamanterz", Res.DIAMOND, s -> s.is(net.minecraft.world.level.block.Blocks.DIAMOND_ORE) || s.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_DIAMOND_ORE));
+        DIAMOND("Diamanterz", Res.DIAMOND, s -> s.is(net.minecraft.world.level.block.Blocks.DIAMOND_ORE) || s.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_DIAMOND_ORE)),
+        OBSIDIAN("Obsidian", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.OBSIDIAN)),
+        GRAVEL("Kies", Res.FLINT, s -> s.is(net.minecraft.world.level.block.Blocks.GRAVEL)),
+        LAVA("Lava", Res.OBSIDIAN, s -> s.getFluidState().is(net.minecraft.tags.FluidTags.LAVA) && s.getFluidState().isSource()),
+        WATER("Wasser", Res.OBSIDIAN, s -> s.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && s.getFluidState().isSource());
 
         final String label;
         final Res gives;
@@ -115,6 +121,8 @@ final class Gatherer {
         recipe(Items.DIAMOND_CHESTPLATE, 1, Res.DIAMOND, 8);
         recipe(Items.DIAMOND_LEGGINGS, 1, Res.DIAMOND, 7);
         recipe(Items.DIAMOND_BOOTS, 1, Res.DIAMOND, 4);
+        recipe(Items.BUCKET, 1, Res.IRON, 3);
+        recipe(Items.FLINT_AND_STEEL, 1, Res.IRON, 1, Res.FLINT, 1);
     }
 
     private static final Item[] IRON_ARMOR = {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS};
@@ -122,7 +130,7 @@ final class Gatherer {
     private static final EquipmentSlot[] ARMOR_SLOTS = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
 
     /** The next thing to do. */
-    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore {
+    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal {
         String describe();
     }
 
@@ -156,6 +164,36 @@ final class Gatherer {
         }
     }
 
+    record Descend() implements Step {
+        public String describe() {
+            return "gräbt eine Treppe nach unten auf Diamant-Höhe";
+        }
+    }
+
+    record StripMine() implements Step {
+        public String describe() {
+            return "gräbt Stollen (Strip-Mining)";
+        }
+    }
+
+    record FillWater() implements Step {
+        public String describe() {
+            return "füllt den Eimer mit Wasser";
+        }
+    }
+
+    record MakeObsidian() implements Step {
+        public String describe() {
+            return "gießt Wasser auf Lava (Obsidian)";
+        }
+    }
+
+    record BuildPortal() implements Step {
+        public String describe() {
+            return "baut das Netherportal";
+        }
+    }
+
     private final PvpBotEntity bot;
     private boolean enabled = true;
     private @Nullable Step step;
@@ -182,6 +220,15 @@ final class Gatherer {
     private @Nullable Vec3 anchor;
     private @Nullable String lastAnnounced;
 
+    // "Beat the game" mode, stage 1: diamonds, obsidian and a lit nether portal.
+    private boolean speedrun;
+    private boolean portalBuilt;
+    private Direction digDir = Direction.NORTH;
+    private int portalProgress;
+    private @Nullable BlockPos portalBase;
+    private Direction portalAlong = Direction.EAST;
+    private final java.util.Set<Long> forcedChunks = new java.util.HashSet<>();
+
     Gatherer(PvpBotEntity bot) {
         this.bot = bot;
     }
@@ -193,6 +240,68 @@ final class Gatherer {
     void setEnabled(boolean enabled) {
         this.enabled = enabled;
         this.reset();
+    }
+
+    boolean isSpeedrun() {
+        return this.speedrun;
+    }
+
+    void setSpeedrun(boolean speedrun) {
+        this.speedrun = speedrun;
+        this.enabled = this.enabled || speedrun;
+        this.reset();
+        if (!speedrun) {
+            this.releaseChunks();
+        }
+    }
+
+    boolean portalBuilt() {
+        return this.portalBuilt;
+    }
+
+    void setPortalBuilt(boolean built) {
+        this.portalBuilt = built;
+    }
+
+    /** Far away from every player the bot would stop; keep the chunks around it loaded. */
+    void keepChunksLoaded() {
+        if (!this.speedrun || this.bot.tickCount % 20 != 0) {
+            return;
+        }
+        ServerLevel level = this.level();
+        java.util.Set<Long> wanted = new java.util.HashSet<>();
+        int cx = this.bot.blockPosition().getX() >> 4;
+        int cz = this.bot.blockPosition().getZ() >> 4;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                wanted.add(chunkKey(cx + dx, cz + dz));
+            }
+        }
+        for (long key : this.forcedChunks) {
+            if (!wanted.contains(key)) {
+                level.setChunkForced((int) (key >> 32), (int) key, false);
+            }
+        }
+        for (long key : wanted) {
+            if (!this.forcedChunks.contains(key)) {
+                level.setChunkForced((int) (key >> 32), (int) key, true);
+            }
+        }
+        this.forcedChunks.clear();
+        this.forcedChunks.addAll(wanted);
+    }
+
+    private static long chunkKey(int x, int z) {
+        return (long) x << 32 | z & 0xFFFFFFFFL;
+    }
+
+    void releaseChunks() {
+        if (this.bot.level() instanceof ServerLevel level) {
+            for (long key : this.forcedChunks) {
+                level.setChunkForced((int) (key >> 32), (int) key, false);
+            }
+        }
+        this.forcedChunks.clear();
     }
 
     int fuel() {
@@ -217,7 +326,7 @@ final class Gatherer {
             return false;
         }
         Player owner = this.bot.getOwner();
-        if (owner != null && owner.distanceToSqr(this.bot) > 96.0 * 96.0) {
+        if (!this.speedrun && owner != null && owner.distanceToSqr(this.bot) > 96.0 * 96.0) {
             return false;
         }
         if (--this.replanTimer <= 0 || this.step == null) {
@@ -233,6 +342,9 @@ final class Gatherer {
         }
         if (!this.enabled) {
             return "Sammeln ist aus";
+        }
+        if (this.speedrun && this.portalBuilt) {
+            return "Etappe 1 geschafft: das Netherportal steht";
         }
         Step s = this.plan();
         return s == null ? "hat alles, was er braucht" : "will " + this.goalLabel + " → " + s.describe();
@@ -275,7 +387,7 @@ final class Gatherer {
         if (!kit.has(Role.GAPPLE) && kit.count(Res.COOKED_MEAT.match) < 4) {
             needs.add(new Need(Items.COOKED_BEEF, "Essen"));
         }
-        if (diamondsNearby) {
+        if (diamondsNearby && !this.speedrun) {
             if (weaponDamage < Kit.attackDamage(new ItemStack(Items.DIAMOND_SWORD))) {
                 needs.add(new Need(Items.DIAMOND_SWORD, "ein Diamantschwert"));
             }
@@ -298,8 +410,51 @@ final class Gatherer {
                 return s;
             }
         }
+        if (this.speedrun && !this.portalBuilt) {
+            return this.speedrunStep();
+        }
         this.goalLabel = null;
         return null;
+    }
+
+    /** Stage 1 of beating the game: water bucket, diamond pickaxe, 10 obsidian, flint and steel, portal. */
+    private @Nullable Step speedrunStep() {
+        BotKit kit = this.kit();
+        boolean waterBucket = kit.count(st -> st.is(Items.WATER_BUCKET)) > 0;
+        if (!waterBucket) {
+            this.goalLabel = "einen Wassereimer (für Obsidian)";
+            if (kit.count(st -> st.is(Items.BUCKET)) == 0) {
+                Step s = this.resolveItem(Items.BUCKET, 0);
+                if (s != null) {
+                    return s;
+                }
+            }
+            return this.nearest(Ore.WATER) != null ? new FillWater() : new Explore("Wasser");
+        }
+        if (this.needPickaxe(Items.DIAMOND_PICKAXE, 0) != null) {
+            this.goalLabel = "eine Diamantspitzhacke";
+            Step s = this.resolveItem(Items.DIAMOND_PICKAXE, 0);
+            return s != null ? s : this.deepStep();
+        }
+        if (kit.count(Res.OBSIDIAN.match) < 10) {
+            this.goalLabel = "Obsidian fürs Netherportal (" + kit.count(Res.OBSIDIAN.match) + "/10)";
+            if (this.nearest(Ore.OBSIDIAN) != null) {
+                return new Mine(Ore.OBSIDIAN);
+            }
+            return this.nearest(Ore.LAVA) != null ? new MakeObsidian() : this.deepStep();
+        }
+        if (kit.count(st -> st.is(Items.FLINT_AND_STEEL)) == 0) {
+            this.goalLabel = "ein Feuerzeug";
+            Step s = this.resolveItem(Items.FLINT_AND_STEEL, 0);
+            return s != null ? s : new Explore("Kies");
+        }
+        this.goalLabel = "das Netherportal";
+        return new BuildPortal();
+    }
+
+    /** Diamonds and lava are deep down: dig down first, then strip-mine. */
+    private Step deepStep() {
+        return this.bot.getY() > -50.0 ? new Descend() : new StripMine();
     }
 
     private @Nullable Step resolveItem(Item item, int depth) {
@@ -327,7 +482,10 @@ final class Gatherer {
             case COBBLE -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.STONE, depth);
             case COAL -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.COAL, depth);
             case RAW_IRON -> this.needPickaxe(Items.STONE_PICKAXE, depth) != null ? this.needPickaxe(Items.STONE_PICKAXE, depth) : this.mine(Ore.IRON, depth);
-            case DIAMOND -> this.needPickaxe(Items.IRON_PICKAXE, depth) != null ? this.needPickaxe(Items.IRON_PICKAXE, depth) : this.mine(Ore.DIAMOND, depth);
+            case DIAMOND -> this.needPickaxe(Items.IRON_PICKAXE, depth) != null ? this.needPickaxe(Items.IRON_PICKAXE, depth)
+                    : this.nearest(Ore.DIAMOND) != null ? new Mine(Ore.DIAMOND) : this.speedrun ? this.deepStep() : new Explore(Ore.DIAMOND.label);
+            case OBSIDIAN -> this.nearest(Ore.OBSIDIAN) != null ? new Mine(Ore.OBSIDIAN) : this.deepStep();
+            case FLINT -> this.nearest(Ore.GRAVEL) != null ? new Mine(Ore.GRAVEL) : this.speedrun ? this.deepStep() : new Explore(Ore.GRAVEL.label);
             case IRON -> this.smelt(Res.RAW_IRON, Res.IRON, count - this.kit().count(res.match), depth);
             case COOKED_MEAT -> this.smelt(Res.RAW_MEAT, Res.COOKED_MEAT, count - this.kit().count(res.match), depth);
             case RAW_MEAT -> new Hunt();
@@ -400,6 +558,11 @@ final class Gatherer {
             case Mine mine -> this.doMine(level, mine.ore());
             case Hunt hunt -> this.doHunt();
             case Explore explore -> this.doExplore();
+            case Descend d -> this.doDig(level, true);
+            case StripMine sm -> this.doDig(level, false);
+            case FillWater fw -> this.doFillWater(level);
+            case MakeObsidian mo -> this.doMakeObsidian(level);
+            case BuildPortal bp -> this.doBuildPortal(level);
         }
     }
 
@@ -504,13 +667,178 @@ final class Gatherer {
             this.actionTicks = 0;
             double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
             Vec3 candidate = pos.add(Math.cos(angle) * 24.0, 0.0, Math.sin(angle) * 24.0);
-            if (candidate.distanceTo(this.anchor) > 96.0) {
+            if (!this.speedrun && candidate.distanceTo(this.anchor) > 96.0) {
                 candidate = this.anchor.add(pos.subtract(this.anchor).scale(-0.5));
             }
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
         this.bot.getNavigation().moveTo(this.exploreTarget.x, this.exploreTarget.y, this.exploreTarget.z, 1.1);
+        this.step = null;
+    }
+
+    // --- stage 1: digging down, water, obsidian, portal
+
+    /** Staircase down (descend) or a straight 2-high tunnel (strip mine); turns away from lava and bedrock. */
+    private void doDig(ServerLevel level, boolean down) {
+        this.bot.getNavigation().stop();
+        BlockPos feet = this.bot.blockPosition();
+        BlockPos front = feet.relative(this.digDir);
+        List<BlockPos> toClear = new ArrayList<>();
+        toClear.add(front.above());
+        toClear.add(front);
+        if (down) {
+            toClear.add(front.below());
+        }
+        for (BlockPos p : toClear) {
+            BlockState state = level.getBlockState(p);
+            boolean danger = this.nearLava(level, p) || !level.getFluidState(p).isEmpty() || state.getDestroySpeed(level, p) < 0.0F;
+            if (danger) {
+                // Lava, water or bedrock ahead: take another direction.
+                this.stopBreaking();
+                this.digDir = this.digDir.getClockWise();
+                this.bot.tellOwner("§7Gefahr voraus – ich grabe in eine andere Richtung.", false);
+                return;
+            }
+            if (!state.getCollisionShape(level, p).isEmpty()) {
+                this.breakBlock(level, p);
+                return;
+            }
+        }
+        Vec3 next = Vec3.atBottomCenterOf(front);
+        this.bot.getMoveControl().setWantedPosition(next.x, next.y, next.z, 1.0);
+        if (++this.actionTicks > 60) {
+            // Not getting anywhere (e.g. standing on a slab): try the next direction.
+            this.actionTicks = 0;
+            this.digDir = this.digDir.getClockWise();
+        }
+        if (!this.bot.blockPosition().equals(feet)) {
+            this.actionTicks = 0;
+        }
+        this.step = null;
+    }
+
+    private void doFillWater(ServerLevel level) {
+        BlockPos water = this.nearest(Ore.WATER);
+        if (water == null) {
+            this.step = null;
+            return;
+        }
+        if (this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(water)) > 4.0) {
+            this.bot.getNavigation().moveTo(water.getX() + 0.5, water.getY(), water.getZ() + 0.5, 1.1);
+            return;
+        }
+        this.bot.getNavigation().stop();
+        this.bot.lookAtBlock(water);
+        if (this.kit().remove(st -> st.is(Items.BUCKET), 1) == 1) {
+            this.kit().insert(new ItemStack(Items.WATER_BUCKET));
+            level.playSound(null, water, SoundEvents.BUCKET_FILL, this.bot.getSoundSource(), 1.0F, 1.0F);
+            this.bot.onKitChanged();
+        }
+        this.step = null;
+    }
+
+    /** Pours water onto a lava source (it turns into obsidian) and scoops the water up again. */
+    private void doMakeObsidian(ServerLevel level) {
+        BlockPos lava = this.nearest(Ore.LAVA);
+        if (lava == null) {
+            this.step = null;
+            return;
+        }
+        double dist = this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(lava));
+        if (dist > 4.0) {
+            this.bot.getNavigation().moveTo(lava.getX() + 0.5, lava.getY() + 1, lava.getZ() + 0.5, 1.0);
+            if (++this.actionTicks > 200) {
+                this.blacklist.add(lava);
+                this.actionTicks = 0;
+                this.step = null;
+            }
+            return;
+        }
+        this.actionTicks = 0;
+        this.bot.getNavigation().stop();
+        this.bot.lookAtBlock(lava);
+        level.setBlock(lava, net.minecraft.world.level.block.Blocks.OBSIDIAN.defaultBlockState(), 3);
+        level.playSound(null, lava, SoundEvents.BUCKET_EMPTY, this.bot.getSoundSource(), 1.0F, 1.0F);
+        level.playSound(null, lava, SoundEvents.LAVA_EXTINGUISH, this.bot.getSoundSource(), 1.0F, 1.0F);
+        this.known.computeIfAbsent(Ore.OBSIDIAN, k -> new ArrayList<>()).add(lava);
+        this.step = null;
+    }
+
+    /** Builds a 4x5 obsidian frame (corners left out: 10 blocks) next to the bot and lights it. */
+    private void doBuildPortal(ServerLevel level) {
+        this.bot.getNavigation().stop();
+        if (this.portalBase == null) {
+            Direction facing = this.bot.getDirection();
+            this.portalBase = this.bot.blockPosition().relative(facing, 2).relative(facing.getClockWise(), -1);
+            this.portalAlong = facing.getClockWise();
+            this.portalProgress = 0;
+        }
+        if (++this.actionTicks < 5) {
+            return;
+        }
+        this.actionTicks = 0;
+        List<BlockPos> frame = new ArrayList<>();
+        List<BlockPos> inside = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 5; j++) {
+                BlockPos p = this.portalBase.relative(this.portalAlong, i).above(j);
+                boolean side = (i == 0 || i == 3) && j >= 1 && j <= 3;
+                boolean capOrFloor = (j == 0 || j == 4) && (i == 1 || i == 2);
+                if (side || capOrFloor) {
+                    frame.add(p);
+                } else if (i >= 1 && i <= 2 && j >= 1 && j <= 3) {
+                    inside.add(p);
+                }
+            }
+        }
+        for (BlockPos p : inside) {
+            if (!level.getBlockState(p).isAir() && !level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
+                this.bot.lookAtBlock(p);
+                this.breakBlock(level, p);
+                return;
+            }
+        }
+        if (this.portalProgress < frame.size()) {
+            BlockPos p = frame.get(this.portalProgress);
+            if (!level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+                if (this.kit().remove(Res.OBSIDIAN.match, 1) == 0) {
+                    this.portalBase = null;
+                    this.step = null;
+                    return;
+                }
+                this.bot.lookAtBlock(p);
+                this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+                level.setBlock(p, net.minecraft.world.level.block.Blocks.OBSIDIAN.defaultBlockState(), 3);
+                level.playSound(null, p, SoundEvents.STONE_PLACE, this.bot.getSoundSource(), 1.0F, 1.0F);
+            }
+            this.portalProgress++;
+            return;
+        }
+        // Light it.
+        BlockPos fire = inside.get(0);
+        for (ItemStack stack : this.kit().items()) {
+            if (stack.is(Items.FLINT_AND_STEEL)) {
+                stack.hurtAndBreak(1, this.bot, EquipmentSlot.MAINHAND);
+                break;
+            }
+        }
+        this.bot.lookAtBlock(fire);
+        level.setBlock(fire, net.minecraft.world.level.block.Blocks.FIRE.defaultBlockState(), 11);
+        level.playSound(null, fire, SoundEvents.FLINTANDSTEEL_USE, this.bot.getSoundSource(), 1.0F, 1.0F);
+        if (!level.getBlockState(fire).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
+            // The fire did not open it by itself: fill the frame with portal blocks like the game does.
+            var state = net.minecraft.world.level.block.Blocks.NETHER_PORTAL.defaultBlockState()
+                    .setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS, this.portalAlong.getAxis());
+            for (BlockPos p : inside) {
+                level.setBlock(p, state, 18);
+            }
+        }
+        this.portalBuilt = true;
+        this.bot.tellOwner("§5§lEtappe 1 geschafft: Das Netherportal steht! §7(" + fire.getX() + " " + fire.getY() + " " + fire.getZ() + ")", true);
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   gather: PORTAL BUILT at {}", fire);
+        }
         this.step = null;
     }
 

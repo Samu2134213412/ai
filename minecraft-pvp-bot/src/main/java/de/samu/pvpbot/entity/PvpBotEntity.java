@@ -380,6 +380,25 @@ public class PvpBotEntity extends PathfinderMob {
         return items;
     }
 
+    /** "Beat the game" mode (stage 1: diamonds, obsidian, nether portal). */
+    public void setSpeedrun(boolean speedrun) {
+        this.gatherer.setSpeedrun(speedrun);
+    }
+
+    public boolean isSpeedrun() {
+        return this.gatherer.isSpeedrun();
+    }
+
+    public boolean portalBuilt() {
+        return this.gatherer.portalBuilt();
+    }
+
+    @Override
+    public void remove(Entity.RemovalReason reason) {
+        this.gatherer.releaseChunks();
+        super.remove(reason);
+    }
+
     public boolean isGathering() {
         return this.gatherer.isEnabled();
     }
@@ -511,6 +530,7 @@ public class PvpBotEntity extends PathfinderMob {
         super.customServerAiStep(level);
         this.refreshTarget(level);
 
+        this.gatherer.keepChunksLoaded();
         if (this.windCooldown > 0) this.windCooldown--;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
         if (this.potionCooldown > 0) this.potionCooldown--;
@@ -1823,6 +1843,8 @@ public class PvpBotEntity extends PathfinderMob {
         output.putBoolean("PvpBotKitInfinite", this.kit.isInfinite());
         output.putBoolean("PvpBotDuel", this.duelOwner);
         output.putBoolean("PvpBotGather", this.gatherer.isEnabled());
+        output.putBoolean("PvpBotSpeedrun", this.gatherer.isSpeedrun());
+        output.putBoolean("PvpBotPortal", this.gatherer.portalBuilt());
         output.putInt("PvpBotFuel", this.gatherer.fuel());
     }
 
@@ -1847,6 +1869,10 @@ public class PvpBotEntity extends PathfinderMob {
         this.talk = input.getBooleanOr("PvpBotTalk", true);
         this.duelOwner = input.getBooleanOr("PvpBotDuel", false);
         this.gatherer.setEnabled(input.getBooleanOr("PvpBotGather", true));
+        if (input.getBooleanOr("PvpBotSpeedrun", false)) {
+            this.gatherer.setSpeedrun(true);
+        }
+        this.gatherer.setPortalBuilt(input.getBooleanOr("PvpBotPortal", false));
         this.gatherer.setFuel(input.getIntOr("PvpBotFuel", 0));
         List<ItemStack> saved = input.read("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf()).orElse(null);
         this.kit.clear();

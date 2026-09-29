@@ -41,6 +41,9 @@ public final class BotCommands {
                         .then(Commands.literal("on").executes(ctx -> setGather(ctx, true)))
                         .then(Commands.literal("off").executes(ctx -> setGather(ctx, false))))
                 .then(Commands.literal("needs").executes(BotCommands::needs))
+                .then(Commands.literal("durchspielen")
+                        .executes(ctx -> setSpeedrun(ctx, true))
+                        .then(Commands.literal("stop").executes(ctx -> setSpeedrun(ctx, false))))
                 .then(Commands.literal("duel").executes(BotCommands::duel))
                 .then(Commands.literal("kit")
                         .executes(BotCommands::kitShow)
@@ -130,6 +133,26 @@ public final class BotCommands {
                     + " §8| Kit: " + bot.describeKit()), false);
         }
         return bots.size();
+    }
+
+    private static int setSpeedrun(CommandContext<CommandSourceStack> ctx, boolean on) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        int count = 0;
+        for (PvpBotEntity bot : bots) {
+            if (on && bot.getKit().isInfinite()) {
+                continue;
+            }
+            bot.setSpeedrun(on);
+            count++;
+        }
+        if (on && count == 0 && !bots.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("Dein Bot hat ein unendliches Kit. Nimm einen Survival-Bot: /pvpbot survival"));
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal(on
+                ? "§5Durchspielen – Etappe 1: §fWassereimer → Diamantspitzhacke (Treppe runter, Strip-Mining) → 10 Obsidian (Wasser auf Lava) → Feuerzeug → Netherportal. §7Status: /pvpbot needs"
+                : "§eDurchspielen gestoppt."), false);
+        return count;
     }
 
     private static int trick(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

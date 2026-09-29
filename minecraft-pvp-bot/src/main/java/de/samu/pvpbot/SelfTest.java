@@ -132,6 +132,9 @@ final class SelfTest {
                 level -> List.of(), List::of, SelfTest::fullyGeared));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
                 level -> List.of(zombie(level, 6, 6), zombie(level, -7, 5), zombie(level, 12, -9), zombie(level, -3, -14))));
+        // Beat the game, stage 1, in untouched terrain (sped up with /tick sprint).
+        SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 36000, 240,
+                level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
 
         ServerLifecycleEvents.SERVER_STARTED.register(SelfTest::setup);
         ServerTickEvents.END_SERVER_TICK.register(SelfTest::tick);
@@ -292,6 +295,15 @@ final class SelfTest {
         baseX = scenario.baseX();
         bot = PvpBotMod.PVP_BOT.create(level, EntitySpawnReason.COMMAND);
         bot.snapTo(origin.getX() + baseX + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F);
+        boolean stage = scenario.name().startsWith("Etappe");
+        if (stage) {
+            int sx = origin.getX() + baseX;
+            int sz = origin.getZ();
+            level.setChunkForced(sx >> 4, sz >> 4, true);
+            int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, sx, sz);
+            bot.snapTo(sx + 0.5, sy, sz + 0.5, 0.0F, 0.0F);
+            level.getServer().getCommands().performPrefixedCommand(level.getServer().createCommandSourceStack(), "tick sprint " + scenario.timeoutTicks());
+        }
         bot.setStyle(scenario.style());
         bot.setCustomName(Component.literal("TestBot"));
         if (scenario.kit() != null) {
@@ -301,6 +313,9 @@ final class SelfTest {
         }
         level.addFreshEntity(bot);
         spawned.add(bot);
+        if (stage) {
+            bot.setSpeedrun(true);
+        }
         targets = scenario.targets().apply(level);
         for (LivingEntity target : targets) {
             bot.addTarget(target, true);
@@ -313,7 +328,7 @@ final class SelfTest {
             if (ticks % 400 == 0) {
                 PvpBotMod.LOGGER.info(TAG + "  kit: " + bot.getKit().items().stream()
                         .map(st -> st.getCount() + "x" + st.getItem().toString().replace("minecraft:", "")).toList()
-                        + " | " + bot.describeNeeds());
+                        + " | " + bot.describeNeeds() + " | pos " + bot.blockPosition().toShortString());
             }
             return current.goal().test(bot) || !bot.isAlive() || ticks >= current.timeoutTicks();
         }
@@ -338,7 +353,17 @@ final class SelfTest {
         PvpBotMod.LOGGER.info(TAG + line);
     }
 
+    private static List<ItemStack> stage1Kit() {
+        return List.of(new ItemStack(Items.IRON_SWORD), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.IRON_HELMET),
+                new ItemStack(Items.IRON_CHESTPLATE), new ItemStack(Items.IRON_LEGGINGS), new ItemStack(Items.IRON_BOOTS),
+                new ItemStack(Items.SHIELD), new ItemStack(Items.COOKED_BEEF, 16), new ItemStack(Items.IRON_INGOT, 6),
+                new ItemStack(Items.STICK, 8), new ItemStack(Items.OAK_PLANKS, 16));
+    }
+
     private static void cleanup() {
+        if (!spawned.isEmpty() && spawned.get(0).level() instanceof ServerLevel sl) {
+            sl.getServer().getCommands().performPrefixedCommand(sl.getServer().createCommandSourceStack(), "tick sprint stop");
+        }
         spawned.forEach(Entity::discard);
         spawned.clear();
     }
