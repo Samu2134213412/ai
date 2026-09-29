@@ -274,6 +274,23 @@ final class Survival {
 
     private boolean plan(Minecraft mc, LocalPlayer p, Level level) {
         int pick = pickaxeTier(p);
+        if (this.tick % 6000 == 0) {
+            this.unreachable.clear(); // things change (and it may have died meanwhile)
+        }
+        // Food: nothing to eat and getting hungry -> hunt (from the surface), before anything else.
+        int hunger = p.getFoodData().getFoodLevel();
+        if (foodCount(p) == 0 && hunger <= 14) {
+            if (this.hunt(mc, p, level)) {
+                return true;
+            }
+            if (hunger <= 8) {
+                if (p.getY() < 55 && !level.canSeeSky(p.blockPosition())) {
+                    this.say(p, "hat Hunger – geht nach oben, Tiere suchen");
+                    return this.digUp(mc, p, level);
+                }
+                return this.explore(mc, p, level, "sucht Tiere (Hunger)");
+            }
+        }
         // 1. Wooden pickaxe.
         if (pick == 0) {
             return this.makeWithTable(mc, p, level, R_WOOD_PICK, "eine Holzspitzhacke");
@@ -286,6 +303,9 @@ final class Survival {
             return this.makeWithTable(mc, p, level, R_STONE_SWORD, "ein Steinschwert");
         }
         // Before going underground: sticks and planks for the next tools, and a spare crafting table.
+        if (p.getY() > 50 && foodCount(p) < 4 && this.hunt(mc, p, level)) {
+            return true;
+        }
         if (p.getY() > 50 && (count(p, STICK) < 6 || count(p, PLANKS) + count(p, LOG) * 4 < 12 || !has(p, Items.CRAFTING_TABLE))) {
             if (count(p, STICK) < 6 && count(p, PLANKS) >= 2) {
                 return this.craft(mc, p, level, R_STICKS);
@@ -874,8 +894,8 @@ final class Survival {
 
     private boolean hunt(Minecraft mc, LocalPlayer p, Level level) {
         LivingEntity best = null;
-        double bestDist = 24.0 * 24.0;
-        for (Entity e : level.getEntities(p, new AABB(p.blockPosition()).inflate(24.0))) {
+        double bestDist = 48.0 * 48.0;
+        for (Entity e : level.getEntities(p, new AABB(p.blockPosition()).inflate(48.0))) {
             if (e instanceof LivingEntity animal && animal.isAlive() && !animal.isBaby() && p.hasLineOfSight(animal)
                     && (e.getType() == net.minecraft.world.entity.EntityTypes.COW || e.getType() == net.minecraft.world.entity.EntityTypes.PIG
                     || e.getType() == net.minecraft.world.entity.EntityTypes.SHEEP || e.getType() == net.minecraft.world.entity.EntityTypes.CHICKEN)
@@ -969,8 +989,14 @@ final class Survival {
         if (next.getY() > feet.getY()) {
             inWay.add(0, feet.above(2));
         }
+        // Keep digging the block already started (switching between two blocks resets the progress).
+        if (this.wayBlock != null && !PathFinder.body(level, this.wayBlock) && this.reach(p, this.wayBlock)) {
+            return this.mine(mc, p, level, this.wayBlock);
+        }
+        this.wayBlock = null;
         for (BlockPos b : inWay) {
             if (!PathFinder.body(level, b) && level.getFluidState(b).isEmpty()) {
+                this.wayBlock = b;
                 return this.mine(mc, p, level, b);
             }
         }
@@ -986,6 +1012,7 @@ final class Survival {
     }
 
     private int failures;
+    private @Nullable BlockPos wayBlock;
     private float exploreYaw = Float.NaN;
     private int exploreTicks;
 
