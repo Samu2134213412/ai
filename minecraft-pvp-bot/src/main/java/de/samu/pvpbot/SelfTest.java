@@ -278,8 +278,11 @@ final class SelfTest {
                     PvpBotMod.LOGGER.info(TAG + "  bot is now in " + l.dimension() + " at " + moved.blockPosition().toShortString());
                     if (l.dimension() == net.minecraft.world.level.Level.NETHER) {
                         // Test diagnostics only (the bot does not get this): where is the nearest fortress?
-                        BlockPos fortress = l.findNearestMapStructure(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.STRUCTURE,
-                                net.minecraft.resources.Identifier.withDefaultNamespace("fortress")), moved.blockPosition(), 50, false);
+                        var structures = l.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+                        var found = l.getChunkSource().getGenerator().findNearestMapStructure(l,
+                                net.minecraft.core.HolderSet.direct(structures.getOrThrow(net.minecraft.world.level.levelgen.structure.BuiltinStructures.FORTRESS)),
+                                moved.blockPosition(), 50, false);
+                        BlockPos fortress = found == null ? null : found.getFirst();
                         PvpBotMod.LOGGER.info(TAG + "  (info) nearest fortress: " + (fortress == null ? "none" : fortress.toShortString()
                                 + " = " + (int) Math.sqrt(fortress.distSqr(moved.blockPosition())) + " blocks away"));
                     }
