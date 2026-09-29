@@ -26,6 +26,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
@@ -469,8 +470,8 @@ final class Gatherer {
         if (!this.enabled) {
             return "Sammeln ist aus";
         }
-        if (this.speedrun && this.portalBuilt) {
-            return "Etappe 1 geschafft: das Netherportal steht";
+        if (this.speedrun && this.gameBeaten) {
+            return "hat Minecraft durchgespielt";
         }
         Step s = this.plan();
         return s == null ? "hat alles, was er braucht" : "will " + this.goalLabel + " → " + s.describe();
@@ -1281,10 +1282,24 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        Vec3 goal = this.bot.position().add(this.eyeDir.scale(16.0));
-        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, (int) goal.x, (int) goal.z);
-        if (!this.bot.getNavigation().moveTo(goal.x, y, goal.z, 1.1) || this.noProgress()) {
-            this.doDig(level, false);
+        boolean stuck = this.noProgress();
+        boolean walking = !stuck && !this.bot.getNavigation().isDone() && this.exploreTarget != null
+                && this.bot.position().distanceToSqr(this.exploreTarget) > 4.0;
+        if (!walking) {
+            // Next waypoint along the eye's line (kept, so the path is not rebuilt every tick).
+            Vec3 goal = this.bot.position().add(this.eyeDir.scale(12.0));
+            int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(goal.x), Mth.floor(goal.z));
+            this.exploreTarget = new Vec3(goal.x, y, goal.z);
+            boolean path = !stuck && this.bot.getNavigation().moveTo(goal.x, y, goal.z, 1.1);
+            if (!path) {
+                // No way to walk there (water, cliffs, caves): tunnel straight on.
+                this.digDir = Direction.getApproximateNearest(this.eyeDir.x, 0.0, this.eyeDir.z);
+                this.doDig(level, false);
+            }
+            if (PvpBotEntity.DEBUG && this.legTicks % 100 == 0) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   eye: pos {} goal {} {} {} path={} stuck={} travelled={}", this.bot.blockPosition().toShortString(),
+                        Mth.floor(goal.x), y, Mth.floor(goal.z), path, stuck, (int) travelled);
+            }
         }
         this.step = null;
     }
