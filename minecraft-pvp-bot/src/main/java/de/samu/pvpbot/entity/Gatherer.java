@@ -1318,6 +1318,17 @@ final class Gatherer {
         if (this.escapeLava(level)) {
             return;
         }
+        if (this.bot.isInWall()) {
+            // Gravel or sand fell onto its head: dig itself free before it suffocates.
+            BlockPos head = BlockPos.containing(this.bot.getEyePosition());
+            for (BlockPos p : new BlockPos[]{head, this.bot.blockPosition()}) {
+                if (!level.getBlockState(p).getCollisionShape(level, p).isEmpty() && level.getBlockState(p).getDestroySpeed(level, p) >= 0.0F) {
+                    this.bot.getNavigation().stop();
+                    this.breakBlock(level, p);
+                    return;
+                }
+            }
+        }
         this.findHomeChests(level);
         if (!this.kit().hasRoom() && this.bot.tickCount % 20 == 0) {
             // Full: throw away dug-up junk (keeps one stack of cobblestone for building).
