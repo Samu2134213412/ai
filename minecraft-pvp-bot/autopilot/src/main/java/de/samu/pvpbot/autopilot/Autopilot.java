@@ -626,9 +626,10 @@ public final class Autopilot {
                     Vec3 above = t.position().add(lead).add(0.0, 24.0, 0.0).subtract(p.position());
                     this.face(p, new Vec3(above.x, Mth.clamp(above.y, -4.0, 4.0), above.z), 15.0F);
                     this.boost(mc, p, speed < 1.0 && hDist > 20.0);
-                    if (hDist < 2.0 + p.getDeltaMovement().horizontalDistance() * 5.0) {
-                        // Take the elytra off mid-air: we fall straight onto the target and smash.
-                        this.wearChest(mc, p, Role.ARMOR);
+                    double above = p.getY() - (t.getY() + t.getBbHeight());
+                    if (hDist < Math.max(4.0, above * 0.6)) {
+                        // Tip over into a steep dive with the elytra still on: while diving the fall
+                        // distance keeps growing (smash damage), and a miss just means pulling up.
                         this.nextPhase();
                     }
                 }
@@ -641,6 +642,31 @@ public final class Autopilot {
                     this.boost(mc, p, true);
                     if (this.phaseTicks > 20) {
                         this.finishAttempt(mc);
+                    }
+                } else if (this.phase >= 20) {
+                    // Pull up after the smash (or a miss) and glide on; landing is handled later.
+                    this.face(p, p.getDeltaMovement().multiply(1.0, 0.0, 1.0).normalize().add(0.0, 0.6, 0.0), 45.0F);
+                    this.boost(mc, p, speed < 0.9 || this.phaseTicks < 3);
+                    if (this.phaseTicks > 20 || !p.isFallFlying()) {
+                        this.flightCooldown = 40;
+                        this.finishAttempt(mc);
+                    }
+                } else if (p.isFallFlying() && this.phase < 10) {
+                    // Steep elytra dive straight onto the target, smash on contact.
+                    this.select(mc, p, Role.MACE);
+                    Vec3 aim = t.position().add(t.getDeltaMovement().scale(3.0)).add(0.0, t.getBbHeight() * 0.5, 0.0)
+                            .subtract(p.getEyePosition());
+                    this.face(p, aim, 30.0F);
+                    double above = p.getY() - (t.getY() + t.getBbHeight());
+                    boolean hit = false;
+                    if (p.distanceTo(t) <= 3.3 && p.fallDistance > 1.5) {
+                        this.attack(mc, p, t);
+                        hit = true;
+                    }
+                    boolean willMiss = above < 6.0 && p.distanceTo(t) > 3.3 + Math.max(0.0, -p.getDeltaMovement().y);
+                    if (hit || willMiss || this.phaseTicks > 80) {
+                        this.phase = 20;
+                        this.phaseTicks = 0;
                     }
                 } else if (this.phase >= 10) {
                     // Rescue: the smash is going to miss, open the elytra again before hitting the ground.
