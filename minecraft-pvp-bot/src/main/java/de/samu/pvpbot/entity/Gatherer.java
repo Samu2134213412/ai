@@ -3065,6 +3065,18 @@ final class Gatherer {
                 return;
             }
             if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                // A bigger hole: every bar on this side within reach (the shot from further out comes
+                // in at a slightly different angle).
+                Vec3 side = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0).normalize();
+                BlockPos cb = crystal.blockPosition();
+                for (BlockPos b : BlockPos.betweenClosed(cb.offset(-2, 0, -2), cb.offset(2, 2, 2))) {
+                    Vec3 rel = Vec3.atCenterOf(b).subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
+                    if (level.getBlockState(b).is(Blocks.IRON_BARS) && rel.dot(side) > 1.0
+                            && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(b)) < 4.5) {
+                        this.breakBlock(level, b.immutable());
+                        return;
+                    }
+                }
                 // Open on this side: down again, then out and up for the shot - from this same side.
                 this.cageOpened.add(crystal.getUUID());
                 this.cageSide.put(crystal.getUUID(), this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0));
