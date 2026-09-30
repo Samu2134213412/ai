@@ -903,6 +903,7 @@ final class Survival {
     private int digTurns;
     private int dryWalk;
     private int stairLog;
+    private int dryTicks;
 
     /**
      * Staircase down ({@code down}) or a straight 2-high tunnel. Each step is one block forward
@@ -915,13 +916,13 @@ final class Survival {
             return this.explore(mc, p, level, "sucht trockenen Boden zum Graben");
         }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        if (down && this.stairStep == null && feet.getY() >= 54) {
+        if (down && this.stairStep == null && feet.getY() >= 54 && this.dryTicks < 300) {
             // Starting a way down: not next to the sea or a lake (the stairs would flood and digging in
             // water is slow). Walk away from the water first, like a player looking for dry land.
             double wx = 0.0;
             double wz = 0.0;
             int water = 0;
-            for (BlockPos b : BlockPos.betweenClosed(feet.offset(-7, -3, -7), feet.offset(7, 1, 7))) {
+            for (BlockPos b : BlockPos.betweenClosed(feet.offset(-3, -4, -3), feet.offset(3, 0, 3))) {
                 if (level.getFluidState(b).is(net.minecraft.tags.FluidTags.WATER)) {
                     wx += b.getX();
                     wz += b.getZ();
@@ -935,8 +936,12 @@ final class Survival {
                     this.exploreTicks = 200;
                     this.path = null;
                 }
+                this.dryTicks++;
                 return this.explore(mc, p, level, "geht vom Wasser weg, um zu graben");
             }
+        }
+        if (this.stairStep != null) {
+            this.dryTicks = 0; // (a new try next time it starts a staircase)
         }
         // The step must be right in front (and one lower going down); after a fall or a push it is
         // not any more - then work out a new one from where it stands.
