@@ -2396,6 +2396,13 @@ final class Gatherer {
             this.step = null;
             return;
         }
+        if (this.bot.getY() > 90.0 && this.bot.getNavigation().isDone()) {
+            // Up under the nether ceiling (the portal came out up here): down to the open levels first,
+            // nothing can be seen from inside the rock.
+            this.doDig(level, true);
+            this.step = null;
+            return;
+        }
         // A square spiral around where it arrived (legs of 64, 64, 128, 128, 192 ...), so it covers
         // the area around the portal instead of running off in one line.
         if (this.spiralStart == null) {
