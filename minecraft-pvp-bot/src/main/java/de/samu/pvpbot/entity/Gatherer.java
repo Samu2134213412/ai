@@ -1344,6 +1344,22 @@ final class Gatherer {
         BlockPos feet = this.bot.blockPosition();
         this.bot.getNavigation().stop();
         this.bot.getJumpControl().jump();
+        if (!level.canSeeSky(feet.above())) {
+            // Underground, water pouring in (a flooded staircase): plug it with blocks like a
+            // player - sources first, then the flowing water around its head and feet.
+            BlockPos plug = null;
+            for (BlockPos p : new BlockPos[]{feet.above(2), feet.north(), feet.east(), feet.south(), feet.west(),
+                    feet.above().north(), feet.above().east(), feet.above().south(), feet.above().west()}) {
+                var fluid = level.getFluidState(p);
+                if (fluid.is(net.minecraft.tags.FluidTags.WATER) && level.getBlockState(p).canBeReplaced()
+                        && (plug == null || fluid.isSource() && !level.getFluidState(plug).isSource())) {
+                    plug = p.immutable();
+                }
+            }
+            if (plug != null && this.bridge(level, plug, false)) {
+                return;
+            }
+        }
         BlockPos below = feet.below();
         if (level.getBlockState(below).canBeReplaced()) {
             if (!this.bridge(level, below, false) && !this.mineAnyStone(level)) {
