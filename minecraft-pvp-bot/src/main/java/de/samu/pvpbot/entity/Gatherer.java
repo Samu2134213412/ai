@@ -2608,7 +2608,17 @@ final class Gatherer {
             // A "path" that ends where it stands (shut in rock): no way at all.
             moving = false;
         }
-        if (!moving && (this.speedrun || this.autonomous) && this.level() instanceof ServerLevel sl) {
+        boolean waterNear = false;
+        for (BlockPos p : BlockPos.betweenClosed(this.bot.blockPosition().offset(-2, -1, -2), this.bot.blockPosition().offset(2, 0, 2))) {
+            waterNear |= this.level().getFluidState(p).is(net.minecraft.tags.FluidTags.WATER);
+        }
+        if (!moving && waterNear) {
+            // No path over water (the pathfinder does not plan long swims): swim that way, like a player.
+            this.bot.getMoveControl().setWantedPosition(this.exploreTarget.x, this.bot.getY(), this.exploreTarget.z, 1.0);
+            if (this.bot.isInWater()) {
+                this.bot.getJumpControl().jump();
+            }
+        } else if (!moving && (this.speedrun || this.autonomous) && this.level() instanceof ServerLevel sl) {
             // No path at all (in a pit, walled in by a cliff): make one, like a player - dig up out
             // of a hole, otherwise tunnel through towards the target (bridging gaps on the way).
             BlockPos goal = BlockPos.containing(this.exploreTarget);
