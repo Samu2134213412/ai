@@ -4543,7 +4543,13 @@ final class Gatherer {
         return hit.getBlockPos().equals(target);
     }
 
+    private int tunnelLog;
+
     private void tunnelTowards(ServerLevel level, BlockPos target) {
+        if (PvpBotEntity.DEBUG && ++this.tunnelLog % 100 == 1) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   tunnel: from {} towards {} breaking {} progress {}/{}", this.bot.blockPosition().toShortString(),
+                    target.toShortString(), this.breaking == null ? "-" : this.breaking.toShortString(), this.breakProgress, this.breakNeeded);
+        }
         this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
         int dx = Integer.signum(target.getX() - feet.getX());
