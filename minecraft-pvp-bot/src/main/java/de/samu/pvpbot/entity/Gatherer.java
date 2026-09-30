@@ -3628,8 +3628,8 @@ final class Gatherer {
     // --- saving known state that matters
 
     static boolean isUseful(ItemStack stack) {
-        if (stack.is(Items.NETHERRACK)) {
-            return true; // for bridging over the lava sea
+        if (stack.is(Items.NETHERRACK) || stack.is(Items.END_STONE)) {
+            return true; // for bridging over the lava sea and the poles in the End
         }
         for (Res res : Res.values()) {
             if (res.match.test(stack)) {
