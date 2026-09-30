@@ -578,7 +578,7 @@ final class Gatherer {
         if (level.dimension() == net.minecraft.world.level.Level.NETHER && ++this.naturalSpawnTicks >= 200) {
             this.naturalSpawnTicks = 0;
             if (level.hasNearbyAlivePlayer(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 128.0)
-                    || level.getEntitiesOfClass(net.minecraft.world.entity.monster.EnderMan.class, this.bot.getBoundingBox().inflate(64.0)).size() >= 3) {
+                    || level.getEntities(EntityTypes.ENDERMAN, this.bot.getBoundingBox().inflate(64.0), e -> e.isAlive()).size() >= 3) {
                 return;
             }
             double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
