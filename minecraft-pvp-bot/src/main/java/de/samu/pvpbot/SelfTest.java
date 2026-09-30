@@ -403,6 +403,37 @@ final class SelfTest {
                 // about finding one, getting blaze rods and ender pearls.
                 sx = -5600;
                 sz0 = -6400;
+                // Better (like picking a seed): a fortress with a warped forest (endermen) close by,
+                // the portal between the two. Only the test knows this, not the bot.
+                ServerLevel nether = level.getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+                if (nether != null) {
+                    var structures = nether.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+                    var fortressSet = net.minecraft.core.HolderSet.direct(structures.getOrThrow(net.minecraft.world.level.levelgen.structure.BuiltinStructures.FORTRESS));
+                    search:
+                    for (int ring = 0; ring <= 3; ring++) {
+                        for (int k = 0; k < Math.max(1, ring * 4); k++) {
+                            double a = Math.PI * 2.0 * k / Math.max(1, ring * 4);
+                            BlockPos from = new BlockPos(-700 + (int) (Math.cos(a) * ring * 600), 64, -800 + (int) (Math.sin(a) * ring * 600));
+                            var found = nether.getChunkSource().getGenerator().findNearestMapStructure(nether, fortressSet, from, 20, false);
+                            if (found == null) {
+                                continue;
+                            }
+                            BlockPos fortress = found.getFirst();
+                            var warped = nether.findClosestBiome3d(b -> b.is(net.minecraft.world.level.biome.Biomes.WARPED_FOREST),
+                                    fortress.atY(64), 200, 16, 16);
+                            if (warped != null) {
+                                BlockPos w = warped.getFirst();
+                                int ax = fortress.getX() + (w.getX() - fortress.getX()) * 2 / 5;
+                                int az = fortress.getZ() + (w.getZ() - fortress.getZ()) * 2 / 5;
+                                sx = ax * 8;
+                                sz0 = az * 8;
+                                PvpBotMod.LOGGER.info(TAG + "  (info) start between fortress " + fortress.toShortString() + " and warped forest "
+                                        + w.toShortString() + ": nether " + ax + ", " + az);
+                                break search;
+                            }
+                        }
+                    }
+                }
             } else if (scenario.name().startsWith("Etappe 3")) {
                 // Start ~300 blocks from the stronghold (the long walk is tested separately).
                 BlockPos stronghold = level.findNearestMapStructure(net.minecraft.tags.StructureTags.EYE_OF_ENDER_LOCATED, origin, 100, false);
