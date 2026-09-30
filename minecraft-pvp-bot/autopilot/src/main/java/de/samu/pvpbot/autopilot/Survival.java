@@ -1178,7 +1178,8 @@ final class Survival {
         for (BlockPos b : new BlockPos[]{feet.above(2), front.above(2), front.above()}) {
             boolean wet = false;
             for (Direction d : Direction.values()) {
-                wet |= !level.getFluidState(b.relative(d)).isEmpty() && !PathFinder.body(level, b);
+                // (Already in the water: no point keeping it out any more.)
+                wet |= !p.isInWater() && !level.getFluidState(b.relative(d)).isEmpty() && !PathFinder.body(level, b);
             }
             // (Not through a wall that holds back water or lava: the hole would flood.)
             if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || wet) {
