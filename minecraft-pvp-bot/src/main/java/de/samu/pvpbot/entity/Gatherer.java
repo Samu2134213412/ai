@@ -1872,9 +1872,15 @@ final class Gatherer {
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
-        this.bot.getNavigation().moveTo(this.exploreTarget.x, this.exploreTarget.y, this.exploreTarget.z, 1.1);
+        boolean moving = this.bot.getNavigation().moveTo(this.exploreTarget.x, this.exploreTarget.y, this.exploreTarget.z, 1.1);
+        if (PvpBotEntity.DEBUG && ++this.exploreLog % 400 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   explore: at {} target {} path {} heading {} in water {}", this.bot.blockPosition().toShortString(),
+                    BlockPos.containing(this.exploreTarget).toShortString(), moving, (int) Math.toDegrees(this.exploreHeading), this.bot.isInWater());
+        }
         this.step = null;
     }
+
+    private int exploreLog;
 
     // --- stage 1: digging down, water, obsidian, portal
 
