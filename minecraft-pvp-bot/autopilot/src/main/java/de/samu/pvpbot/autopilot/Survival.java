@@ -1098,6 +1098,19 @@ final class Survival {
             this.stairsUpTicks = 200;
             this.upDir = this.upDir.getClockWise();
         }
+        if (++this.upLog % 40 == 0) {
+            BlockPos f = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+            HitResult h = mc.hitResult;
+            Autopilot.LOGGER.info("[AUTOPILOT] survival: up at {} y {} ground {} mode {} dir {} above [{} {} {}] front [{} {} {}] hand {} pitch {} aim {} base {}",
+                    f.toShortString(), String.format("%.2f", p.getY()), p.onGround(), this.stairsUpTicks > 0 ? "stairs" : "pillar", this.upDir,
+                    level.getBlockState(f.above()).getBlock().getName().getString(), level.getBlockState(f.above(2)).getBlock().getName().getString(),
+                    level.getBlockState(f.above(3)).getBlock().getName().getString(),
+                    level.getBlockState(f.relative(this.upDir)).getBlock().getName().getString(),
+                    level.getBlockState(f.relative(this.upDir).above()).getBlock().getName().getString(),
+                    level.getBlockState(f.relative(this.upDir).above(2)).getBlock().getName().getString(),
+                    p.getMainHandItem().getItem(), (int) p.getXRot(),
+                    h instanceof BlockHitResult bh ? bh.getBlockPos().toShortString() : "-", this.pillarBase == null ? "-" : this.pillarBase.toShortString());
+        }
         if (this.stairsUpTicks > 0) {
             this.stairsUpTicks--;
             return this.stairsUp(mc, p, level);
@@ -1148,6 +1161,7 @@ final class Survival {
     }
 
     private int upBestY = Integer.MIN_VALUE;
+    private int upLog;
     private int upTicks;
     private int stairsUpTicks;
     private Direction upDir = Direction.NORTH;
