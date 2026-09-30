@@ -2588,6 +2588,11 @@ final class Gatherer {
             return;
         }
         Vec3 center = Vec3.atBottomCenterOf(portal);
+        if (PvpBotEntity.DEBUG && ++this.portalLog % 200 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   portal: at {} portal {} ({}) dist {} ground {} nav {}", this.bot.blockPosition().toShortString(),
+                    portal.toShortString(), bn(level, portal), String.format("%.1f", Math.sqrt(this.bot.position().distanceToSqr(center))),
+                    this.bot.onGround(), this.bot.getNavigation().isDone() ? "done" : "moving");
+        }
         if (this.bot.position().distanceToSqr(center) > 40.0 * 40.0) {
             // Far away: towards it in legs (a path only reaches so far), tunnelling where there is no way.
             Vec3 to = center.subtract(this.bot.position());
@@ -3442,12 +3447,26 @@ final class Gatherer {
             this.bot.tellOwner("§5§lDas Endportal ist offen! §7Auf zum Drachen.", true);
             this.known.computeIfAbsent(Ore.END_PORTAL, k -> new ArrayList<>()).add(new BlockPos(minX + 2, y, minZ + 2));
         } else {
-            // Not all frames in sight yet: walk into the middle of the ones we know.
-            BlockPos f = frames.get(0);
-            this.bot.getNavigation().moveTo(f.getX() + 0.5, f.getY() + 1, f.getZ() + 0.5, 1.0);
+            // Not all frames in sight yet: walk round the ring, from one frame we know to the next
+            // (standing on it you see the ones across), digging a way where there is none.
+            double cx = frames.stream().mapToInt(BlockPos::getX).average().orElse(0.0);
+            double cz = frames.stream().mapToInt(BlockPos::getZ).average().orElse(0.0);
+            frames.sort(java.util.Comparator.comparingDouble(fr -> Math.atan2(fr.getZ() - cz, fr.getX() - cx)));
+            BlockPos f = frames.get(Math.floorMod(this.frameVisit, frames.size()));
+            BlockPos top = f.above();
+            if (this.bot.blockPosition().distSqr(top) <= 2 || ++this.frameTicks > 200) {
+                this.frameVisit++;
+                this.frameTicks = 0;
+            } else if (!this.bot.getNavigation().moveTo(top.getX() + 0.5, top.getY(), top.getZ() + 0.5, 1.0) || this.noProgress()) {
+                this.tunnelTowards(level, top);
+            }
         }
         this.step = null;
     }
+
+    private int frameVisit;
+    private int portalLog;
+    private int frameTicks;
 
     private void doUseEndPortal() {
         this.wantPortalTick = this.bot.tickCount;
