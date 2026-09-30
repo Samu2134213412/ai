@@ -361,6 +361,8 @@ final class Gatherer {
     private int strongholdTicks;
     private int strongholdCells;
     private double netherGoalBest;
+    private int netherGoalTotal;
+    private @Nullable BlockPos netherStuckPos;
     private int netherGoalTicks;
     private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
     private boolean seenDragon;
@@ -1988,11 +1990,19 @@ final class Gatherer {
         if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
             // Getting closer? If not for a long while (behind lava, up a cliff), forget that block.
             double dist = Math.sqrt(this.bot.blockPosition().distSqr(goal));
-            if (!goal.equals(this.netherGoal) || dist < this.netherGoalBest - 1.0) {
-                this.netherGoalTicks = 0;
+            // (Switching back and forth between two goals without moving counts as stuck too.)
+            boolean moved = this.netherStuckPos == null || this.bot.blockPosition().distSqr(this.netherStuckPos) > 3 * 3;
+            if (!goal.equals(this.netherGoal)) {
                 this.netherGoal = goal;
                 this.netherGoalBest = dist;
-            } else if (++this.netherGoalTicks > 300) {
+                this.netherGoalTotal = 0;
+            }
+            if (moved || dist < this.netherGoalBest - 1.0) {
+                this.netherGoalTicks = 0;
+                this.netherGoalBest = Math.min(this.netherGoalBest, dist);
+                this.netherStuckPos = this.bot.blockPosition();
+            }
+            if (++this.netherGoalTicks > 300 || ++this.netherGoalTotal > 1500) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   nether: gives up on {} at {} (no way there)", goal.toShortString(), this.bot.blockPosition().toShortString());
                 this.blacklist.add(goal);
                 this.fortressVisited.add(cellKey(goal));
