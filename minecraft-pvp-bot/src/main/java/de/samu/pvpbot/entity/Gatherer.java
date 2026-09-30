@@ -1288,6 +1288,17 @@ final class Gatherer {
             }
             return new Explore("Wasser");
         }
+        int wood = kit.count(Res.STICK.match) + kit.count(Res.PLANKS.match) * 2 + kit.count(Res.LOG.match) * 8;
+        if (wood < 16 && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
+                && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                this.bot.getBlockX(), this.bot.getBlockZ()) <= this.bot.getY() + 6.0) {
+            // Up top and low on wood: some logs along before going down (sticks for new pickaxes).
+            Step s = this.resolve(Res.LOG, 3, 0);
+            if (s != null) {
+                this.goalLabel = "Holzvorrat für unter Tage";
+                return s;
+            }
+        }
         if (kit.count(st -> st.is(Items.STONE_PICKAXE)) == 0 && kit.count(Res.COBBLE.match) >= 3) {
             // A cheap pickaxe for tunnelling, so the iron one is still there when diamonds show up.
             Step s = this.resolveItem(Items.STONE_PICKAXE, 0);
@@ -1696,7 +1707,16 @@ final class Gatherer {
             case Smelt smelt -> this.doSmelt(level, smelt);
             case Mine mine -> this.doMine(level, mine.ore());
             case Hunt hunt -> this.doHunt();
-            case Explore explore -> this.doExplore();
+            case Explore explore -> {
+                if (explore.reason().contains("Holz") && level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
+                    // Trees grow up top: a staircase up first.
+                    this.doDigUp(level);
+                    this.step = null;
+                } else {
+                    this.doExplore();
+                }
+            }
             case ClimbUp up -> {
                 this.doDigUp(level);
                 this.step = null;
