@@ -1053,6 +1053,19 @@ final class Gatherer {
         this.bot.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY() + 1, step.getZ() + 0.5, 1.0);
     }
 
+    /** In a pit: the ground two blocks away is higher than its head on at least three sides. */
+    private boolean inPit(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        int walls = 0;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos n = feet.relative(d, 2);
+            if (level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, n.getX(), n.getZ()) > feet.getY() + 2) {
+                walls++;
+            }
+        }
+        return walls >= 3;
+    }
+
     private int digUpBestY = Integer.MIN_VALUE;
     private int digUpTicks;
 
@@ -2910,6 +2923,11 @@ final class Gatherer {
             this.towerGroundY = Integer.MIN_VALUE;
             this.towerCrystal = null;
             this.poleSpot = null;
+        }
+        if (this.inPit(level)) {
+            // Down in a hole (fell in, or dug its way down): out first, nothing can be reached from here.
+            this.doDigUp(level);
+            return;
         }
         boolean caged = this.isCaged(level, crystal);
         if (los && !caged && h <= 44.0 && (shots < 6 || this.kit().count(BRIDGE_BLOCK) == 0)) {
