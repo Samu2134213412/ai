@@ -1202,7 +1202,7 @@ final class Gatherer {
         if (this.towerGroundY != Integer.MIN_VALUE) {
             busy = false; // up on its own pole (waiting for a clear shot): not stuck
         }
-        if (busy && !this.bot.onGround() && this.watchPos != null) {
+        if (busy && !this.bot.onGround() && !this.bot.isInWater() && !this.bot.isInLava() && this.watchPos != null) {
             return false; // mid-air (a jump, a fall): no place to dig - but the clock keeps its count
         }
         if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 5.0 * 5.0 || kit != this.watchKit) {

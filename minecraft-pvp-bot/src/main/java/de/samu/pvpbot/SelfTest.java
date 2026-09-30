@@ -361,6 +361,11 @@ final class SelfTest {
             start(level, SCENARIOS.get(index));
             return;
         }
+        if (sprintPending && (bot.level() instanceof ServerLevel bl && bl.isPositionEntityTicking(bot.blockPosition()) || ticks > 1200)) {
+            sprintPending = false;
+            server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "tick sprint " + SCENARIOS.get(index).timeoutTicks());
+            PvpBotMod.LOGGER.info(TAG + "  (test) sprint from t=" + ticks / 20 + "s");
+        }
         ticks++;
         if (SCENARIOS.get(index).name().startsWith("Etappe voll") && ticks % 20 == 0) {
             watchProgress();
@@ -390,6 +395,7 @@ final class SelfTest {
     private static String kitSig = "";
     private static int lastProgress;
     private static int longestStall;
+    private static boolean sprintPending;
     private static int stuckEpisodes;
     private static boolean stuckNow;
     /** How long without any progress counts as stuck (game seconds). */
@@ -534,7 +540,7 @@ final class SelfTest {
                 PvpBotMod.LOGGER.info(TAG + "  (info) heightmap empty at start, ground found at y " + sy);
             }
             bot.snapTo(sx + 0.5, sy, sz + 0.5, 0.0F, 0.0F);
-            level.getServer().getCommands().performPrefixedCommand(level.getServer().createCommandSourceStack(), "tick sprint " + scenario.timeoutTicks());
+            sprintPending = true; // (once its chunk runs: sprinting before that only freezes the bot)
         }
         bot.setStyle(scenario.style());
         bot.setCustomName(Component.literal("TestBot"));
