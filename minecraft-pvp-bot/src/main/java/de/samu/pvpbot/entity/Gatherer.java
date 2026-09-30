@@ -2287,6 +2287,10 @@ final class Gatherer {
                     if (this.skyExit == null && this.stairTop != null && this.stairTop.distSqr(this.bot.blockPosition()) < 256 * 256) {
                         this.skyExit = this.stairTop; // back up the staircase it dug on the way down
                     }
+                    if (this.skyExit == null && this.lastLand != null && this.lastLand.distSqr(this.bot.blockPosition()) < 128 * 128
+                            && this.bot.getNavigation().createPath(this.lastLand, 1) != null) {
+                        this.skyExit = this.lastLand; // the way it came in (walked into a cave, fell into a ravine)
+                    }
                     this.skyExitTick = this.bot.tickCount;
                 }
                 if (this.skyExit == null || !this.bot.getNavigation().moveTo(this.skyExit.getX() + 0.5, this.skyExit.getY(), this.skyExit.getZ() + 0.5, 1.1)
