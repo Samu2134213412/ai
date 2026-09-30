@@ -2034,8 +2034,11 @@ final class Gatherer {
                     this.digBlocked, this.dryWalkTicks, level.getBlockState(f).getBlock(), level.getBlockState(f.above()).getBlock(),
                     this.known.getOrDefault(Ore.FORTRESS, List.of()).size(), this.fortressVisited.size());
         }
-        BlockPos goal = this.nearest(Ore.SPAWNER);
-        if (goal == null) {
+        // (The spawner and the blazes only while it still needs rods; after that: endermen.)
+        boolean wantRods = this.kit().count(Res.BLAZE_ROD.match) * 2 + this.kit().count(Res.BLAZE_POWDER.match)
+                < EYES_WANTED - this.kit().count(Res.EYE.match);
+        BlockPos goal = wantRods ? this.nearest(Ore.SPAWNER) : null;
+        if (goal == null && wantRods) {
             // A blaze nearby can be heard (like a player hears them breathing): go that way.
             var blaze = this.level().getNearestEntity(net.minecraft.world.entity.monster.Blaze.class,
                     net.minecraft.world.entity.ai.targeting.TargetingConditions.forNonCombat().ignoreLineOfSight(), this.bot,
@@ -2044,7 +2047,7 @@ final class Gatherer {
                 goal = blaze.blockPosition().below();
             }
         }
-        if (goal == null) {
+        if (goal == null && wantRods) {
             // In the fortress: go through its halls and bridges, to parts it has not been to yet.
             this.fortressVisited.add(cellKey(this.bot.blockPosition()));
             double bestDist = Double.MAX_VALUE;
@@ -2065,7 +2068,7 @@ final class Gatherer {
                 this.fortressCells.add(cellKey(p));
             }
         }
-        if (goal == null && !this.fortressCells.isEmpty()) {
+        if (goal == null && wantRods && !this.fortressCells.isEmpty()) {
             // Every part of the fortress it has seen is done: on along its halls and bridges, to the
             // places right next to the parts it has seen (a bridge goes on there, or it is lava).
             double bestDist = Double.MAX_VALUE;
