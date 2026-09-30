@@ -2098,7 +2098,9 @@ final class Gatherer {
             // Close enough to see that part of the fortress: next part.
             this.fortressVisited.add(cellKey(goal));
         }
-        boolean atSpawner = goal != null && level.getBlockState(goal).is(Blocks.SPAWNER) && this.bot.blockPosition().distSqr(goal) <= 6 * 6;
+        boolean spawnerGoal = goal != null && level.getBlockState(goal).is(Blocks.SPAWNER);
+        // (Waiting only where it can see the spawner: from the hall under it, it never sees the blazes.)
+        boolean atSpawner = spawnerGoal && this.bot.blockPosition().distSqr(goal) <= 6 * 6 && this.seesBlock(level, goal);
         if (atSpawner) {
             // Close to the spawner: wait here for the blazes (they come out every few seconds).
             this.bot.getNavigation().stop();
@@ -2106,7 +2108,7 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
+        if (goal != null && (this.bot.blockPosition().distSqr(goal) > 9 || spawnerGoal)) {
             // Getting closer? If not for a long while (behind lava, up a cliff), forget that block.
             double dist = Math.sqrt(this.bot.blockPosition().distSqr(goal));
             // (Switching back and forth between two goals without moving counts as stuck too.)
@@ -2146,7 +2148,7 @@ final class Gatherer {
                 // No path: tunnel towards it.
                 Vec3 to = Vec3.atCenterOf(goal).subtract(this.bot.position());
                 this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
-                if (to.y > 3.0) {
+                if (to.y > (spawnerGoal ? 1.5 : 3.0)) {
                     // The fortress is up there (its bridges stand high): stairs up to it.
                     this.doDigUp(level);
                 } else if (to.y < -2.5 && goal.getY() >= 45 && Math.abs(to.x) + Math.abs(to.z) < 12.0) {
