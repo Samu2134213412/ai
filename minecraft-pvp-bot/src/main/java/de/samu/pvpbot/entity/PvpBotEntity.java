@@ -113,6 +113,8 @@ public class PvpBotEntity extends PathfinderMob {
     private int unseenTicks;
 
     private final BotKit kit = new BotKit();
+    private @Nullable BlockPos clutchWater;
+    private int clutchTicks;
     final Gatherer gatherer = new Gatherer(this);
     private int foodCooldown;
     private boolean duelOwner;
@@ -645,6 +647,40 @@ public class PvpBotEntity extends PathfinderMob {
                 && this.kit.take(Role.WIND_CHARGE)) {
             this.windBurst(level, new Vec3(v.x * 0.5, 0.55, v.z * 0.5));
             this.resetFallDistance();
+        } else if (!this.onGround() && !this.isFallFlying() && v.y < -0.5 && this.fallDistance > 5.0 && this.clutchWater == null
+                && level.dimension() != net.minecraft.world.level.Level.NETHER && this.groundDistance(3) <= 3
+                && this.kit.count(st -> st.is(Items.WATER_BUCKET)) > 0) {
+            // Water bucket clutch, like a player: water on the ground right before landing.
+            BlockPos feet = this.blockPosition();
+            for (int i = 1; i <= 4; i++) {
+                BlockPos p = feet.below(i);
+                if (!level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+                    BlockPos spot = p.above();
+                    if (level.getBlockState(spot).canBeReplaced() && level.getFluidState(spot).isEmpty()) {
+                        level.setBlock(spot, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+                        level.playSound(null, spot, net.minecraft.sounds.SoundEvents.BUCKET_EMPTY, this.getSoundSource(), 1.0F, 1.0F);
+                        if (!this.kit.isInfinite()) {
+                            this.kit.remove(st -> st.is(Items.WATER_BUCKET), 1);
+                            this.kit.insert(new ItemStack(Items.BUCKET));
+                        }
+                        this.clutchWater = spot;
+                        this.clutchTicks = 0;
+                    }
+                    break;
+                }
+            }
+        }
+        if (this.clutchWater != null && ++this.clutchTicks > 10 && (this.onGround() || this.isInWater())) {
+            // Landed: scoop the water up again.
+            if (level.getFluidState(this.clutchWater).isSource() && level.getFluidState(this.clutchWater).is(net.minecraft.tags.FluidTags.WATER)) {
+                level.setBlock(this.clutchWater, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                level.playSound(null, this.clutchWater, net.minecraft.sounds.SoundEvents.BUCKET_FILL, this.getSoundSource(), 1.0F, 1.0F);
+                if (!this.kit.isInfinite()) {
+                    this.kit.remove(st -> st.is(Items.BUCKET), 1);
+                    this.kit.insert(new ItemStack(Items.WATER_BUCKET));
+                }
+            }
+            this.clutchWater = null;
         }
 
         // Keep the off hand stocked (a popped totem is gone) and never stay stuck somewhere.

@@ -2637,6 +2637,15 @@ final class Gatherer {
         }
         // Up level with it before shooting: from below, arrows catch the edge of its tower.
         boolean high = this.bot.getEyeY() >= crystal.getY() + 0.5;
+        if (los && (high || this.poleStall > 100) && this.bot.onGround()) {
+            // A rim of blocks around the feet first, so the dragon cannot push it off.
+            BlockPos feet = this.bot.blockPosition();
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                if (level.getBlockState(feet.relative(d)).canBeReplaced() && this.bridge(level, feet.relative(d), false)) {
+                    return;
+                }
+            }
+        }
         if (los && (high || this.poleStall > 100)) {
             this.shootCrystal(crystal);
             if (this.poleShots > 10) {

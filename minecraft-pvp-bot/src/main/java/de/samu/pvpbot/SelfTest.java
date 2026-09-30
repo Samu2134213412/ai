@@ -561,6 +561,7 @@ final class SelfTest {
         List<ItemStack> kit = new ArrayList<>(stage3Kit());
         kit.add(new ItemStack(Items.DIAMOND_SWORD));
         kit.add(new ItemStack(Items.ARROW, 64));
+        kit.add(new ItemStack(Items.WATER_BUCKET));
         return kit;
     }
 
