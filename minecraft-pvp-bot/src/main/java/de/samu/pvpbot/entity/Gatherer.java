@@ -369,7 +369,7 @@ final class Gatherer {
     private Direction portalAlong = Direction.EAST;
     private final java.util.Set<Long> forcedChunks = new java.util.HashSet<>();
     // Stage 2: the nether (blaze rods, ender pearls, eyes of ender).
-    static final int EYES_WANTED = 16;
+    static final int EYES_WANTED = 12; // (like speedrunners: 12 frames, some already filled, a few throws)
     private @Nullable BlockPos overworldPortal;
     private @Nullable BlockPos netherPortal;
     private boolean stage2Done;
