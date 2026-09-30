@@ -294,6 +294,27 @@ final class SelfTest {
             }
         }
         portalWait = 0;
+        if (index >= 0 && bot != null && ticks % 1200 == 0 && bot.level() instanceof ServerLevel nether
+                && nether.dimension() == net.minecraft.world.level.Level.NETHER) {
+            // Test diagnostics only (the bot does not get this): spawners in the loaded chunks around it.
+            int cx = bot.getBlockX() >> 4;
+            int cz = bot.getBlockZ() >> 4;
+            List<String> found = new ArrayList<>();
+            int blazes = nether.getEntitiesOfClass(net.minecraft.world.entity.monster.Blaze.class, bot.getBoundingBox().inflate(96.0)).size();
+            for (int dx = -8; dx <= 8; dx++) {
+                for (int dz = -8; dz <= 8; dz++) {
+                    var chunk = nether.getChunkSource().getChunkNow(cx + dx, cz + dz);
+                    if (chunk != null) {
+                        for (BlockPos p : chunk.getBlockEntities().keySet()) {
+                            if (nether.getBlockState(p).is(net.minecraft.world.level.block.Blocks.SPAWNER)) {
+                                found.add(p.toShortString() + " (" + (int) Math.sqrt(p.distSqr(bot.blockPosition())) + " away)");
+                            }
+                        }
+                    }
+                }
+            }
+            PvpBotMod.LOGGER.info(TAG + "  (info) bot at " + bot.blockPosition().toShortString() + ", spawners near: " + found + ", blazes within 96: " + blazes);
+        }
         if (index >= 0 && bot != null && ticks % 3600 == 600 && SCENARIOS.get(index).name().startsWith("Etappe 4")
                 && bot.level() instanceof ServerLevel end) {
             // Without a player the dragon hardly ever lands; in a real fight it does - make it land now and then.
