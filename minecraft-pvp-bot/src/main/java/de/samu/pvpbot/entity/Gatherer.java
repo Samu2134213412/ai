@@ -1821,7 +1821,10 @@ final class Gatherer {
         return switch (res) {
             case PLANKS -> this.resolveItem(Items.OAK_PLANKS, depth);
             case STICK -> this.resolveItem(Items.STICK, depth);
-            case LOG -> this.mine(Ore.LOG, depth);
+            case LOG -> this.nearest(Ore.LOG) == null && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
+                    && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0
+                    ? new ClimbUp("Holz gibt es oben") : this.mine(Ore.LOG, depth);
             case COBBLE -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.STONE, depth);
             case COAL -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.COAL, depth);
             case RAW_IRON -> this.needPickaxe(Items.STONE_PICKAXE, depth) != null ? this.needPickaxe(Items.STONE_PICKAXE, depth) : this.mine(Ore.IRON, depth);
@@ -1915,6 +1918,10 @@ final class Gatherer {
         ServerLevel level = this.level();
         if (this.reflexActive) {
             return;
+        }
+        if (this.inNether() && this.speedrun && this.kit().count(BRIDGE_BLOCK) < 24 && this.bot.onGround()
+                && this.mineNearby(level, Blocks.NETHERRACK)) {
+            return; // low on blocks in the nether (bridges over lava): a few netherrack first
         }
         if (this.bot.tickCount % 40 == 0 && !this.kit().hasRoom() && this.kit().count(JUNK) > 192) {
             // Inventory full of rubble: throw a stack away, like a player makes room.
@@ -4347,7 +4354,8 @@ final class Gatherer {
         if (st.is(Items.STRING) || st.is(Items.FEATHER)) return 40;
         if (BRIDGE_BLOCK.test(st)) {
             // The first stack to build with matters, more is rubble.
-            return this.kit().count(BRIDGE_BLOCK) <= 64 ? 35 : 6;
+            // (Blocks save its life over lava and drops: the first stack is precious.)
+            return this.kit().count(BRIDGE_BLOCK) <= 64 ? 85 : 6;
         }
         if (st.is(Items.ROTTEN_FLESH)) return 1;
         if (JUNK.test(st)) return 3;
