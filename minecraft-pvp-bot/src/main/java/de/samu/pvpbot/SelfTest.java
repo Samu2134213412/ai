@@ -285,6 +285,9 @@ final class SelfTest {
                         BlockPos fortress = found == null ? null : found.getFirst();
                         PvpBotMod.LOGGER.info(TAG + "  (info) nearest fortress: " + (fortress == null ? "none" : fortress.toShortString()
                                 + " = " + (int) Math.sqrt(fortress.distSqr(moved.blockPosition())) + " blocks away"));
+                        var warped = l.findClosestBiome3d(b -> b.is(net.minecraft.world.level.biome.Biomes.WARPED_FOREST), moved.blockPosition(), 1200, 16, 16);
+                        PvpBotMod.LOGGER.info(TAG + "  (info) nearest warped forest: " + (warped == null ? "none"
+                                : warped.getFirst().toShortString() + " = " + (int) Math.sqrt(warped.getFirst().distSqr(moved.blockPosition())) + " blocks away"));
                     }
                     break;
                 }
