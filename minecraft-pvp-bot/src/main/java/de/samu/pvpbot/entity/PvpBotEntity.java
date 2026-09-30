@@ -638,11 +638,13 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     /**
-     * While fighting: never step off a ledge into a deep drop or lava (dodging a blaze on a fortress
-     * bridge). Like a player who sneaks at the edge: stop instead.
+     * While fighting, and always in the nether and the End: never step off a ledge into a deep drop
+     * or lava (a fortress bridge over the lava sea). Like a player who sneaks at the edge: stop.
      */
     private void guardLedge(ServerLevel level) {
-        if (this.getTarget() == null || !this.onGround() || this.isFallFlying() || !this.gatherer.isAutonomousMode() && !this.gatherer.isSpeedrun()) {
+        boolean dangerous = this.level().dimension() != net.minecraft.world.level.Level.OVERWORLD; // (lava seas, the void)
+        if (this.getTarget() == null && !dangerous || !this.onGround() || this.isFallFlying()
+                || !this.gatherer.isAutonomousMode() && !this.gatherer.isSpeedrun()) {
             return;
         }
         Vec3 v = this.getDeltaMovement();
