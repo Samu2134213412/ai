@@ -1021,8 +1021,13 @@ final class Gatherer {
             return false;
         }
         if (PvpBotEntity.DEBUG) {
-            PvpBotMod.LOGGER.info("[SELFTEST]   WATCHDOG: no progress for 60 s with {} at {} -> frees itself", this.step,
-                    this.bot.blockPosition().toShortString());
+            BlockPos f = this.bot.blockPosition();
+            PvpBotMod.LOGGER.info("[SELFTEST]   WATCHDOG: no progress for 60 s with {} ({}) at {} -> frees itself | ground {} water {} lava {} hcol {}"
+                            + " | feet {} head {} below {} | N {} E {} S {} W {} | above {} | target {} nav {}",
+                    this.step, this.goalLabel, f.toShortString(), this.bot.onGround(), this.bot.isInWater(), this.bot.isInLava(),
+                    this.bot.horizontalCollision, bn(level, f), bn(level, f.above()), bn(level, f.below()),
+                    bn(level, f.north()), bn(level, f.east()), bn(level, f.south()), bn(level, f.west()), bn(level, f.above(2)),
+                    this.bot.getTarget() == null ? "-" : this.bot.getTarget().getName().getString(), this.bot.getNavigation().isDone() ? "done" : "moving");
         }
         this.watchTicks = 0;
         this.step = null;
@@ -1033,6 +1038,10 @@ final class Gatherer {
         this.freeTicks = 200;
         this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
         return true;
+    }
+
+    private static String bn(ServerLevel level, BlockPos p) {
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(level.getBlockState(p).getBlock()).getPath();
     }
 
     private int digUpBestY = Integer.MIN_VALUE;

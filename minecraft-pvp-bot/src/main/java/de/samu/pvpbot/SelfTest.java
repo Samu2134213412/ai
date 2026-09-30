@@ -417,6 +417,16 @@ final class SelfTest {
             int sz = sz0;
             level.getChunk(sx >> 4, sz >> 4); // loaded (not forced) to find the ground
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, sx, sz);
+            if (sy <= level.getMinY() + 1) {
+                // (Heightmap not ready yet, seen in the End: look for the ground by hand.)
+                for (int y = 120; y > level.getMinY(); y--) {
+                    if (!level.getBlockState(new BlockPos(sx, y - 1, sz)).isAir()) {
+                        sy = y;
+                        break;
+                    }
+                }
+                PvpBotMod.LOGGER.info(TAG + "  (info) heightmap empty at start, ground found at y " + sy);
+            }
             bot.snapTo(sx + 0.5, sy, sz + 0.5, 0.0F, 0.0F);
             level.getServer().getCommands().performPrefixedCommand(level.getServer().createCommandSourceStack(), "tick sprint " + scenario.timeoutTicks());
         }
