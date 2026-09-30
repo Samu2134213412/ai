@@ -1208,7 +1208,7 @@ final class Gatherer {
     private net.minecraft.world.entity.boss.enderdragon.@Nullable EndCrystal visibleCrystal() {
         // Stay with the crystal it is going for (walking there, others come into sight and go again).
         if (this.crystalTarget != null && this.level().getEntity(this.crystalTarget) instanceof net.minecraft.world.entity.boss.enderdragon.EndCrystal c
-                && c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 12) {
+                && c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 18) {
             return c;
         }
         this.crystalTarget = null;
@@ -1216,7 +1216,7 @@ final class Gatherer {
         double bestDist = Double.MAX_VALUE;
         for (var c : this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class,
                 this.bot.getBoundingBox().inflate(160.0))) {
-            if (c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 12 && this.bot.hasLineOfSight(c)
+            if (c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 18 && this.bot.hasLineOfSight(c)
                     && this.bot.distanceToSqr(c) < bestDist) {
                 best = c;
                 bestDist = this.bot.distanceToSqr(c);
@@ -1681,8 +1681,12 @@ final class Gatherer {
 
     /** Puts a block (cobblestone, netherrack, dirt) into the gap in front of its feet. */
     private boolean bridge(ServerLevel level, BlockPos gap) {
+        return this.bridge(level, gap, true);
+    }
+
+    private boolean bridge(ServerLevel level, BlockPos gap, boolean needGround) {
         BlockState there = level.getBlockState(gap);
-        if (!there.canBeReplaced() || !this.bot.onGround()) {
+        if (!there.canBeReplaced() || needGround && !this.bot.onGround()) {
             return false;
         }
         ItemStack block = ItemStack.EMPTY;
@@ -2480,14 +2484,30 @@ final class Gatherer {
             PvpBotMod.LOGGER.info("[SELFTEST]   crystals left {} - shooting at {} (shots {}) from {}", left, crystal.blockPosition().toShortString(),
                     this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString());
         }
+        if (this.towerGroundY != Integer.MIN_VALUE && !crystal.getUUID().equals(this.towerCrystal) && this.descendTower(this.level())) {
+            this.step = null;
+            return;
+        }
         Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
         double h = away.length();
         boolean stuck = this.noProgress();
         boolean los = this.bot.hasLineOfSight(crystal);
+        int shots = this.crystalShots.getOrDefault(crystal.getUUID(), 0);
+        if ((shots >= 6 || !los && this.crystalNoLos > 60) && h > 10.0 && h < 40.0 && this.bot.getEyeY() < crystal.getY() - 2.0
+                && this.kit().count(BRIDGE_BLOCK) > 0) {
+            // Like a player: build up a pole of blocks for a clear, short shot from up high.
+            this.towerCrystal = crystal.getUUID();
+            this.bot.getNavigation().stop();
+            this.bot.getLookControl().setLookAt(crystal);
+            this.pillarUp(this.level());
+            this.crystalNoLos = los ? 0 : 61;
+            this.step = null;
+            return;
+        }
         this.crystalNoLos = los ? 0 : this.crystalNoLos + 1;
         if (this.crystalNoLos > 600) {
             // No spot to see it from (caged, or the pillar is too tall): leave that one for later.
-            this.crystalShots.put(crystal.getUUID(), 12);
+            this.crystalShots.put(crystal.getUUID(), 99);
             this.crystalTarget = null;
             this.crystalNoLos = 0;
             this.step = null;
@@ -2517,11 +2537,59 @@ final class Gatherer {
         this.step = null;
     }
 
+    private int towerGroundY = Integer.MIN_VALUE;
+    private java.util.@Nullable UUID towerCrystal;
+    private @Nullable BlockPos pillarFrom;
+
+    /** One block up: jump and put a block where its feet were. */
+    private void pillarUp(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        if (this.towerGroundY == Integer.MIN_VALUE) {
+            this.towerGroundY = feet.getY();
+        }
+        if (this.bot.onGround() && this.pillarFrom == null) {
+            if (!level.getBlockState(feet.above(2)).getCollisionShape(level, feet.above(2)).isEmpty()) {
+                return; // no room above
+            }
+            this.pillarFrom = feet;
+            this.bot.getJumpControl().jump();
+            return;
+        }
+        if (this.pillarFrom != null && this.bot.getY() >= this.pillarFrom.getY() + 1.0) {
+            BlockPos spot = this.pillarFrom;
+            this.pillarFrom = null;
+            if (level.getBlockState(spot).canBeReplaced()) {
+                this.bridge(level, spot, false);
+            }
+        } else if (this.pillarFrom != null && this.bot.onGround()) {
+            this.pillarFrom = null; // landed without placing: try again
+        }
+    }
+
+    /** Down its own pole again, block by block (never jump off it). Returns true while doing so. */
+    private boolean descendTower(ServerLevel level) {
+        if (this.bot.getY() <= this.towerGroundY + 0.5) {
+            this.towerGroundY = Integer.MIN_VALUE;
+            this.towerCrystal = null;
+            return false;
+        }
+        this.bot.getNavigation().stop();
+        BlockPos below = this.bot.blockPosition().below();
+        if (!level.getBlockState(below).getCollisionShape(level, below).isEmpty()) {
+            this.breakBlock(level, below);
+        }
+        return true;
+    }
+
     /**
      * The dragon only lands on the exit fountain now and then; wait next to it, and hit the dragon
      * (head first) while it sits there.
      */
     private void doFightDragon(ServerLevel level) {
+        if (this.towerGroundY != Integer.MIN_VALUE && this.descendTower(level)) {
+            this.step = null;
+            return;
+        }
         net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon = null;
         for (var d : level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, this.bot.getBoundingBox().inflate(300.0))) {
             if (d.isAlive()) {
