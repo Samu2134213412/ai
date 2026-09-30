@@ -2080,8 +2080,8 @@ final class Gatherer {
                 if (coal != null && (coal.distSqr(this.bot.blockPosition()) < 20 * 20 || !this.underground())) {
                     return new Mine(Ore.COAL);
                 }
-                if (this.underground() && (this.speedrun || this.autonomous)) {
-                    return this.deepStep(); // (coal shows up in the tunnel walls)
+                if (this.underground() && (this.speedrun || this.autonomous) && this.bot.getY() > 0.0) {
+                    return this.deepStep(); // (coal shows up in the tunnel walls - above y 0; deeper it is rare)
                 }
             }
             return this.mine(Ore.LOG, depth);
