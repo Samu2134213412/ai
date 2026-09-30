@@ -2283,7 +2283,17 @@ final class Gatherer {
                 if (this.skyExit == null || !this.bot.getNavigation().moveTo(this.skyExit.getX() + 0.5, this.skyExit.getY(), this.skyExit.getZ() + 0.5, 1.1)
                         || this.noProgress()) {
                     this.skyExit = null;
-                    this.doDigUp(level);
+                    // Inside a mountain the way straight up is long: dig out towards the nearest
+                    // flank (where the surface is lowest, counting the way there), like a player.
+                    if (this.bot.tickCount - this.flankTick > 400 || this.flank == null) {
+                        this.flank = this.findFlank(level);
+                        this.flankTick = this.bot.tickCount;
+                    }
+                    if (this.flank != null) {
+                        this.tunnelTowards(level, this.flank);
+                    } else {
+                        this.doDigUp(level);
+                    }
                 }
                 this.step = null;
             }
@@ -2465,6 +2475,34 @@ final class Gatherer {
         }
         this.bot.huntTarget(prey);
         this.step = null;
+    }
+
+    private @Nullable BlockPos flank;
+    private int flankTick;
+
+    /** The surface spot that is cheapest to dig out to (blocks up plus blocks across), if better than straight up. */
+    private @Nullable BlockPos findFlank(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        int upHere = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, feet.getX(), feet.getZ()) - feet.getY();
+        BlockPos best = null;
+        double bestCost = upHere;
+        for (int r = 8; r <= 64; r += 8) {
+            for (int k = 0; k < 16; k++) {
+                double a = Math.PI * 2.0 * k / 16.0;
+                int x = feet.getX() + (int) Math.round(Math.cos(a) * r);
+                int z = feet.getZ() + (int) Math.round(Math.sin(a) * r);
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                if (!level.getFluidState(new BlockPos(x, y - 1, z)).isEmpty()) {
+                    continue;
+                }
+                double cost = Math.max(0, y - feet.getY()) + r * 0.7;
+                if (cost < bestCost * 0.8) {
+                    bestCost = cost;
+                    best = new BlockPos(x, y, z);
+                }
+            }
+        }
+        return best;
     }
 
     private @Nullable BlockPos skyExit;
