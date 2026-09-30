@@ -1647,6 +1647,11 @@ final class Gatherer {
                 best = this.bot.distanceToSqr(e);
             }
         }
+        if (prey == null && this.inNether() && (this.netherPortal != null || this.nearest(Ore.PORTAL) != null)) {
+            // No cows in the nether: back through the portal to hunt, then on with the rest.
+            this.doUsePortal(this.level(), false);
+            return;
+        }
         if (prey == null) {
             if (this.level() instanceof ServerLevel sl && sl.dimension() == net.minecraft.world.level.Level.OVERWORLD
                     && sl.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, this.bot.getBlockX(), this.bot.getBlockZ())
@@ -2015,6 +2020,22 @@ final class Gatherer {
             return;
         }
         Vec3 center = Vec3.atBottomCenterOf(portal);
+        if (this.bot.position().distanceToSqr(center) > 40.0 * 40.0) {
+            // Far away: towards it in legs (a path only reaches so far), tunnelling where there is no way.
+            Vec3 to = center.subtract(this.bot.position());
+            Vec3 leg = this.bot.position().add(to.normalize().scale(32.0));
+            if ((this.bot.getNavigation().isDone() || this.noProgress())
+                    && !this.bot.getNavigation().moveTo(leg.x, leg.y, leg.z, 1.1)) {
+                this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
+                if (to.y > 3.0) {
+                    this.doDigUp(level);
+                } else {
+                    this.doDig(level, false);
+                }
+            }
+            this.step = null;
+            return;
+        }
         if (this.bot.position().distanceToSqr(center) > 2.0) {
             this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1);
             if (this.bot.position().distanceToSqr(center) < 9.0) {
