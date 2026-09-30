@@ -2249,6 +2249,9 @@ final class Gatherer {
                 // A way out on foot first (a cave mouth, the edge of an overhang); dig only without one.
                 if (this.skyExit == null || this.bot.tickCount - this.skyExitTick > 200) {
                     this.skyExit = this.findSkyExit(level);
+                    if (this.skyExit == null && this.stairTop != null && this.stairTop.distSqr(this.bot.blockPosition()) < 256 * 256) {
+                        this.skyExit = this.stairTop; // back up the staircase it dug on the way down
+                    }
                     this.skyExitTick = this.bot.tickCount;
                 }
                 if (this.skyExit == null || !this.bot.getNavigation().moveTo(this.skyExit.getX() + 0.5, this.skyExit.getY(), this.skyExit.getZ() + 0.5, 1.1)
@@ -2258,7 +2261,12 @@ final class Gatherer {
                 }
                 this.step = null;
             }
-            case Descend d -> this.doDig(level, true);
+            case Descend d -> {
+                if (!this.underground() && level.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+                    this.stairTop = this.bot.blockPosition(); // (the way back up: its own staircase)
+                }
+                this.doDig(level, true);
+            }
             case StripMine sm -> this.doDig(level, false);
             case FillWater fw -> this.doFillWater(level);
             case MakeObsidian mo -> this.doMakeObsidian(level);
@@ -2430,6 +2438,7 @@ final class Gatherer {
     }
 
     private @Nullable BlockPos skyExit;
+    private @Nullable BlockPos stairTop;
     private int skyExitTick;
 
     /** Open sky within reach at about this height (a cave mouth, the edge of an overhang). */
@@ -2713,8 +2722,18 @@ final class Gatherer {
             return false;
         }
         ItemStack block = ItemStack.EMPTY;
+        int pickaxes = 0;
         for (ItemStack st : this.kit().items()) {
-            if (BRIDGE_BLOCK.test(st)) {
+            if (pickaxeTier(st.getItem()) > 0) {
+                pickaxes++;
+            }
+        }
+        // (The last three cobblestones are the next pickaxe - not for building. Without a pickaxe
+        // nothing it digs drops anything.)
+        int reserve = pickaxes <= 1 ? 3 : 0;
+        int cobble = this.kit().count(Res.COBBLE.match);
+        for (ItemStack st : this.kit().items()) {
+            if (BRIDGE_BLOCK.test(st) && (!Res.COBBLE.match.test(st) || cobble > reserve)) {
                 block = st;
                 break;
             }
