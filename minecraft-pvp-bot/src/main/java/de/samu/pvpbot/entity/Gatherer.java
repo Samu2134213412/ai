@@ -936,6 +936,18 @@ final class Gatherer {
     }
 
     /** In a pit: the ground two blocks away is higher than its head on at least three sides. */
+    /** Drops on all four sides (standing on a pillar or a thin ledge). */
+    private boolean onPillar(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos n = feet.relative(d).below();
+            if (!level.getBlockState(n).getCollisionShape(level, n).isEmpty() || !level.getBlockState(n.below()).getCollisionShape(level, n.below()).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Solid blocks on all four sides at its feet (a hole in a tower, a shaft): only up is out. */
     private boolean walledIn(ServerLevel level) {
         BlockPos feet = this.bot.blockPosition();
@@ -1021,6 +1033,10 @@ final class Gatherer {
             }
             if (this.bot.isInWater()) {
                 this.climbOutOfWater(level);
+            } else if (this.kit().count(BRIDGE_BLOCK) == 0 && this.onPillar(level)
+                    && !level.getBlockState(this.bot.blockPosition().below(2)).getCollisionShape(level, this.bot.blockPosition().below(2)).isEmpty()) {
+                // On a pillar with nothing to bridge with: down it block by block (and keep the blocks).
+                this.breakBlock(level, this.bot.blockPosition().below());
             } else if (this.inPit(level) || this.walledIn(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
                 this.doDigUp(level);
             } else {
@@ -1290,6 +1306,12 @@ final class Gatherer {
             return s != null ? s : new Explore("Kies");
         }
         this.goalLabel = "das Netherportal";
+        if (this.portalBase == null && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
+                && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 3.0) {
+            // Down in the caves water, lava and gravel get in the way: the portal goes up top.
+            return new ClimbUp("Platz fürs Portal an der Oberfläche");
+        }
         return new BuildPortal();
     }
 
@@ -2136,6 +2158,11 @@ final class Gatherer {
             }
         }
         for (BlockPos p : inside) {
+            if (!level.getFluidState(p).isEmpty() && this.kit().count(BRIDGE_BLOCK) > 0) {
+                // Water or lava in the way: block it off first (then that block is dug out again).
+                this.bridge(level, p, false);
+                return;
+            }
             if (!level.getBlockState(p).isAir() && !level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
                 this.bot.lookAtBlock(p);
                 this.breakBlock(level, p);
