@@ -1950,6 +1950,37 @@ final class Gatherer {
                 }
             }
         }
+        for (BlockPos p : this.known.getOrDefault(Ore.FORTRESS, List.of())) {
+            if (p.getY() >= 45) {
+                this.fortressCells.add(cellKey(p));
+            }
+        }
+        if (goal == null && !this.fortressCells.isEmpty()) {
+            // Every part of the fortress it has seen is done: on along its halls and bridges, to the
+            // places right next to the parts it has seen (a bridge goes on there, or it is lava).
+            double bestDist = Double.MAX_VALUE;
+            for (long cell : this.fortressCells) {
+                BlockPos c = BlockPos.of(cell);
+                for (Direction d : Direction.Plane.HORIZONTAL) {
+                    BlockPos n = c.relative(d);
+                    long key = BlockPos.asLong(n.getX(), n.getY(), n.getZ());
+                    if (this.fortressVisited.contains(key) || this.fortressCells.contains(key)) {
+                        continue;
+                    }
+                    BlockPos center = new BlockPos(n.getX() * 8 + 4, n.getY() * 8 + 2, n.getZ() * 8 + 4);
+                    double dist = this.bot.blockPosition().distSqr(center);
+                    if (dist < bestDist && !this.blacklist.contains(center)) {
+                        goal = center;
+                        bestDist = dist;
+                    }
+                }
+            }
+        }
+        if (goal == null && this.kit().count(BRIDGE_BLOCK) < 16 && this.mineNetherrack(level)) {
+            // Out of blocks to bridge lava with: netherrack from the walls around (like a player).
+            this.step = null;
+            return;
+        }
         if (goal != null && this.bot.blockPosition().distSqr(goal) <= 25 && !level.getBlockState(goal).is(net.minecraft.world.level.block.Blocks.SPAWNER)) {
             // Close enough to see that part of the fortress: next part.
             this.fortressVisited.add(cellKey(goal));
@@ -2047,6 +2078,37 @@ final class Gatherer {
     private int digStateLog;
     private int sidewaysTicks;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
+    private final java.util.Set<Long> fortressCells = new java.util.HashSet<>();
+    private int netherrackTicks;
+
+    /** Mines a netherrack block it can see within reach (not the floor it stands on). */
+    private boolean mineNetherrack(ServerLevel level) {
+        if (++this.netherrackTicks > 1200) {
+            if (this.netherrackTicks > 2400) {
+                this.netherrackTicks = 0; // (a while exploring, then try again)
+            }
+            return false;
+        }
+        BlockPos feet = this.bot.blockPosition();
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(feet.offset(-3, 0, -3), feet.offset(3, 2, 3))) {
+            if (!level.getBlockState(p).is(Blocks.NETHERRACK) || this.nearLava(level, p) || !this.seesBlock(level, p)) {
+                continue;
+            }
+            double d = this.bot.getEyePosition().distanceToSqr(Vec3.atCenterOf(p));
+            if (d < bestDist && d < 4.0 * 4.0) {
+                best = p.immutable();
+                bestDist = d;
+            }
+        }
+        if (best == null) {
+            return false;
+        }
+        this.bot.getNavigation().stop();
+        this.breakBlock(level, best);
+        return true;
+    }
     private int spiralStuck;
     private Direction spiralDir = Direction.NORTH;
 
