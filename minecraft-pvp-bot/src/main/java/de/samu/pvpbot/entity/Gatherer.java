@@ -539,6 +539,7 @@ final class Gatherer {
     }
 
     private int pearlSearchTicks;
+    private int spawnerRetryTick;
     private int overworldSpawnTicks;
     private int spawnerDelay = 20;
     private @Nullable BlockPos activeSpawner;
@@ -1435,6 +1436,7 @@ final class Gatherer {
         double bestDist = Double.MAX_VALUE;
         for (Entity e : this.level().getEntities(this.bot, this.bot.getBoundingBox().inflate(32.0))) {
             if (e.getType() == type && e instanceof LivingEntity living && living.isAlive() && this.bot.getSensing().hasLineOfSight(living)
+                    && this.ignoredMobs.getOrDefault(e.getUUID(), 0) < this.bot.tickCount
                     && this.bot.distanceToSqr(e) < bestDist) {
                 best = living;
                 bestDist = this.bot.distanceToSqr(e);
@@ -2117,9 +2119,32 @@ final class Gatherer {
             // Blazes set you on fire: fire resistance first, like a player would.
             this.drinkFireResistance(this.level());
         }
+        // Not hurting it for 20 s (out of reach behind a wall, up in the air): leave that one for a minute.
+        if (!mob.getUUID().equals(this.huntMob)) {
+            this.huntMob = mob.getUUID();
+            this.huntTicks = 0;
+            this.huntHealth = mob.getHealth();
+        } else if (mob.getHealth() < this.huntHealth) {
+            this.huntHealth = mob.getHealth();
+            this.huntTicks = 0;
+        } else if (++this.huntTicks > 400) {
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   hunt: cannot get at {} at {} from {} - leaving it for a minute", type.toShortString(),
+                        mob.blockPosition().toShortString(), this.bot.blockPosition().toShortString());
+            }
+            this.ignoredMobs.put(mob.getUUID(), this.bot.tickCount + 1200);
+            this.huntMob = null;
+            this.step = null;
+            return;
+        }
         this.bot.huntTarget(mob);
         this.step = null;
     }
+
+    private java.util.@Nullable UUID huntMob;
+    private int huntTicks;
+    private float huntHealth;
+    private final java.util.Map<java.util.UUID, Integer> ignoredMobs = new java.util.HashMap<>();
 
     /**
      * Nether exploring without x-ray: walk (or tunnel) in one direction for a long way, turning away
@@ -2157,7 +2182,7 @@ final class Gatherer {
         // (The spawner and the blazes only while it still needs rods; after that: endermen.)
         boolean wantRods = this.kit().count(Res.BLAZE_ROD.match) * 2 + this.kit().count(Res.BLAZE_POWDER.match)
                 < EYES_WANTED - this.kit().count(Res.EYE.match);
-        BlockPos goal = wantRods ? this.nearest(Ore.SPAWNER) : null;
+        BlockPos goal = wantRods && this.bot.tickCount > this.spawnerRetryTick ? this.nearest(Ore.SPAWNER) : null;
         if (goal == null && wantRods) {
             // A blaze nearby can be heard (like a player hears them breathing): go that way.
             var blaze = this.level().getNearestEntity(net.minecraft.world.entity.monster.Blaze.class,
@@ -2268,8 +2293,13 @@ final class Gatherer {
                         this.bot.blockPosition().toShortString(), String.format("%.2f", this.bot.getX()), String.format("%.2f", this.bot.getY()),
                         String.format("%.2f", this.bot.getZ()), this.bot.onGround(), level.getBlockState(f0).getBlock().getName().getString(),
                         level.getBlockState(f0.below()).getBlock().getName().getString(), level.getBlockState(f0.above(2)).getBlock().getName().getString(), around);
-                this.blacklist.add(goal);
-                this.fortressVisited.add(cellKey(goal));
+                if (level.getBlockState(goal).is(Blocks.SPAWNER)) {
+                    // (A spawner stays worth it: try again in a minute, from wherever it is then.)
+                    this.spawnerRetryTick = this.bot.tickCount + 1200;
+                } else {
+                    this.blacklist.add(goal);
+                    this.fortressVisited.add(cellKey(goal));
+                }
                 this.netherGoal = null;
                 this.step = null;
                 return;
