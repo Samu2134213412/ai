@@ -538,6 +538,8 @@ final class Gatherer {
         this.forcedChunks.addAll(ours);
     }
 
+    private int pearlSearchTicks;
+    private int overworldSpawnTicks;
     private int spawnerDelay = 20;
     private @Nullable BlockPos activeSpawner;
     private int naturalSpawnTicks;
@@ -603,6 +605,30 @@ final class Gatherer {
                         level.levelEvent(2004, spawner, 0); // the spawner's flame puff
                         blaze.spawnAnim();
                         around++;
+                    }
+                }
+            }
+        }
+        // Endermen at night in the overworld (they are about 2 % of the monsters spawning in the dark).
+        if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD && ++this.overworldSpawnTicks >= 200) {
+            this.overworldSpawnTicks = 0;
+            long time = level.getDayTime() % 24000L;
+            if (time > 13000L && time < 23000L && !level.hasNearbyAlivePlayer(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 128.0)
+                    && level.getEntities(EntityTypes.ENDERMAN, this.bot.getBoundingBox().inflate(64.0), e -> e.isAlive()).size() < 3
+                    && this.bot.getRandom().nextInt(4) == 0) {
+                double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
+                double dist = 24.0 + this.bot.getRandom().nextDouble() * 24.0;
+                int x = Mth.floor(this.bot.getX() + Math.cos(angle) * dist);
+                int z = Mth.floor(this.bot.getZ() + Math.sin(angle) * dist);
+                BlockPos feet = new BlockPos(x, level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), z);
+                if (level.getBlockState(feet.below()).isFaceSturdy(level, feet.below(), Direction.UP) && level.getFluidState(feet).isEmpty()
+                        && level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, feet) == 0) {
+                    var enderman = EntityTypes.ENDERMAN.create(level, net.minecraft.world.entity.EntitySpawnReason.NATURAL);
+                    if (enderman != null) {
+                        enderman.snapTo(x + 0.5, feet.getY(), z + 0.5, this.bot.getRandom().nextFloat() * 360.0F, 0.0F);
+                        if (level.noCollision(enderman)) {
+                            level.addFreshEntity(enderman);
+                        }
                     }
                 }
             }
@@ -1224,7 +1250,15 @@ final class Gatherer {
         }
         if (rodsNeeded > 0 || pearlsNeeded > 0) {
             if (!this.inNether()) {
+                if (rodsNeeded <= 0) {
+                    // Only pearls missing: endermen come out at night up here, like for a player.
+                    return new Explore("Endermen (Enderperlen)");
+                }
                 return new UsePortal(true);
+            }
+            if (rodsNeeded <= 0 && this.nearest(Ore.WARPED) == null && ++this.pearlSearchTicks > 6000) {
+                // No warped forest in sight after a good while: back to the overworld for them.
+                return new UsePortal(false);
             }
             if (rodsNeeded > 0) {
                 if (this.visibleMob(EntityTypes.BLAZE) != null) {
