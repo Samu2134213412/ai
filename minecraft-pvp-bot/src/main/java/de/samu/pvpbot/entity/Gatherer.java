@@ -3094,7 +3094,7 @@ final class Gatherer {
             // Nothing to build with: just walk around for a clear shot.
             this.crystalNoLos++;
             if (this.crystalNoLos > 600) {
-                this.giveUpCrystal(crystal);
+                this.giveUpCrystal(crystal, "no blocks, no clear shot");
                 return;
             }
             Vec3 spot = crystal.position().add((h < 1.0 ? new Vec3(1.0, 0.0, 0.0) : away.normalize()).scale(30.0));
@@ -3111,7 +3111,7 @@ final class Gatherer {
             this.poleFor = crystal.getUUID();
             this.poleWalk = 0;
             if (this.poleSpot == null) {
-                this.giveUpCrystal(crystal);
+                this.giveUpCrystal(crystal, "no pole spot");
                 return;
             }
         }
@@ -3122,7 +3122,7 @@ final class Gatherer {
             if (++this.poleWalk > 900) {
                 // Cannot get there: another spot next time.
                 this.poleSpot = null;
-                this.giveUpCrystal(crystal);
+                this.giveUpCrystal(crystal, "cannot reach pole spot");
                 return;
             }
             if (dx * dx + dz * dz < 3.0 * 3.0) {
@@ -3151,7 +3151,7 @@ final class Gatherer {
         } else if (++this.poleStall > 400) {
             // Not getting any higher (no room above, or out of blocks).
             this.poleStall = 0;
-            this.giveUpCrystal(crystal);
+            this.giveUpCrystal(crystal, "not getting higher on pole");
             return;
         }
         this.bot.getLookControl().setLookAt(crystal);
@@ -3203,7 +3203,7 @@ final class Gatherer {
                         this.bot.blockPosition().toShortString());
             }
             if (!this.cageOpened.contains(crystal.getUUID())) {
-                this.giveUpCrystal(crystal);
+                this.giveUpCrystal(crystal, "cage not opened");
             }
             this.poleSpot = null;
             this.poleDone = true;
@@ -3223,7 +3223,7 @@ final class Gatherer {
         if (los && (high || this.poleStall > 100)) {
             this.shootCrystal(crystal);
             if (this.poleShots > 10) {
-                this.giveUpCrystal(crystal);
+                this.giveUpCrystal(crystal, "missed 10 shots from pole");
             }
             return;
         }
@@ -3232,7 +3232,7 @@ final class Gatherer {
             return;
         }
         // Up high and still nothing to see: leave that one.
-        this.giveUpCrystal(crystal);
+        this.giveUpCrystal(crystal, "up high, still no sight");
     }
 
     private void shootCrystal(net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal) {
@@ -3246,10 +3246,11 @@ final class Gatherer {
         }
     }
 
-    private void giveUpCrystal(net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal) {
+    private void giveUpCrystal(net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal, String why) {
         if (PvpBotEntity.DEBUG) {
-            PvpBotMod.LOGGER.info("[SELFTEST]   gives up on crystal at {} for now (shots {}, at {})", crystal.blockPosition().toShortString(),
-                    this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString());
+            PvpBotMod.LOGGER.info("[SELFTEST]   gives up on crystal at {} for now: {} (shots {}, at {}, blocks {}, above {})", crystal.blockPosition().toShortString(),
+                    why, this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString(), this.kit().count(BRIDGE_BLOCK),
+                    this.level().getBlockState(this.bot.blockPosition().above(2)).getBlock().getName().getString());
         }
         this.crystalShots.put(crystal.getUUID(), 99);
         this.crystalTarget = null;
