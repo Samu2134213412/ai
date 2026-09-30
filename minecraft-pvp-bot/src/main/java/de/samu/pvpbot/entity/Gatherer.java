@@ -3931,7 +3931,7 @@ final class Gatherer {
         if (list.contains(p)) {
             return;
         }
-        int cap = ore == Ore.STRONGHOLD ? 2048 : ore == Ore.FORTRESS ? 512 : 128;
+        int cap = ore == Ore.STRONGHOLD ? 6000 : ore == Ore.FORTRESS ? 512 : 128;
         if (list.size() >= cap) {
             list.remove(0);
         }
