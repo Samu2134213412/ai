@@ -1311,6 +1311,11 @@ final class Gatherer {
      * The last safety net (called by the entity, whatever goal runs): three minutes without moving
      * on or anything new in the bag. Drops the plan and explores away for half a minute.
      */
+    /** Breaking a block right now (by hand that takes a while: slow work, not being stuck). */
+    boolean busyBreaking() {
+        return this.breaking != null && this.breakProgress > 0;
+    }
+
     void forceFree() {
         ServerLevel level = this.level();
         if (PvpBotEntity.DEBUG) {
@@ -2610,7 +2615,9 @@ final class Gatherer {
             // No path at all (in a pit, walled in by a cliff): make one, like a player - dig up out
             // of a hole, otherwise tunnel through towards the target (bridging gaps on the way).
             BlockPos goal = BlockPos.containing(this.exploreTarget);
-            if (this.inPit(sl) || goal.getY() > this.bot.getBlockY() + 3) {
+            boolean sky = sl.canSeeSky(BlockPos.containing(this.bot.getEyePosition()));
+            // Up only out of an open pit (or to a target far above); shut in rock the way sideways is shorter.
+            if (sky && this.inPit(sl) || goal.getY() > this.bot.getBlockY() + 3) {
                 this.doDigUp(sl);
             } else {
                 this.tunnelTowards(sl, goal);

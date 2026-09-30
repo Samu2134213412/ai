@@ -706,7 +706,7 @@ public class PvpBotEntity extends PathfinderMob {
                 kitCount += st.getCount() * 31 + net.minecraft.core.registries.BuiltInRegistries.ITEM.getId(st.getItem());
             }
             if (this.hardPos == null || this.position().distanceTo(this.hardPos) > 6.0 || kitCount != this.hardKit
-                    || this.getTarget() != null || this.gatherer.gameBeaten() || this.inEnd()) {
+                    || this.getTarget() != null || this.gatherer.gameBeaten() || this.inEnd() || this.gatherer.busyBreaking()) {
                 this.hardPos = this.position();
                 this.hardKit = kitCount;
                 this.hardSeconds = 0;
