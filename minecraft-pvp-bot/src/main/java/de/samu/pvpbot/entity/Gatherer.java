@@ -4412,8 +4412,13 @@ final class Gatherer {
             if (ore != Ore.LAVA && ore != Ore.OBSIDIAN && ore != Ore.WATER && this.lavaNear(p, ore == Ore.DIAMOND ? 1 : 2)) {
                 continue; // (next to lava: one wrong step and everything is gone)
             }
-            // Exposed blocks are much cheaper to reach than buried ones.
-            double score = this.bot.blockPosition().distSqr(p) * (this.isExposed(p) ? 1.0 : 3.0);
+            // Exposed blocks are much cheaper to reach than buried ones - and buried ones far off are
+            // not worth tunnelling to at all (the way there digs up more of the same).
+            boolean exposed = this.isExposed(p);
+            if (!exposed && ore != Ore.DIAMOND && this.bot.blockPosition().distSqr(p) > 16 * 16) {
+                continue;
+            }
+            double score = this.bot.blockPosition().distSqr(p) * (exposed ? 1.0 : 3.0);
             if (score < bestScore) {
                 best = p;
                 bestScore = score;
