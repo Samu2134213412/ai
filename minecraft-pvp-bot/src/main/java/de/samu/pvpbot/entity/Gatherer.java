@@ -2600,6 +2600,12 @@ final class Gatherer {
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
         boolean moving = this.bot.getNavigation().moveTo(this.exploreTarget.x, this.exploreTarget.y, this.exploreTarget.z, 1.1);
+        var path = this.bot.getNavigation().getPath();
+        if (moving && path != null && !path.canReach() && path.getEndNode() != null
+                && path.getEndNode().asBlockPos().distSqr(this.bot.blockPosition()) <= 2) {
+            // A "path" that ends where it stands (shut in rock): no way at all.
+            moving = false;
+        }
         if (!moving && (this.speedrun || this.autonomous) && this.level() instanceof ServerLevel sl) {
             // No path at all (in a pit, walled in by a cliff): make one, like a player - dig up out
             // of a hole, otherwise tunnel through towards the target (bridging gaps on the way).
