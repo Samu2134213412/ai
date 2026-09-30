@@ -72,6 +72,14 @@ public class PvpBotMod implements ModInitializer {
             }
         });
 
+        // Blaze rods only drop for kills by a player; the bot plays like one, so its kills count too.
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+            if (entity instanceof net.minecraft.world.entity.monster.Blaze && source.getEntity() instanceof PvpBotEntity
+                    && entity.level() instanceof ServerLevel level && entity.getRandom().nextInt(2) == 0) {
+                entity.spawnAtLocation(level, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.BLAZE_ROD));
+            }
+        });
+
         // The shared combat memory: loaded with the server, saved regularly and on shutdown.
         ServerLifecycleEvents.SERVER_STARTED.register(server ->
                 BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-memory.json")));
