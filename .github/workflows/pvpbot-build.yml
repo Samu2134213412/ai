@@ -63,6 +63,8 @@ jobs:
           echo "===== RESULT ====="
           grep -E "\[SELFTEST\] (PASS|FAIL)|DONE" stage.log || true
           grep -q "\[SELFTEST\] DONE" stage.log
+          # (The job shows red when the bot did not make it, so the result is visible at a glance.)
+          grep -q "\[SELFTEST\] PASS" stage.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
