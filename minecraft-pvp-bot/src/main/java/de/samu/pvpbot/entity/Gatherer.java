@@ -355,6 +355,8 @@ final class Gatherer {
     private @Nullable Vec3 eyeDir;
     private @Nullable Vec3 legStart;
     private boolean eyeWentDown;
+    /** Where the eye of ender went down: the stronghold is under here, the search stays close. */
+    private @Nullable BlockPos eyeDownAt;
     private int legTicks;
     private @Nullable BlockPos lastSafe;
     private double legBest;
@@ -1322,7 +1324,7 @@ final class Gatherer {
             if (this.nearest(Ore.STRONGHOLD) != null) {
                 return new ExploreStronghold();
             }
-            return this.bot.getY() > -20.0 ? new Descend() : new StripMine();
+            return this.bot.getY() > 0.0 ? new Descend() : new StripMine();
         }
         if (kit.count(Res.EYE.match) == 0) {
             this.goalLabel = "neue Enderaugen (alle verbraucht)";
@@ -1805,6 +1807,13 @@ final class Gatherer {
         }
         this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
+        if (this.eyeWentDown && this.eyeDownAt != null && this.speedrun && this.stage2Done
+                && Math.abs(feet.getX() - this.eyeDownAt.getX()) + Math.abs(feet.getZ() - this.eyeDownAt.getZ()) > 32) {
+            // Wandered off: the stronghold is under the spot where the eye went down - back there.
+            int dx = this.eyeDownAt.getX() - feet.getX();
+            int dz = this.eyeDownAt.getZ() - feet.getZ();
+            this.digDir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? Direction.EAST : Direction.WEST) : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
+        }
         BlockPos front = feet.relative(this.digDir);
         if (PvpBotEntity.DEBUG && ++this.digStateLog % 200 == 0) {
             PvpBotMod.LOGGER.info("[SELFTEST]   dig: at {} dir {} down {} front {} / {} blocked {} actionTicks {}", feet.toShortString(), this.digDir, down,
@@ -2504,6 +2513,7 @@ final class Gatherer {
         Vec3 toTarget = Vec3.atCenterOf(target).subtract(this.bot.position()).multiply(1.0, 0.0, 1.0);
         if (toTarget.length() < 12.0) {
             this.eyeWentDown = true;
+            this.eyeDownAt = this.bot.blockPosition(); // (where it saw the eye drop, like a player)
             this.bot.tellOwner("§5Das Enderauge fliegt nach unten – die Festung ist hier drunter!", true);
         } else {
             Vec3 dir = toTarget.normalize();
