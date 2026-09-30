@@ -1772,7 +1772,10 @@ final class Gatherer {
         }
         for (BlockPos p : toClear) {
             BlockState state = level.getBlockState(p);
-            boolean danger = this.nearLava(level, p) || !level.getFluidState(p).isEmpty() || state.getDestroySpeed(level, p) < 0.0F;
+            // (Air next to lava is fine - lava under the next step gets bridged below; digging out a
+            // block that holds lava back is not.)
+            boolean danger = !state.getCollisionShape(level, p).isEmpty() && this.nearLava(level, p)
+                    || !level.getFluidState(p).isEmpty() || state.getDestroySpeed(level, p) < 0.0F;
             if (danger) {
                 // Lava, water or bedrock ahead: take another direction. Lava right behind the next
                 // block is noticed (that is where obsidian comes from).
