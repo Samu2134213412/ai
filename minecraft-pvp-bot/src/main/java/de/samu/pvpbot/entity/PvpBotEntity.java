@@ -588,6 +588,35 @@ public class PvpBotEntity extends PathfinderMob {
 
     // ------------------------------------------------------------------ server tick
 
+    /**
+     * While fighting: never step off a ledge into a deep drop or lava (dodging a blaze on a fortress
+     * bridge). Like a player who sneaks at the edge: stop instead.
+     */
+    private void guardLedge(ServerLevel level) {
+        if (this.getTarget() == null || !this.onGround() || this.isFallFlying() || !this.gatherer.isAutonomousMode()) {
+            return;
+        }
+        Vec3 v = this.getDeltaMovement();
+        Vec3 dir = new Vec3(v.x, 0.0, v.z);
+        if (dir.lengthSqr() < 1.0E-4) {
+            return;
+        }
+        Vec3 ahead = this.position().add(dir.normalize().scale(0.8));
+        BlockPos col = BlockPos.containing(ahead.x, this.getY() - 0.5, ahead.z);
+        int depth = 0;
+        while (depth < 4 && level.getBlockState(col.below(depth)).getCollisionShape(level, col.below(depth)).isEmpty()
+                && level.getFluidState(col.below(depth)).isEmpty()) {
+            depth++;
+        }
+        boolean lava = level.getFluidState(col.below(depth)).is(net.minecraft.tags.FluidTags.LAVA)
+                || level.getFluidState(col.below(Math.max(0, depth - 1))).is(net.minecraft.tags.FluidTags.LAVA);
+        if (depth >= 4 || lava) {
+            this.setDeltaMovement(0.0, v.y, 0.0);
+            this.getNavigation().stop();
+            this.getMoveControl().setWantedPosition(this.getX(), this.getY(), this.getZ(), 0.0);
+        }
+    }
+
     @Override
     protected void customServerAiStep(ServerLevel level) {
         super.customServerAiStep(level);
@@ -595,6 +624,7 @@ public class PvpBotEntity extends PathfinderMob {
 
         this.gatherer.keepChunksLoaded();
         this.gatherer.reflexActive = this.gatherer.reflexes();
+        this.guardLedge(level);
         if (this.windCooldown > 0) this.windCooldown--;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
         if (this.potionCooldown > 0) this.potionCooldown--;
