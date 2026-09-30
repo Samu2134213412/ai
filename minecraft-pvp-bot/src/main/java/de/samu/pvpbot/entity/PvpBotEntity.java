@@ -1877,7 +1877,8 @@ public class PvpBotEntity extends PathfinderMob {
             // Sword, axe, trident – or fists when nothing else is left.
             out.add(Pattern.BLADE_MELEE);
         }
-        if (!this.bow().isEmpty() && this.hasArrows() && sees && hDist > 2.5) {
+        // (Arrows never hit an enderman: it teleports away from them.)
+        if (!this.bow().isEmpty() && this.hasArrows() && sees && hDist > 2.5 && target.getType() != EntityTypes.ENDERMAN) {
             out.add(Pattern.BOW_SNIPE);
         }
         if (!flying && this.wantsMace() && this.kit.has(Role.WIND_CHARGE) && this.onGround() && this.windCooldown == 0 && sees
