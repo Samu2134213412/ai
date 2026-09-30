@@ -179,6 +179,11 @@ final class SelfTest {
         ServerLevel level = server.overworld();
         int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, 0, 0);
         origin = new BlockPos(0, y, 0);
+        if (System.getProperty("pvpbot.stagetest") != null) {
+            // "Beat the game" runs in an untouched world: nothing built, nothing forced.
+            PvpBotMod.LOGGER.info(TAG + "origin " + origin);
+            return;
+        }
         for (int cx = -6; cx <= 6; cx++) {
             for (int cz = -6; cz <= 6; cz++) {
                 level.setChunkForced(cx, cz, true);
@@ -318,32 +323,6 @@ final class SelfTest {
             }
             PvpBotMod.LOGGER.info(TAG + "  (info) bot at " + bot.blockPosition().toShortString() + ", spawners near: " + found + ", blazes within 96: " + blazes);
         }
-        if (index >= 0 && bot != null && ticks % 3600 == 600 && SCENARIOS.get(index).name().startsWith("Etappe 4")
-                && bot.level() instanceof ServerLevel end) {
-            // Without a player the dragon hardly ever lands; in a real fight it does - make it land now and then.
-            for (var dragon : end.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class, bot.getBoundingBox().inflate(300.0))) {
-                var phase = dragon.getPhaseManager().getCurrentPhase();
-                boolean frozen = dragonLastPos != null && dragon.position().distanceTo(dragonLastPos) < 0.5 && !phase.isSitting();
-                dragonLastPos = dragon.position();
-                if (frozen) {
-                    // A summoned dragon sometimes loses its flight path and just hangs there: start it again.
-                    PvpBotMod.LOGGER.info(TAG + "  (test) dragon hung in " + phase.getPhase() + " at " + dragon.blockPosition().toShortString()
-                            + " - restarting its flight (tickCount " + dragon.tickCount + ", noAi " + dragon.isNoAi() + ", entity ticking "
-                            + end.isPositionEntityTicking(dragon.blockPosition()) + ", removed " + dragon.isRemoved() + ", same level " + (dragon.level() == end)
-                            + ", dragons in level " + end.getDragons().size() + ", forced chunks " + end.getForceLoadedChunks().size() + ", bot pos ticking " + end.isPositionEntityTicking(bot.blockPosition()) + ")");
-                    // Its chunk is not ticking here (no player around): bring it back over the island.
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            end.setChunkForced((dragon.getBlockX() >> 4) + dx, (dragon.getBlockZ() >> 4) + dz, true);
-                        }
-                    }
-                    dragon.snapTo(0.5, 85.0, 0.5, dragon.getYRot(), 0.0F);
-                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN);
-                } else if (phase.getPhase() == net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN) {
-                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.LANDING);
-                }
-            }
-        }
         ServerLevel level = server.overworld();
         if (index < 0 || finished()) {
             if (index >= 0) {
@@ -366,6 +345,9 @@ final class SelfTest {
             return;
         }
         ticks++;
+        if (SCENARIOS.get(index).name().startsWith("Etappe")) {
+            TestWatcher.follow(bot);
+        }
         if (bot.getY() - origin.getY() > maxHeight) {
             maxHeight = (int) (bot.getY() - origin.getY());
         }
@@ -427,7 +409,7 @@ final class SelfTest {
                 }
             }
             int sz = sz0;
-            level.setChunkForced(sx >> 4, sz >> 4, true);
+            level.getChunk(sx >> 4, sz >> 4); // loaded (not forced) to find the ground
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, sx, sz);
             bot.snapTo(sx + 0.5, sy, sz + 0.5, 0.0F, 0.0F);
             level.getServer().getCommands().performPrefixedCommand(level.getServer().createCommandSourceStack(), "tick sprint " + scenario.timeoutTicks());
@@ -441,51 +423,8 @@ final class SelfTest {
         }
         level.addFreshEntity(bot);
         spawned.add(bot);
-        if (stage && scenario.name().startsWith("Etappe 2")) {
-            // Start next to a lit portal (what stage 1 leaves behind), on a flat patch so it can walk in.
-            BlockPos base = bot.blockPosition().offset(2, -1, 0);
-            for (BlockPos p : BlockPos.betweenClosed(base.offset(-3, 0, -2), base.offset(3, 6, 5))) {
-                level.setBlock(p, p.getY() == base.getY() ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 18);
-            }
-            // Frame first, then the portal blocks (a portal block next to an unfinished frame breaks).
-            for (int pass = 0; pass < 2; pass++) {
-                for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < 5; j++) {
-                        BlockPos p = base.offset(0, j, i);
-                        boolean frame = i == 0 || i == 3 || j == 0 || j == 4;
-                        if (frame == (pass == 0)) {
-                            level.setBlock(p, frame ? Blocks.OBSIDIAN.defaultBlockState()
-                                    : Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
-                                    net.minecraft.core.Direction.Axis.Z), 18);
-                        }
-                    }
-                }
-            }
-            bot.startAtStage2(base.offset(0, 1, 1));
-        } else if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
+        if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
             bot.startAtStage3();
-            if (end) {
-                // No player here: keep the island ticking (the dragon freezes in unticked chunks). A real
-                // fight does this with the dragon ticket around the island once a player is there.
-                level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.DRAGON, new net.minecraft.world.level.ChunkPos(0, 0), 9);
-                for (int cx = -7; cx <= 6; cx++) {
-                    for (int cz = -7; cz <= 6; cz++) {
-                        level.setChunkForced(cx, cz, true);
-                    }
-                }
-            }
-            if (end && level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EnderDragon.class,
-                    new net.minecraft.world.phys.AABB(-300, -64, -300, 300, 320, 300)).isEmpty()) {
-                // Without a player nearby the End never spawns its dragon on its own.
-                var dragon = net.minecraft.world.entity.EntityTypes.ENDER_DRAGON.create(level, EntitySpawnReason.COMMAND);
-                if (dragon != null) {
-                    dragon.snapTo(0.5, 90.0, 0.5, 0.0F, 0.0F);
-                    // A summoned dragon just hovers; the real fight starts it circling like this.
-                    dragon.getPhaseManager().setPhase(net.minecraft.world.entity.boss.enderdragon.phases.EnderDragonPhase.HOLDING_PATTERN);
-                    level.addFreshEntity(dragon);
-                    spawned.add(dragon);
-                }
-            }
         } else if (stage) {
             bot.setSpeedrun(true);
         }
@@ -582,6 +521,9 @@ final class SelfTest {
         kit.add(new ItemStack(Items.COBBLESTONE, 64));
         // ... and the water bucket it made the obsidian with.
         kit.add(new ItemStack(Items.WATER_BUCKET));
+        // ... and what the portal is made of: it builds and lights it itself (the test builds nothing).
+        kit.add(new ItemStack(Items.OBSIDIAN, 10));
+        kit.add(new ItemStack(Items.FLINT_AND_STEEL));
         ItemStack fireRes = new ItemStack(Items.POTION);
         fireRes.set(net.minecraft.core.component.DataComponents.POTION_CONTENTS,
                 new net.minecraft.world.item.alchemy.PotionContents(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE));
@@ -604,13 +546,12 @@ final class SelfTest {
         return kit;
     }
 
-    private static net.minecraft.world.phys.@org.jspecify.annotations.Nullable Vec3 dragonLastPos;
-
     private static void cleanup() {
         if (!spawned.isEmpty() && spawned.get(0).level() instanceof ServerLevel sl) {
             sl.getServer().getCommands().performPrefixedCommand(sl.getServer().createCommandSourceStack(), "tick sprint stop");
         }
         spawned.forEach(Entity::discard);
         spawned.clear();
+        TestWatcher.remove();
     }
 }

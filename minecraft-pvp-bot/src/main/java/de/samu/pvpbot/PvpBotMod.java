@@ -72,11 +72,11 @@ public class PvpBotMod implements ModInitializer {
             }
         });
 
-        // Blaze rods only drop for kills by a player; the bot plays like one, so its kills count too.
-        ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
-            if (entity instanceof net.minecraft.world.entity.monster.Blaze && source.getEntity() instanceof PvpBotEntity
-                    && entity.level() instanceof ServerLevel level && entity.getRandom().nextInt(2) == 0) {
-                entity.spawnAtLocation(level, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.BLAZE_ROD));
+        // Like a tamed wolf: what the bot hits counts as hit by its owner (the vanilla rule for pets),
+        // so "killed by player" loot such as blaze rods drops. No owner, no credit.
+        ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamage, damageTaken, blocked) -> {
+            if (source.getEntity() instanceof PvpBotEntity bot && damageTaken > 0.0F && bot.getOwner() instanceof Player owner) {
+                entity.setLastHurtByPlayer(owner, 100);
             }
         });
 
