@@ -722,6 +722,16 @@ final class Gatherer {
 
     private @Nullable Step plan() {
         Step next = this.planWork();
+        if ((next instanceof Descend || next instanceof StripMine) && (this.speedrun || this.autonomous) && !this.underground()
+                && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
+                && this.kit().count(Res.LOG.match) * 4 + this.kit().count(Res.PLANKS.match) + this.kit().count(Res.STICK.match) / 2 < 12) {
+            // About to go down: wood for tools and sticks first (there are no trees down there).
+            Step wood = this.resolve(Res.LOG, 1, 0);
+            if (wood != null) {
+                this.goalLabel = "Holzvorrat (bevor es nach unten geht)";
+                next = wood;
+            }
+        }
         if (!(next instanceof Craft) && !(next instanceof Smelt) && !(next instanceof PlaceStation) && !(next instanceof PickUpStation)) {
             // Done at the crafting table / furnace: take them along (a furnace only once it is empty).
             for (BlockPos st : new BlockPos[]{this.tablePos, this.furnacePos}) {
@@ -1967,6 +1977,15 @@ final class Gatherer {
 
     /** How to get {@code count} of a resource. */
     private @Nullable Step resolve(Res res, int count, int depth) {
+        if (res == Res.LOG && (this.speedrun || this.autonomous) && !this.underground()
+                && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            // Up here among the trees: take a stock along (a whole tree, like a player), not the one
+            // log this recipe needs - otherwise it climbs up from the mine for every stick.
+            int wood = this.kit().count(Res.LOG.match) * 4 + this.kit().count(Res.PLANKS.match) + this.kit().count(Res.STICK.match) / 2;
+            if (wood < 24) {
+                count = Math.max(count, this.kit().count(Res.LOG.match) + (24 - wood + 3) / 4);
+            }
+        }
         if (this.kit().count(res.match) >= count || depth > 8) {
             return null;
         }
