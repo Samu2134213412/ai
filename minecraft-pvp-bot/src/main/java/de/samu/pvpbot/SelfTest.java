@@ -403,6 +403,20 @@ final class SelfTest {
                 // about finding one, getting blaze rods and ender pearls.
                 sx = -5600;
                 sz0 = -6400;
+                // (Any seed: the nearest fortress to the middle, start ~60 nether blocks from it.)
+                ServerLevel nether = level.getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+                if (nether != null) {
+                    var structures = nether.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+                    var found = nether.getChunkSource().getGenerator().findNearestMapStructure(nether,
+                            net.minecraft.core.HolderSet.direct(structures.getOrThrow(net.minecraft.world.level.levelgen.structure.BuiltinStructures.FORTRESS)),
+                            new BlockPos(-700, 64, -800), 50, false);
+                    if (found != null) {
+                        BlockPos f = found.getFirst();
+                        sx = (f.getX() + 50) * 8;
+                        sz0 = (f.getZ() + 30) * 8;
+                        PvpBotMod.LOGGER.info(TAG + "  (info) fortress at " + f.toShortString() + ", start ~60 blocks from it");
+                    }
+                }
             } else if (scenario.name().startsWith("Etappe 3")) {
                 // Start ~300 blocks from the stronghold (the long walk is tested separately).
                 BlockPos stronghold = level.findNearestMapStructure(net.minecraft.tags.StructureTags.EYE_OF_ENDER_LOCATED, origin, 100, false);
