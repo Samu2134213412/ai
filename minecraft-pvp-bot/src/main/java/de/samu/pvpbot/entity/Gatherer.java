@@ -750,7 +750,8 @@ final class Gatherer {
         if (!kit.has(Role.SHIELD) && !kit.has(Role.TOTEM)) {
             needs.add(new Need(Items.SHIELD, "einen Schild"));
         }
-        if (!kit.has(Role.GAPPLE) && kit.count(Res.COOKED_MEAT.match) < 4) {
+        // (Not in the End: there are no animals there, the dragon comes first.)
+        if (!kit.has(Role.GAPPLE) && kit.count(Res.COOKED_MEAT.match) < 4 && !this.inEnd()) {
             needs.add(new Need(Items.COOKED_BEEF, "Essen"));
         }
         if ((diamondsNearby || this.autonomous) && !this.speedrun) {
