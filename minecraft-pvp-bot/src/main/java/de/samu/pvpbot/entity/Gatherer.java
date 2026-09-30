@@ -1067,6 +1067,49 @@ final class Gatherer {
         return walls >= 3;
     }
 
+    private @Nullable BlockPos landGoal;
+    private int swimTicks;
+
+    /** In open water (sea, lake): swim to the nearest land it can see, like a player. */
+    private boolean swimToLand(ServerLevel level) {
+        if (!this.bot.isInWater() || !level.canSeeSky(this.bot.blockPosition().above())) {
+            this.swimTicks = 0;
+            this.landGoal = null;
+            return false;
+        }
+        if (++this.swimTicks < 40) {
+            return false; // (just a splash: let the normal work carry on)
+        }
+        if (this.landGoal == null || this.swimTicks % 100 == 0) {
+            this.landGoal = null;
+            BlockPos here = this.bot.blockPosition();
+            for (int r = 4; r <= 64 && this.landGoal == null; r += 4) {
+                for (int k = 0; k < 16; k++) {
+                    double a = Math.PI * 2.0 * k / 16.0;
+                    int x = here.getX() + (int) Math.round(Math.cos(a) * r);
+                    int z = here.getZ() + (int) Math.round(Math.sin(a) * r);
+                    int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                    BlockPos top = new BlockPos(x, y - 1, z);
+                    if (level.getFluidState(top).isEmpty() && y >= level.getSeaLevel()) {
+                        this.landGoal = top.above();
+                        break;
+                    }
+                }
+            }
+            if (this.landGoal == null) {
+                this.landGoal = here.relative(this.digDir, 32);
+            }
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   swims to land at {} from {}", this.landGoal.toShortString(), here.toShortString());
+            }
+        }
+        this.bot.getNavigation().stop();
+        this.bot.getMoveControl().setWantedPosition(this.landGoal.getX() + 0.5, this.landGoal.getY(), this.landGoal.getZ() + 0.5, 1.0);
+        this.bot.getLookControl().setLookAt(Vec3.atCenterOf(this.landGoal));
+        this.bot.getJumpControl().jump(); // (keeps the head above water)
+        return true;
+    }
+
     private @Nullable Vec3 watchPos;
     private int watchKit;
     private int watchTicks;
@@ -1599,6 +1642,9 @@ final class Gatherer {
             }
         }
         if ((this.speedrun || this.autonomous) && this.watchdog(level)) {
+            return;
+        }
+        if ((this.speedrun || this.autonomous) && this.swimToLand(level)) {
             return;
         }
         this.findHomeChests(level);
