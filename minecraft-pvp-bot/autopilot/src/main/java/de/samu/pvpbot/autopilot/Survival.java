@@ -1182,7 +1182,7 @@ final class Survival {
                 wet |= !p.isInWater() && !level.getFluidState(b.relative(d)).isEmpty() && !PathFinder.body(level, b);
             }
             // (Not through a wall that holds back water or lava: the hole would flood.)
-            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || wet) {
+            if (!p.isInWater() && !level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || wet) {
                 this.upDir = this.upDir.getClockWise();
                 return true;
             }
