@@ -2089,7 +2089,9 @@ final class Gatherer {
                     return new Mine(Ore.COAL);
                 }
                 if (this.underground() && (this.speedrun || this.autonomous) && this.bot.getY() > 0.0) {
-                    return this.deepStep(); // (coal shows up in the tunnel walls - above y 0; deeper it is rare)
+                    // A level tunnel (coal shows up in the walls - above y 0; deeper it is rare). Level:
+                    // a staircase down would cross y 0 and turn this into "wood from up top" and back.
+                    return new StripMine();
                 }
             }
             return this.mine(Ore.LOG, depth);
