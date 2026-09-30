@@ -2428,6 +2428,16 @@ final class Gatherer {
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
         boolean moving = this.bot.getNavigation().moveTo(this.exploreTarget.x, this.exploreTarget.y, this.exploreTarget.z, 1.1);
+        if (!moving && (this.speedrun || this.autonomous) && this.level() instanceof ServerLevel sl) {
+            // No path at all (in a pit, walled in by a cliff): make one, like a player - dig up out
+            // of a hole, otherwise tunnel through towards the target (bridging gaps on the way).
+            BlockPos goal = BlockPos.containing(this.exploreTarget);
+            if (this.inPit(sl) || goal.getY() > this.bot.getBlockY() + 3) {
+                this.doDigUp(sl);
+            } else {
+                this.tunnelTowards(sl, goal);
+            }
+        }
         if (PvpBotEntity.DEBUG && ++this.exploreLog % 400 == 0) {
             PvpBotMod.LOGGER.info("[SELFTEST]   explore: at {} target {} path {} heading {} in water {}", this.bot.blockPosition().toShortString(),
                     BlockPos.containing(this.exploreTarget).toShortString(), moving, (int) Math.toDegrees(this.exploreHeading), this.bot.isInWater());
