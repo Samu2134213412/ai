@@ -2598,7 +2598,17 @@ final class Gatherer {
             if (dist < 40.0 && this.visibleCrystal() == null && this.kit().count(st -> st.is(Items.ARROW)) > 16 && this.bot.hasLineOfSight(dragon)
                     && ++this.dragonShotTicks >= 20) {
                 this.dragonShotTicks = 0;
-                Vec3 aim = dragon.getBoundingBox().getCenter().add(dragon.getDeltaMovement().scale(dist / 3.0));
+                // At its body (the middle of the whole dragon is empty air between head, body and wings).
+                Entity bodyPart = dragon;
+                double biggest = 0.0;
+                for (var part : dragon.getSubEntities()) {
+                    double size = part.getBoundingBox().getSize();
+                    if (size > biggest) {
+                        biggest = size;
+                        bodyPart = part;
+                    }
+                }
+                Vec3 aim = bodyPart.getBoundingBox().getCenter().add(dragon.getDeltaMovement().scale(dist / 3.0));
                 this.bot.shootAt(aim);
             }
         }
