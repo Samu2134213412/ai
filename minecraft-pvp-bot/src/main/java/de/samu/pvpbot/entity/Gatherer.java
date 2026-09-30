@@ -2062,16 +2062,26 @@ final class Gatherer {
         return 0;
     }
 
+    /** Wood (in planks) beyond what the next pickaxe and its sticks need - that may be burnt. */
+    private int spareWood() {
+        int wood = this.kit().count(Res.LOG.match) * 4 + this.kit().count(Res.PLANKS.match);
+        return (this.speedrun || this.autonomous) ? Math.max(0, wood - 8) : wood;
+    }
+
     private Step smelt(Res input, Res output, int missing, int depth) {
         if (this.kit().count(input.match) < 1) {
             Step s = this.resolve(input, Math.max(1, missing), depth + 1);
             return s != null ? s : new Explore(input.label);
         }
-        if (this.kit().count(Res.COAL.match) == 0 && this.kit().count(Res.LOG.match) == 0
-                && this.kit().count(Res.PLANKS.match) < 2) {
-            // Fuel: coal if we know where it is, otherwise wood.
-            if (!this.known.getOrDefault(Ore.COAL, List.of()).isEmpty() && this.needPickaxe(Items.WOODEN_PICKAXE, depth) == null) {
-                return new Mine(Ore.COAL);
+        if (this.kit().count(Res.COAL.match) == 0 && this.spareWood() < 2) {
+            // Fuel: coal if we know where it is (or underground, where it is); wood only up top.
+            if (this.needPickaxe(Items.WOODEN_PICKAXE, depth) == null) {
+                if (!this.known.getOrDefault(Ore.COAL, List.of()).isEmpty()) {
+                    return new Mine(Ore.COAL);
+                }
+                if (this.underground() && (this.speedrun || this.autonomous)) {
+                    return this.deepStep(); // (coal shows up in the tunnel walls)
+                }
             }
             return this.mine(Ore.LOG, depth);
         }
@@ -2388,9 +2398,13 @@ final class Gatherer {
                 }
             }
             if (fuelStack.isEmpty()) {
+                // Wood only beyond the reserve for the next pickaxe and its sticks (never burn that).
+                int spare = this.spareWood();
                 for (ItemStack stack : this.kit().items()) {
-                    if (Res.LOG.match.test(stack) || Res.PLANKS.match.test(stack)) {
-                        fuelStack = stack.copyWithCount(Math.min(stack.getCount(), (n * 2 + 2) / 3));
+                    boolean log = Res.LOG.match.test(stack);
+                    if ((log || Res.PLANKS.match.test(stack)) && spare >= (log ? 4 : 1)) {
+                        int allowed = log ? spare / 4 : spare;
+                        fuelStack = stack.copyWithCount(Math.min(Math.min(stack.getCount(), allowed), (n * 2 + 2) / 3));
                         break;
                     }
                 }
