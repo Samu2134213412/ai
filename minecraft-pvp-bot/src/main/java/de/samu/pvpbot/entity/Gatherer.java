@@ -2150,7 +2150,17 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (this.bot.position().distanceToSqr(center) > 2.0) {
+        if (this.bot.position().distanceToSqr(center) > 9.0 && (this.bot.getNavigation().isDone() || this.noProgress())
+                && !this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1)) {
+            // Close, but no way there (walls, a drop, lava): dig or build straight towards it.
+            Vec3 to = center.subtract(this.bot.position());
+            this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
+            if (to.y > 2.0) {
+                this.doDigUp(level);
+            } else {
+                this.doDig(level, to.y < -2.0);
+            }
+        } else if (this.bot.position().distanceToSqr(center) > 2.0) {
             this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1);
             if (this.bot.position().distanceToSqr(center) < 9.0) {
                 this.bot.getMoveControl().setWantedPosition(center.x, center.y, center.z, 1.0);
