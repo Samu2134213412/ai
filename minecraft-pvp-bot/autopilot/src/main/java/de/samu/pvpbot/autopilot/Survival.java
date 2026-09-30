@@ -836,7 +836,8 @@ final class Survival {
         }
         // In water or in the air, digging takes 5 to 25 times as long: stand on dry ground first.
         // (Not for blocks in the way of a walk: that would walk again to dig them.)
-        boolean slow = p.isInWater() || !p.onGround();
+        // (Only with the head under water, or swimming: feet in shallow water do not slow it down.)
+        boolean slow = p.isUnderWater() || !p.onGround();
         this.wetTicks = slow ? this.wetTicks + 1 : 0;
         if (slow && this.wetTicks > 20 && !this.walkingNow) {
             Vec3 c0 = Vec3.atCenterOf(pos);
@@ -916,7 +917,9 @@ final class Survival {
             return this.explore(mc, p, level, "sucht trockenen Boden zum Graben");
         }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        if (down && this.stairStep == null && feet.getY() >= 54 && this.dryTicks < 300) {
+        if (down && this.stairStep == null && feet.getY() >= 54 && this.dryTicks < 300
+                && feet.getY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, feet.getX() + 3, feet.getZ()) - 1) {
+            // (Only up on the surface: once it has dug in, it keeps digging where it is.)
             // Starting a way down: not next to the sea or a lake (the stairs would flood and digging in
             // water is slow). Walk away from the water first, like a player looking for dry land.
             double wx = 0.0;
@@ -940,8 +943,8 @@ final class Survival {
                 return this.explore(mc, p, level, "geht vom Wasser weg, um zu graben");
             }
         }
-        if (this.stairStep != null) {
-            this.dryTicks = 0; // (a new try next time it starts a staircase)
+        if (feet.getY() < 54) {
+            this.dryTicks = 0; // (deep down: a new try next time it starts a staircase up top)
         }
         // The step must be right in front (and one lower going down); after a fall or a push it is
         // not any more - then work out a new one from where it stands.
