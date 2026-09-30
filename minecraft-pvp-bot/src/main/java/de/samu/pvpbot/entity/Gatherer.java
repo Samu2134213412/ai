@@ -1199,10 +1199,13 @@ final class Gatherer {
         // (Playing through, there is always work - in the End only while crystals are left: waiting
         // for the dragon to come down is fine.)
         boolean busy = this.speedrun && !this.gameBeaten && (!this.inEnd() || this.anyCrystal()) || this.autonomous && this.step != null;
-        if (this.towerGroundY != Integer.MIN_VALUE || !this.bot.onGround()) {
-            busy = false; // up on its own pole (waiting for a clear shot) or mid-air: not stuck, and no place to dig
+        if (this.towerGroundY != Integer.MIN_VALUE) {
+            busy = false; // up on its own pole (waiting for a clear shot): not stuck
         }
-        if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 3.0 * 3.0 || kit != this.watchKit) {
+        if (busy && !this.bot.onGround() && this.watchPos != null) {
+            return false; // mid-air (a jump, a fall): no place to dig - but the clock keeps its count
+        }
+        if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 5.0 * 5.0 || kit != this.watchKit) {
             this.watchPos = this.bot.position();
             this.watchKit = kit;
             this.watchTicks = 0;
@@ -1978,10 +1981,15 @@ final class Gatherer {
                 this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
             return new ClimbUp("Holz gibt es oben"); // (no trees in caves)
         }
-        if (ore == Ore.STONE && this.nearest(ore) == null && !this.bot.isInWater()
-                && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
-            // No stone in sight: it is right under the grass - dig a staircase down, like a player.
-            return new Descend();
+        if (this.nearest(ore) == null && !this.bot.isInWater() && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            if (ore == Ore.STONE) {
+                // No stone in sight: it is right under the grass - dig a staircase down, like a player.
+                return new Descend();
+            }
+            if ((ore == Ore.IRON || ore == Ore.COAL) && (this.speedrun || this.autonomous)) {
+                // Ores are underground: down the staircase and strip-mine, instead of walking the hills.
+                return this.deepStep();
+            }
         }
         return this.nearest(ore) != null ? new Mine(ore) : new Explore(ore.label);
     }

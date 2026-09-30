@@ -501,6 +501,25 @@ final class SelfTest {
                     PvpBotMod.LOGGER.info(TAG + "  (info) stronghold at " + stronghold.toShortString() + ", start 300 blocks east of it");
                 }
             }
+            if (scenario.name().startsWith("Etappe voll")) {
+                // Like a new player: the game spawns you on land, not in a lake.
+                search:
+                for (int r = 0; r <= 256; r += 8) {
+                    for (int k = 0; k < Math.max(1, r); k++) {
+                        double a = Math.PI * 2.0 * k / Math.max(1, r);
+                        int x = sx + (int) Math.round(Math.cos(a) * r);
+                        int z = sz0 + (int) Math.round(Math.sin(a) * r);
+                        level.getChunk(x >> 4, z >> 4);
+                        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                        if (level.getFluidState(new BlockPos(x, y - 1, z)).isEmpty() && y > level.getSeaLevel()) {
+                            sx = x;
+                            sz0 = z;
+                            PvpBotMod.LOGGER.info(TAG + "  (info) start on land at " + x + ", " + y + ", " + z);
+                            break search;
+                        }
+                    }
+                }
+            }
             int sz = sz0;
             level.getChunk(sx >> 4, sz >> 4); // loaded (not forced) to find the ground
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, sx, sz);
