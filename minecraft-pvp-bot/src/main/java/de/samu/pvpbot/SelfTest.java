@@ -21,6 +21,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import org.jspecify.annotations.Nullable;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -146,6 +147,10 @@ final class SelfTest {
                 level -> List.of(), SelfTest::stage3Kit, PvpBotEntity::inEnd));
         SCENARIOS.add(new Scenario("Etappe 4: Endkristalle und Enderdrache", PvpBotEntity.Style.AUTO, 72000, 0,
                 level -> List.of(), SelfTest::stage4Kit, PvpBotEntity::gameBeaten));
+        // The whole game in one go, from nothing (like a new player): 1.5 hours of game time. It may be
+        // slow; what counts is that it never gets stuck (see the progress watch below).
+        SCENARIOS.add(new Scenario("Etappe voll: Minecraft komplett durchspielen", PvpBotEntity.Style.AUTO, 108000, 240,
+                level -> List.of(), List::of, PvpBotEntity::gameBeaten));
 
         // The "beat the game" stages need a normal world; the fights need the flat test world.
         String stages = System.getProperty("pvpbot.stagetest");
@@ -357,6 +362,9 @@ final class SelfTest {
             return;
         }
         ticks++;
+        if (SCENARIOS.get(index).name().startsWith("Etappe voll") && ticks % 20 == 0) {
+            watchProgress();
+        }
         if (SCENARIOS.get(index).name().startsWith("Etappe")) {
             TestWatcher.follow(bot);
         }
@@ -374,7 +382,78 @@ final class SelfTest {
         }
     }
 
+    // ------------------------------------------------------------------ full run: progress watch
+
+    private static final java.util.LinkedHashMap<String, Integer> MILESTONES = new java.util.LinkedHashMap<>();
+    private static net.minecraft.world.phys.@Nullable Vec3 anchor;
+    private static @Nullable Object anchorLevel;
+    private static String kitSig = "";
+    private static int lastProgress;
+    private static int longestStall;
+    private static int stuckEpisodes;
+    private static boolean stuckNow;
+    /** How long without any progress counts as stuck (game seconds). */
+    private static final int STUCK_SECONDS = 180;
+
+    /** Progress = it moved on (6+ blocks, or another dimension) or its inventory changed (mined, crafted, picked up). */
+    private static void watchProgress() {
+        int now = ticks / 20;
+        String sig = bot.getKit().items().stream().map(st -> st.getItem() + "x" + st.getCount()).sorted().toList().toString();
+        boolean moved = anchor == null || anchorLevel != bot.level() || bot.position().distanceTo(anchor) > 6.0;
+        if (moved || !sig.equals(kitSig)) {
+            if (stuckNow) {
+                PvpBotMod.LOGGER.info(TAG + String.format("  UNSTUCK at t=%ds after %ds (%s)", now, now - lastProgress, moved ? "moved on" : "inventory changed"));
+                stuckNow = false;
+            }
+            anchor = bot.position();
+            anchorLevel = bot.level();
+            kitSig = sig;
+            lastProgress = now;
+        }
+        int stall = now - lastProgress;
+        longestStall = Math.max(longestStall, stall);
+        if (stall >= STUCK_SECONDS && !stuckNow) {
+            stuckNow = true;
+            stuckEpisodes++;
+            PvpBotMod.LOGGER.info(TAG + String.format("  STUCK #%d at t=%ds: no progress for %ds at %s in %s | %s | kit %s",
+                    stuckEpisodes, now, stall, bot.blockPosition().toShortString(), bot.level().dimension().toString(),
+                    bot.describeNeeds(), sig));
+        }
+        var kit = bot.getKit();
+        milestone("Holz", kit.count(st -> st.is(net.minecraft.tags.ItemTags.LOGS)) > 0);
+        milestone("Steinspitzhacke", kit.count(st -> st.is(Items.STONE_PICKAXE)) > 0);
+        milestone("Eisenspitzhacke", kit.count(st -> st.is(Items.IRON_PICKAXE)) > 0);
+        milestone("Eisenrüstung", bot.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST).is(Items.IRON_CHESTPLATE));
+        milestone("Wassereimer", kit.count(st -> st.is(Items.WATER_BUCKET)) > 0);
+        milestone("Diamant", kit.count(st -> st.is(Items.DIAMOND)) > 0);
+        milestone("Diamantspitzhacke", kit.count(st -> st.is(Items.DIAMOND_PICKAXE)) > 0);
+        milestone("10 Obsidian", kit.count(st -> st.is(Items.OBSIDIAN)) >= 10);
+        milestone("Netherportal gebaut", bot.portalBuilt());
+        milestone("im Nether", bot.level().dimension() == net.minecraft.world.level.Level.NETHER);
+        milestone("Lohenrute", kit.count(st -> st.is(Items.BLAZE_ROD)) > 0);
+        milestone("Enderperle", kit.count(st -> st.is(Items.ENDER_PEARL)) > 0);
+        milestone("Enderauge", kit.count(st -> st.is(Items.ENDER_EYE)) > 0);
+        milestone("Etappe 2 fertig (Enderaugen)", bot.stage2Done());
+        milestone("im End", bot.inEnd());
+        milestone("Enderdrache besiegt", bot.gameBeaten());
+    }
+
+    private static void milestone(String name, boolean reached) {
+        if (reached && !MILESTONES.containsKey(name)) {
+            MILESTONES.put(name, ticks / 20);
+            PvpBotMod.LOGGER.info(TAG + String.format("  MILESTONE %s at t=%ds (%d min)", name, ticks / 20, ticks / 1200));
+        }
+    }
+
     private static void start(ServerLevel level, Scenario scenario) {
+        MILESTONES.clear();
+        anchor = null;
+        anchorLevel = null;
+        kitSig = "";
+        lastProgress = 0;
+        longestStall = 0;
+        stuckEpisodes = 0;
+        stuckNow = false;
         ticks = 0;
         maxHeight = 0;
         smashHits = spearHits = otherHits = 0;
@@ -501,6 +580,13 @@ final class SelfTest {
                 bot.getHealth(), smashHits, spearHits, otherHits, maxHit, maxHeight, flew);
         RESULTS.add(line);
         PvpBotMod.LOGGER.info(TAG + line);
+        if (scenario.name().startsWith("Etappe voll")) {
+            String full = String.format("FULL RUN: %d milestones %s | stuck (>%ds without progress): %d times, longest stall %ds",
+                    MILESTONES.size(), MILESTONES.entrySet().stream().map(e -> e.getKey() + " " + e.getValue() / 60 + "min").toList(),
+                    STUCK_SECONDS, stuckEpisodes, longestStall);
+            RESULTS.add(full);
+            PvpBotMod.LOGGER.info(TAG + full);
+        }
     }
 
     private static List<ItemStack> homeKit() {

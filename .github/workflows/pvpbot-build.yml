@@ -95,6 +95,60 @@ jobs:
           name: stage-${{ matrix.stage }}-log
           path: minecraft-pvp-bot/stage.log
 
+  full:
+    # The whole game from nothing, 1.5 hours of game time: slow is fine, stuck is not.
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    defaults:
+      run:
+        working-directory: minecraft-pvp-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore what the bot learned in earlier runs
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            minecraft-pvp-bot/run/config/pvpbot-memory.json
+            minecraft-pvp-bot/run/config/pvpbot-tasks.json
+          key: pvpbot-brain-full-${{ github.run_id }}
+          restore-keys: pvpbot-brain-full-
+      - name: Play Minecraft through, from an empty inventory
+        run: |
+          mkdir -p run
+          echo "eula=true" > run/eula.txt
+          # New world each try; another try only after a death and while there is time left.
+          for try in 1 2 3; do
+            rm -rf run/world
+            printf 'online-mode=false\nlevel-type=minecraft\\:normal\nlevel-seed=pvpbot-full-${{ github.run_number }}-'"$try"'\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=true\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
+            timeout 10800 ./gradlew --no-daemon runServer -Pselftest -Pstagetest=voll > full-$try.log 2>&1 || true
+            echo "===== try $try (seed pvpbot-full-${{ github.run_number }}-$try, $((SECONDS/60)) min so far): $(grep -oE '\[SELFTEST\] (PASS|FAIL).*' full-$try.log | head -1)"
+            grep -E "MILESTONE|STUCK|UNSTUCK|FULL RUN|bot gone" full-$try.log | sed 's/^.*\[SELFTEST\] *//' || true
+            cp full-$try.log full.log
+            grep -qE '\[SELFTEST\] FAIL.*botAlive=false' full-$try.log || break
+            [ $SECONDS -lt 7200 ] || break
+          done
+          grep -E "SELFTEST|Exception|FATAL|at de\.samu" full.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" > events.log || true
+          echo "===== EVENTS (last) ====="; tail -800 events.log
+          echo "===== RESULT ====="
+          grep -hE "FULL RUN|\[SELFTEST\] (PASS|FAIL)" full-*.log || true
+          grep -q "\[SELFTEST\] PASS" full.log
+      - name: Keep what the bot learned
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            minecraft-pvp-bot/run/config/pvpbot-memory.json
+            minecraft-pvp-bot/run/config/pvpbot-tasks.json
+          key: pvpbot-brain-full-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-run-logs
+          path: minecraft-pvp-bot/full-*.log
+
   autopilot:
     runs-on: ubuntu-latest
     defaults:
