@@ -2008,7 +2008,18 @@ final class Gatherer {
                 this.netherStuckPos = this.bot.blockPosition();
             }
             if (++this.netherGoalTicks > 300 || ++this.netherGoalTotal > 1500) {
-                PvpBotMod.LOGGER.info("[SELFTEST]   nether: gives up on {} at {} (no way there)", goal.toShortString(), this.bot.blockPosition().toShortString());
+                StringBuilder around = new StringBuilder();
+                BlockPos f0 = this.bot.blockPosition();
+                for (Direction d : Direction.Plane.HORIZONTAL) {
+                    around.append(d.getName().charAt(0)).append(':')
+                            .append(level.getBlockState(f0.relative(d).below()).getBlock().getName().getString()).append('/')
+                            .append(level.getBlockState(f0.relative(d)).getBlock().getName().getString()).append('/')
+                            .append(level.getBlockState(f0.relative(d).above()).getBlock().getName().getString()).append(' ');
+                }
+                PvpBotMod.LOGGER.info("[SELFTEST]   nether: gives up on {} at {} (no way there) exact {} {} {} ground {} feet {} below {} head {} | {}", goal.toShortString(),
+                        this.bot.blockPosition().toShortString(), String.format("%.2f", this.bot.getX()), String.format("%.2f", this.bot.getY()),
+                        String.format("%.2f", this.bot.getZ()), this.bot.onGround(), level.getBlockState(f0).getBlock().getName().getString(),
+                        level.getBlockState(f0.below()).getBlock().getName().getString(), level.getBlockState(f0.above(2)).getBlock().getName().getString(), around);
                 this.blacklist.add(goal);
                 this.fortressVisited.add(cellKey(goal));
                 this.netherGoal = null;
