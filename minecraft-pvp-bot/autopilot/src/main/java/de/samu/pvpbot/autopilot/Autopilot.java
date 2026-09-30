@@ -78,6 +78,7 @@ public final class Autopilot {
     private int drinkTicks;
     private int flightCooldown;
     private int eatTicks;
+    private int strayScreenTicks;
 
     // Getting unstuck.
     private @Nullable Vec3 stuckAnchor;
@@ -190,6 +191,17 @@ public final class Autopilot {
             this.target = null;
             this.say(mc, "§7Gestorben – wieder da, weiter geht's.");
             return;
+        }
+        if (this.targetMode == TargetMode.FULL && !survivalScreen
+                && mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>
+                && !(mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen)) {
+            // A chest, table or furnace opened by accident (a click meant for placing something): close it.
+            if (++this.strayScreenTicks > 40) {
+                this.strayScreenTicks = 0;
+                p.closeContainer();
+            }
+        } else {
+            this.strayScreenTicks = 0;
         }
         if (mc.gui.screen() != null && !survivalScreen || !p.isAlive()) {
             // Menu or chat open, or dead: hands off.

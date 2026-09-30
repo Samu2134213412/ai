@@ -540,7 +540,10 @@ final class Survival {
             int i = (k + this.placeTries) % 8;
             BlockPos spot = feet.relative(dirs[i % 4], 2).offset(i >= 4 ? dirs[(i + 1) % 4].getStepX() : 0, 0, i >= 4 ? dirs[(i + 1) % 4].getStepZ() : 0);
             if (!level.getBlockState(spot).canBeReplaced() || !level.getBlockState(spot.above()).canBeReplaced()
-                    || !PathFinder.solidGround(level, spot.below()) || p.getBoundingBox().intersects(new AABB(spot))) {
+                    || !PathFinder.solidGround(level, spot.below()) || p.getBoundingBox().intersects(new AABB(spot))
+                    // (clicking a table, furnace or chest opens it instead of placing on it)
+                    || level.getBlockState(spot.below()).getMenuProvider(level, spot.below()) != null
+                    || level.getBlockEntity(spot.below()) != null) {
                 continue;
             }
             int index = this.indexOf(p, st -> st.is(item));
@@ -912,7 +915,11 @@ final class Survival {
             return this.explore(mc, p, level, "sucht trockenen Boden zum Graben");
         }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        if (this.stairStep == null || feet.equals(this.stairStep) || feet.distManhattan(this.stairStep) > 3) {
+        // The step must be right in front (and one lower going down); after a fall or a push it is
+        // not any more - then work out a new one from where it stands.
+        boolean stale = this.stairStep != null && (Math.abs(this.stairStep.getX() - feet.getX()) + Math.abs(this.stairStep.getZ() - feet.getZ()) != 1
+                || this.stairStep.getY() != (down ? feet.getY() - 1 : feet.getY()));
+        if (this.stairStep == null || stale || feet.equals(this.stairStep) || feet.distManhattan(this.stairStep) > 3) {
             if (this.stairStep != null && feet.distManhattan(this.stairStep) > 3) {
                 this.digDir = p.getDirection(); // somewhere else now: start fresh where it looks
             }
