@@ -1133,6 +1133,7 @@ final class Gatherer {
     }
 
     private @Nullable BlockPos landGoal;
+    private @Nullable BlockPos lastLand;
     private int swimTicks;
 
     /** In open water (sea, lake): swim to the nearest land it can see, like a player. */
@@ -1160,6 +1161,10 @@ final class Gatherer {
                         break;
                     }
                 }
+            }
+            if (this.landGoal == null && this.lastLand != null && this.lastLand.distSqr(here) < 512 * 512) {
+                // Open sea, no land in sight: back to the last shore it stood on (not on across the ocean).
+                this.landGoal = this.lastLand;
             }
             if (this.landGoal == null) {
                 this.landGoal = here.relative(this.digDir, 32);
@@ -2158,6 +2163,9 @@ final class Gatherer {
         if ((this.speedrun || this.autonomous) && this.watchdog(level)) {
             return;
         }
+        if (this.bot.onGround() && !this.bot.isInWater() && this.bot.tickCount % 20 == 0 && level.canSeeSky(this.bot.blockPosition().above())) {
+            this.lastLand = this.bot.blockPosition();
+        }
         if ((this.speedrun || this.autonomous) && this.swimToLand(level)) {
             return;
         }
@@ -2467,6 +2475,13 @@ final class Gatherer {
                         this.exploreHeading = a;
                     }
                 }
+            }
+            if (this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD && this.lastLand != null
+                    && !this.level().getFluidState(BlockPos.containing(candidate.x, y - 1, candidate.z)).isEmpty()) {
+                // Water every way: the sea. Go along the shore instead (back to where there was land).
+                this.exploreHeading = Math.atan2(this.lastLand.getZ() - pos.z, this.lastLand.getX() - pos.x) + Math.PI / 2;
+                candidate = Vec3.atBottomCenterOf(this.lastLand);
+                y = this.lastLand.getY();
             }
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
