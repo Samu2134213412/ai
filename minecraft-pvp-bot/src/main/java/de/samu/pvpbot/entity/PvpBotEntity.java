@@ -593,7 +593,7 @@ public class PvpBotEntity extends PathfinderMob {
      * bridge). Like a player who sneaks at the edge: stop instead.
      */
     private void guardLedge(ServerLevel level) {
-        if (this.getTarget() == null || !this.onGround() || this.isFallFlying() || !this.gatherer.isAutonomousMode()) {
+        if (this.getTarget() == null || !this.onGround() || this.isFallFlying() || !this.gatherer.isAutonomousMode() && !this.gatherer.isSpeedrun()) {
             return;
         }
         Vec3 v = this.getDeltaMovement();
