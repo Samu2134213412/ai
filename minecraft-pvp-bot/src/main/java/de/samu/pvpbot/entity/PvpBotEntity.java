@@ -771,6 +771,10 @@ public class PvpBotEntity extends PathfinderMob {
             if (!item.isAlive() || item.hasPickUpDelay() || !Gatherer.isUseful(item.getItem())) {
                 continue;
             }
+            if ((item.getItem().is(Items.NETHERRACK) || item.getItem().is(Items.END_STONE))
+                    && this.kit.count(st -> st.is(item.getItem().getItem())) >= 128) {
+                continue; // two stacks are plenty to build with: the room is for rods and pearls
+            }
             ItemStack stack = item.getItem().copy();
             int before = stack.getCount();
             ItemStack rest = this.kit.insert(stack);

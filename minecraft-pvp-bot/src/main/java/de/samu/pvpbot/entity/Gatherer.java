@@ -660,6 +660,10 @@ final class Gatherer {
                 }
             }
         }
+        if (this.speedrun && this.portalBuilt && this.needPickaxe(Items.STONE_PICKAXE, 99) != null) {
+            // Worn out all its pickaxes (the nether eats them): a new one before anything else.
+            needs.add(new Need(kit.count(st -> st.is(Items.IRON_INGOT)) >= 3 ? Items.IRON_PICKAXE : Items.STONE_PICKAXE, "eine Spitzhacke"));
+        }
         if (this.autonomous && this.needPickaxe(Items.DIAMOND_PICKAXE, 99) != null) {
             needs.add(new Need(Items.DIAMOND_PICKAXE, "eine Diamantspitzhacke"));
         }
@@ -3763,7 +3767,7 @@ final class Gatherer {
         ItemEntity closest = null;
         double best = 10.0 * 10.0;
         for (ItemEntity item : this.level().getEntitiesOfClass(ItemEntity.class, this.bot.getBoundingBox().inflate(10.0))) {
-            if (item.isAlive() && isUseful(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)
+            if (item.isAlive() && isUseful(item.getItem()) && !this.enoughOf(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)
                     && !this.unreachableDrops.contains(item.getId())
                     // Not into a lava pool after it (obsidian drops fall into the hole it leaves).
                     && !this.level().getFluidState(item.blockPosition()).is(net.minecraft.tags.FluidTags.LAVA)
@@ -3795,6 +3799,11 @@ final class Gatherer {
     private int dropTicks;
 
     // --- saving known state that matters
+
+    /** Building blocks it already has plenty of (the room is for what it came for). */
+    private boolean enoughOf(ItemStack stack) {
+        return (stack.is(Items.NETHERRACK) || stack.is(Items.END_STONE)) && this.kit().count(st -> st.is(stack.getItem())) >= 128;
+    }
 
     static boolean isUseful(ItemStack stack) {
         if (stack.is(Items.NETHERRACK) || stack.is(Items.END_STONE)) {
