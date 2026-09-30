@@ -531,6 +531,83 @@ final class Gatherer {
         this.forcedChunks.addAll(ours);
     }
 
+    private int spawnerDelay = 200;
+    private int naturalSpawnTicks;
+
+    /**
+     * Spawners and natural spawning only happen around players; playing on its own, the bot counts
+     * as one (like the game would with a player standing here) - otherwise no blaze or enderman
+     * ever shows up. Only while no real player is close enough to do it anyway.
+     */
+    void actLikePlayerForSpawns() {
+        if (!this.speedrun && !this.autonomous) {
+            return;
+        }
+        ServerLevel level = this.level();
+        if (level.getDifficulty() == net.minecraft.world.Difficulty.PEACEFUL) {
+            return;
+        }
+        // A spawner within 16 blocks (like vanilla): 4 mobs every 10 to 40 seconds, at most 6 around.
+        if (--this.spawnerDelay <= 0) {
+            this.spawnerDelay = 200 + this.bot.getRandom().nextInt(601);
+            BlockPos spawner = this.nearest(Ore.SPAWNER);
+            if (spawner != null && spawner.closerToCenterThan(this.bot.position(), 16.0) && level.getBlockState(spawner).is(Blocks.SPAWNER)
+                    && !level.hasNearbyAlivePlayer(spawner.getX() + 0.5, spawner.getY() + 0.5, spawner.getZ() + 0.5, 16.0)
+                    && level.dimension() == net.minecraft.world.level.Level.NETHER) {
+                // (Fortress spawners are blaze spawners.)
+                int around = level.getEntitiesOfClass(net.minecraft.world.entity.monster.Blaze.class, new AABB(spawner).inflate(4.0, 1.0, 4.0)).size();
+                for (int i = 0; i < 4 && around < 6; i++) {
+                    double x = spawner.getX() + 0.5 + (this.bot.getRandom().nextDouble() - this.bot.getRandom().nextDouble()) * 4.0;
+                    double y = spawner.getY() + this.bot.getRandom().nextInt(3) - 1;
+                    double z = spawner.getZ() + 0.5 + (this.bot.getRandom().nextDouble() - this.bot.getRandom().nextDouble()) * 4.0;
+                    var blaze = EntityTypes.BLAZE.create(level, net.minecraft.world.entity.EntitySpawnReason.SPAWNER);
+                    if (blaze == null) {
+                        break;
+                    }
+                    blaze.snapTo(x, y, z, this.bot.getRandom().nextFloat() * 360.0F, 0.0F);
+                    if (level.noCollision(blaze) && !level.containsAnyLiquid(blaze.getBoundingBox())) {
+                        level.addFreshEntity(blaze);
+                        level.levelEvent(2004, spawner, 0); // the spawner's flame puff
+                        blaze.spawnAnim();
+                        around++;
+                    }
+                }
+            }
+        }
+        // Natural spawning of endermen in the nether (warped forests, soul sand valleys, wastes).
+        if (level.dimension() == net.minecraft.world.level.Level.NETHER && ++this.naturalSpawnTicks >= 200) {
+            this.naturalSpawnTicks = 0;
+            if (level.hasNearbyAlivePlayer(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 128.0)
+                    || level.getEntitiesOfClass(net.minecraft.world.entity.monster.EnderMan.class, this.bot.getBoundingBox().inflate(64.0)).size() >= 3) {
+                return;
+            }
+            double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
+            double dist = 24.0 + this.bot.getRandom().nextDouble() * 24.0;
+            int x = Mth.floor(this.bot.getX() + Math.cos(angle) * dist);
+            int z = Mth.floor(this.bot.getZ() + Math.sin(angle) * dist);
+            for (int dy = -8; dy <= 8; dy++) {
+                BlockPos feet = new BlockPos(x, this.bot.getBlockY() + dy, z);
+                if (!level.getBlockState(feet.below()).isFaceSturdy(level, feet.below(), Direction.UP)
+                        || !level.getBlockState(feet).isAir() || !level.getBlockState(feet.above()).isAir() || !level.getBlockState(feet.above(2)).isAir()) {
+                    continue;
+                }
+                var biome = level.getBiome(feet);
+                int chance = biome.is(net.minecraft.world.level.biome.Biomes.WARPED_FOREST) ? 3
+                        : biome.is(net.minecraft.world.level.biome.Biomes.SOUL_SAND_VALLEY) || biome.is(net.minecraft.world.level.biome.Biomes.NETHER_WASTES) ? 12 : 0;
+                if (chance > 0 && this.bot.getRandom().nextInt(chance) == 0) {
+                    var enderman = EntityTypes.ENDERMAN.create(level, net.minecraft.world.entity.EntitySpawnReason.NATURAL);
+                    if (enderman != null) {
+                        enderman.snapTo(x + 0.5, feet.getY(), z + 0.5, this.bot.getRandom().nextFloat() * 360.0F, 0.0F);
+                        if (level.noCollision(enderman)) {
+                            level.addFreshEntity(enderman);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     private static long chunkKey(int x, int z) {
         return (long) x << 32 | z & 0xFFFFFFFFL;
     }
@@ -1991,6 +2068,14 @@ final class Gatherer {
         if (goal != null && this.bot.blockPosition().distSqr(goal) <= 25 && !level.getBlockState(goal).is(net.minecraft.world.level.block.Blocks.SPAWNER)) {
             // Close enough to see that part of the fortress: next part.
             this.fortressVisited.add(cellKey(goal));
+        }
+        boolean atSpawner = goal != null && level.getBlockState(goal).is(Blocks.SPAWNER) && this.bot.blockPosition().distSqr(goal) <= 6 * 6;
+        if (atSpawner) {
+            // Close to the spawner: wait here for the blazes (they come out every few seconds).
+            this.bot.getNavigation().stop();
+            this.bot.getLookControl().setLookAt(Vec3.atCenterOf(goal));
+            this.step = null;
+            return;
         }
         if (goal != null && this.bot.blockPosition().distSqr(goal) > 9) {
             // Getting closer? If not for a long while (behind lava, up a cliff), forget that block.
