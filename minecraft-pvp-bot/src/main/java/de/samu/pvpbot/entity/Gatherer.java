@@ -1841,7 +1841,7 @@ final class Gatherer {
     }
 
     private static final Predicate<ItemStack> BRIDGE_BLOCK = st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE)
-            || st.is(Items.NETHERRACK) || st.is(Items.DIRT) || st.is(Items.BLACKSTONE);
+            || st.is(Items.NETHERRACK) || st.is(Items.DIRT) || st.is(Items.BLACKSTONE) || st.is(Items.END_STONE);
 
     /** Puts a block (cobblestone, netherrack, dirt) into the gap in front of its feet. */
     private boolean bridge(ServerLevel level, BlockPos gap) {
@@ -2307,6 +2307,11 @@ final class Gatherer {
 
     /** Mines a netherrack block it can see within reach (not the floor it stands on). */
     private boolean mineNetherrack(ServerLevel level) {
+        return this.mineNearby(level, Blocks.NETHERRACK);
+    }
+
+    /** Mines a block of this kind it can see within reach (not the floor it stands on). */
+    private boolean mineNearby(ServerLevel level, net.minecraft.world.level.block.Block kind) {
         if (++this.netherrackTicks > 1200) {
             if (this.netherrackTicks > 2400) {
                 this.netherrackTicks = 0; // (a while exploring, then try again)
@@ -2316,8 +2321,9 @@ final class Gatherer {
         BlockPos feet = this.bot.blockPosition();
         BlockPos best = null;
         double bestDist = Double.MAX_VALUE;
-        for (BlockPos p : BlockPos.betweenClosed(feet.offset(-3, 0, -3), feet.offset(3, 2, 3))) {
-            if (!level.getBlockState(p).is(Blocks.NETHERRACK) || this.nearLava(level, p) || !this.seesBlock(level, p)) {
+        for (BlockPos p : BlockPos.betweenClosed(feet.offset(-3, -1, -3), feet.offset(3, 2, 3))) {
+            // (The floor around is fine, just not the block it stands on.)
+            if (p.equals(feet.below()) || !level.getBlockState(p).is(kind) || this.nearLava(level, p) || !this.seesBlock(level, p)) {
                 continue;
             }
             double d = this.bot.getEyePosition().distanceToSqr(Vec3.atCenterOf(p));
@@ -2848,6 +2854,10 @@ final class Gatherer {
         if (los && !caged && h <= 44.0 && (shots < 6 || this.kit().count(BRIDGE_BLOCK) == 0)) {
             this.bot.getNavigation().stop();
             this.shootCrystal(crystal);
+            return;
+        }
+        if (this.kit().count(BRIDGE_BLOCK) < 48 && this.mineNearby(level, Blocks.END_STONE)) {
+            // Low on blocks for the poles: end stone from the ground around (like a player would).
             return;
         }
         if (this.kit().count(BRIDGE_BLOCK) == 0) {
