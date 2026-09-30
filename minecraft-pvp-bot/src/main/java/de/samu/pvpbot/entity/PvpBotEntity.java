@@ -928,6 +928,12 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private void teleportFree(ServerLevel level) {
+        if (this.gatherer.isSpeedrun() || this.gatherer.isAutonomousMode()) {
+            // Playing the game on its own: no teleporting (a player cannot) - hop and try again.
+            this.getJumpControl().jump();
+            this.setDeltaMovement(this.getDeltaMovement().add((this.random.nextDouble() - 0.5) * 0.4, 0.0, (this.random.nextDouble() - 0.5) * 0.4));
+            return;
+        }
         BlockPos base = this.blockPosition();
         BlockPos dest = null;
         for (int i = 0; i < 40 && dest == null; i++) {

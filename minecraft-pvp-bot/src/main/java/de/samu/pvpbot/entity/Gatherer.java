@@ -391,6 +391,10 @@ final class Gatherer {
         this.reset();
     }
 
+    boolean isAutonomousMode() {
+        return this.autonomous;
+    }
+
     boolean isSpeedrun() {
         return this.speedrun;
     }
