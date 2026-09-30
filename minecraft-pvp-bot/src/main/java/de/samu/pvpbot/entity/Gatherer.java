@@ -3086,7 +3086,9 @@ final class Gatherer {
             this.shootCrystal(crystal);
             return;
         }
-        if (this.kit().count(BRIDGE_BLOCK) < 16 && this.towerGroundY == Integer.MIN_VALUE && this.mineNearby(level, Blocks.END_STONE)) {
+        // Enough blocks for the pole this one needs (its height plus a few for the rim)?
+        int needed = Math.max(16, (int) (crystal.getY() - this.bot.getY()) + 8);
+        if (this.kit().count(BRIDGE_BLOCK) < needed && this.towerGroundY == Integer.MIN_VALUE && this.mineNearby(level, Blocks.END_STONE)) {
             // Low on blocks for the poles: end stone from the ground around (like a player would).
             return;
         }
