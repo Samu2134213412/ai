@@ -2223,7 +2223,16 @@ final class Gatherer {
                 }
             }
             case ClimbUp up -> {
-                this.doDigUp(level);
+                // A way out on foot first (a cave mouth, the edge of an overhang); dig only without one.
+                if (this.skyExit == null || this.bot.tickCount - this.skyExitTick > 200) {
+                    this.skyExit = this.findSkyExit(level);
+                    this.skyExitTick = this.bot.tickCount;
+                }
+                if (this.skyExit == null || !this.bot.getNavigation().moveTo(this.skyExit.getX() + 0.5, this.skyExit.getY(), this.skyExit.getZ() + 0.5, 1.1)
+                        || this.noProgress()) {
+                    this.skyExit = null;
+                    this.doDigUp(level);
+                }
                 this.step = null;
             }
             case Descend d -> this.doDig(level, true);
@@ -2397,20 +2406,35 @@ final class Gatherer {
         this.step = null;
     }
 
+    private @Nullable BlockPos skyExit;
+    private int skyExitTick;
+
+    /** Open sky within reach at about this height (a cave mouth, the edge of an overhang). */
+    private @Nullable BlockPos findSkyExit(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        for (int r = 2; r <= 24; r += 2) {
+            for (int k = 0; k < 16; k++) {
+                double a = Math.PI * 2.0 * k / 16.0;
+                int x = feet.getX() + (int) Math.round(Math.cos(a) * r);
+                int z = feet.getZ() + (int) Math.round(Math.sin(a) * r);
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                if (Math.abs(y - feet.getY()) <= 4 && level.getFluidState(new BlockPos(x, y - 1, z)).isEmpty()) {
+                    return new BlockPos(x, y, z);
+                }
+            }
+        }
+        return null;
+    }
+
     /** Rock overhead (in a cave, its own staircase): the sky is not in sight. */
     private boolean underground() {
+        // (Deep down, not just under an overhang or a tree: from there a player simply walks out.)
         BlockPos head = BlockPos.containing(this.bot.getEyePosition());
         return !this.level().canSeeSky(head) && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                head.getX(), head.getZ()) > head.getY() + 1;
+                head.getX(), head.getZ()) > head.getY() + 6;
     }
 
     private void doExplore() {
-        if ((this.speedrun || this.autonomous) && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
-                && this.underground() && !this.bot.isInWater()) {
-            // Looking for something that is up top (trees, animals) from down here: up first.
-            this.doDigUp(this.level());
-            return;
-        }
         Vec3 pos = this.bot.position();
         if (this.anchor == null) {
             Player owner = this.bot.getOwner();
