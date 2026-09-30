@@ -1888,6 +1888,11 @@ final class Gatherer {
     }
 
     private Step mine(Ore ore, int depth) {
+        if (ore == Ore.LOG && this.nearest(ore) == null && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
+                && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
+            return new ClimbUp("Holz gibt es oben"); // (no trees in caves)
+        }
         return this.nearest(ore) != null ? new Mine(ore) : new Explore(ore.label);
     }
 
@@ -1936,7 +1941,8 @@ final class Gatherer {
                 }
             }
         }
-        if (this.speedrun && this.wet(level) && this.bot.getTarget() == null) {
+        if (this.speedrun && this.wet(level) && this.bot.getTarget() == null && !level.canSeeSky(this.bot.blockPosition().above())) {
+            // (Only under ground: in open water it swims - across a lake, to the shore.)
             if (this.poolPos == null || this.bot.getY() > this.poolPos.y + 2.0) {
                 // (Only real progress upwards counts: drifting around under water does not.)
                 this.poolPos = this.bot.position();
