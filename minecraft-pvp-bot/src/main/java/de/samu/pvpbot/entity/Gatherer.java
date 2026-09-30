@@ -1138,7 +1138,7 @@ final class Gatherer {
     private final java.util.Set<Long> seenCountry = new java.util.HashSet<>();
 
     private static long cellOf(Vec3 p) {
-        return net.minecraft.world.level.ChunkPos.asLong(Mth.floor(p.x / 24.0), Mth.floor(p.z / 24.0));
+        return ((long) Mth.floor(p.x / 24.0) << 32) ^ (Mth.floor(p.z / 24.0) & 0xFFFFFFFFL);
     }
     private int swimTicks;
 
