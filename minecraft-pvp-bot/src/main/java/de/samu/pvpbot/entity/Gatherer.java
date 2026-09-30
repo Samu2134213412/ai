@@ -2036,9 +2036,24 @@ final class Gatherer {
                     // The fortress is up there (its bridges stand high): stairs up to it.
                     this.doDigUp(level);
                 } else if (to.y < -2.5 && goal.getY() >= 45 && Math.abs(to.x) + Math.abs(to.z) < 12.0) {
-                    // Standing on its roof, the halls are right below: stairs down into them (never
-                    // below the fortress, the lava sea is down there).
-                    this.doDig(level, true);
+                    // Standing on its roof, the halls are right below: straight down through the roof
+                    // when it is a short, safe drop (never below the fortress, the lava sea is down there).
+                    BlockPos under = this.bot.blockPosition().below();
+                    int drop = 0;
+                    boolean lava = false;
+                    while (drop < 7 && level.getBlockState(under.below(drop + 1)).getCollisionShape(level, under.below(drop + 1)).isEmpty()) {
+                        drop++;
+                        lava |= !level.getFluidState(under.below(drop)).isEmpty();
+                    }
+                    lava |= !level.getFluidState(under.below(drop + 1)).isEmpty() || this.nearLava(level, under);
+                    BlockState roof = level.getBlockState(under);
+                    if (!lava && drop <= 5 && !roof.getCollisionShape(level, under).isEmpty() && roof.getDestroySpeed(level, under) >= 0.0F) {
+                        this.bot.getNavigation().stop();
+                        this.bot.getMoveControl().setWantedPosition(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 0.0);
+                        this.breakBlock(level, under);
+                    } else {
+                        this.doDig(level, true);
+                    }
                 } else {
                     this.doDig(level, false); // (never down towards the lava sea)
                 }
