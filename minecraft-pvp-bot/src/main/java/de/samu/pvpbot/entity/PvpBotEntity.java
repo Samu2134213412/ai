@@ -797,9 +797,11 @@ public class PvpBotEntity extends PathfinderMob {
             this.foodCooldown--;
             return;
         }
-        if (this.getTarget() == null && this.getHealth() < this.getMaxHealth() - 4.0F
+        // (A player gets about 8 hearts' worth of healing out of a steak through natural regeneration;
+        // the bot has no hunger bar, so a steak heals it directly - 8 points, a bit less than that.)
+        if (this.getTarget() == null && this.getHealth() < this.getMaxHealth() - 6.0F
                 && this.kit.remove(Gatherer.Res.COOKED_MEAT.match, 1) == 1) {
-            this.heal(4.0F);
+            this.heal(8.0F);
             this.foodCooldown = 40;
             level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.GENERIC_EAT, this.getSoundSource(), 1.0F, 1.0F);
         }
