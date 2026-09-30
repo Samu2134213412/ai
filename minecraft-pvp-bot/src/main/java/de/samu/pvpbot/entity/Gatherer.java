@@ -1005,9 +1005,7 @@ final class Gatherer {
                 this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
             }
             if (this.bot.isInWater()) {
-                // Stuck in a water hole: swim up and out, digging a way up if needed.
-                this.bot.getJumpControl().jump();
-                this.doDigUp(level);
+                this.climbOutOfWater(level);
             } else if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
                 this.doDigUp(level);
             } else {
@@ -1049,6 +1047,21 @@ final class Gatherer {
         this.freeTicks = 200;
         this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
         return true;
+    }
+
+    private int wetTicks;
+
+    /** Like a player in a pit of water: jump and put a block under its feet each time, up and out. */
+    private void climbOutOfWater(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        this.bot.getNavigation().stop();
+        this.bot.getJumpControl().jump();
+        BlockPos below = feet.below();
+        if (level.getBlockState(below).canBeReplaced()) {
+            this.bridge(level, below, false);
+        } else if (!level.getBlockState(feet.above(2)).getCollisionShape(level, feet.above(2)).isEmpty()) {
+            this.breakBlock(level, feet.above(2)); // a ceiling over the pool
+        }
     }
 
     private static String bn(ServerLevel level, BlockPos p) {
@@ -1793,6 +1806,14 @@ final class Gatherer {
         if (this.sidewaysTicks > 0) {
             this.sidewaysTicks--;
             down = false;
+        }
+        if (this.bot.isInWater() && ++this.wetTicks > 60) {
+            // Floating in a pool (a player would not dig on from here): out of it on blocks first.
+            this.climbOutOfWater(level);
+            return;
+        }
+        if (!this.bot.isInWater()) {
+            this.wetTicks = 0;
         }
         if (this.digBlocked >= 4 || this.bot.isInWater()) {
             // Water (or lava) on every side, e.g. standing in the lake it just scooped from: walk to
