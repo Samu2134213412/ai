@@ -2065,6 +2065,10 @@ final class Gatherer {
             this.step = null;
             return;
         }
+        if (type == EntityTypes.BLAZE) {
+            // Blazes set you on fire: fire resistance first, like a player would.
+            this.drinkFireResistance(this.level());
+        }
         this.bot.huntTarget(mob);
         this.step = null;
     }
