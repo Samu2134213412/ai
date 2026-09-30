@@ -1910,6 +1910,14 @@ final class Gatherer {
         if (this.escapeLava(level)) {
             return true;
         }
+        for (BlockPos snow : new BlockPos[]{this.bot.blockPosition(), this.bot.blockPosition().above()}) {
+            if (level.getBlockState(snow).is(Blocks.POWDER_SNOW)) {
+                // Sinking into powder snow (it freezes you): dig out of it and jump, like a player.
+                this.breakBlock(level, snow);
+                this.bot.getJumpControl().jump();
+                return true;
+            }
+        }
         for (BlockPos web : new BlockPos[]{this.bot.blockPosition(), this.bot.blockPosition().above(), this.bot.blockPosition().above(2)}) {
             if (level.getBlockState(web).is(Blocks.COBWEB)) {
                 // Caught in a cobweb (strongholds, mineshafts): cut it, like a player with a sword.
@@ -2627,6 +2635,11 @@ final class Gatherer {
             }
         } else if (this.bot.position().distanceToSqr(center) > 2.0) {
             this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1);
+            if (this.bot.position().distanceToSqr(center) < 9.0 && center.y > this.bot.getY() + 1.2) {
+                // The portal stands higher than a jump (built on a hillside): a block up first.
+                this.pillarUp(level);
+                return;
+            }
             if (this.bot.position().distanceToSqr(center) < 9.0 && center.y > this.bot.getY() + 0.5 && this.bot.onGround()) {
                 // The portal stands on its obsidian frame, a block up: jump in.
                 this.bot.getJumpControl().jump();
