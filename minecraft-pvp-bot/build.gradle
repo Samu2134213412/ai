@@ -27,12 +27,39 @@ loom {
     }
 }
 
-repositories {}
+repositories {
+    maven { url = "https://maven.maxhenkel.de/repository/public" }
+    exclusiveContent {
+        forRepository { maven { url = "https://api.modrinth.com/maven" } }
+        filter { includeGroup "maven.modrinth" }
+    }
+    mavenCentral()
+}
+
+// Claude SDK for the in-game AI chat: bundled into the mod jar (with everything it needs).
+configurations {
+    bundled
+    implementation.extendsFrom bundled
+}
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // Simple Voice Chat is required: its API to compile against, the mod itself to run the dev server.
+    compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
+    runtimeOnly "maven.modrinth:simple-voice-chat:${project.voicechat_version}"
+
+    bundled "com.anthropic:anthropic-java:${project.anthropic_version}"
+}
+
+// Every jar of the SDK (and its dependencies) goes into the mod as a nested jar.
+afterEvaluate {
+    configurations.bundled.resolvedConfiguration.resolvedArtifacts.each { art ->
+        def id = art.moduleVersion.id
+        dependencies.add("include", "${id.group}:${id.name}:${id.version}")
+    }
 }
 
 processResources {

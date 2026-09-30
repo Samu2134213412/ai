@@ -28,7 +28,15 @@ fabricApi {
     }
 }
 
-repositories {}
+repositories {
+    // (for the bot mod's dependencies in the duel test: Simple Voice Chat, Claude SDK)
+    maven { url = "https://maven.maxhenkel.de/repository/public" }
+    exclusiveContent {
+        forRepository { maven { url = "https://api.modrinth.com/maven" } }
+        filter { includeGroup "maven.modrinth" }
+    }
+    mavenCentral()
+}
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"

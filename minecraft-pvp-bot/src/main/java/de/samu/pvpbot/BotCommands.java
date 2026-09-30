@@ -4,7 +4,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import de.samu.pvpbot.ai.BotAi;
 import de.samu.pvpbot.brain.BotBrain;
+import de.samu.pvpbot.voice.BotVoice;
 import de.samu.pvpbot.entity.PvpBotEntity;
 import java.util.Collection;
 import java.util.List;
@@ -85,6 +87,15 @@ public final class BotCommands {
                 .then(Commands.literal("chat")
                         .then(Commands.literal("on").executes(ctx -> setTalk(ctx, true)))
                         .then(Commands.literal("off").executes(ctx -> setTalk(ctx, false))))
+                .then(Commands.literal("ki")
+                        .executes(BotCommands::aiInfo)
+                        .then(Commands.literal("key")
+                                .then(Commands.argument("key", StringArgumentType.greedyString())
+                                        .executes(BotCommands::aiKey)))
+                        .then(Commands.literal("aus").executes(BotCommands::aiOff)))
+                .then(Commands.literal("sag")
+                        .then(Commands.argument("text", StringArgumentType.greedyString())
+                                .executes(BotCommands::aiSay)))
                 .then(Commands.literal("tp").executes(BotCommands::teleport))
                 .then(Commands.literal("remove").executes(BotCommands::remove))
                 .then(Commands.literal("list").executes(BotCommands::list)));
@@ -456,6 +467,49 @@ public final class BotCommands {
         bots.forEach(b -> b.setTalk(talk));
         ctx.getSource().sendSuccess(() -> Component.literal(talk ? "§aBots erzählen dir, was sie lernen." : "§eBots lernen jetzt leise."), false);
         return bots.size();
+    }
+
+    private static int aiInfo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        boolean key = BotAi.INSTANCE.hasKey(player.getUUID());
+        ctx.getSource().sendSuccess(() -> Component.literal("§6KI-Chat: " + (key ? "§aan" : "§caus – §f/pvpbot ki key <dein-anthropic-key>")
+                + "\n§7Schreib im Chat §f@bot <text>§7 (oder §f@Name§7 / §fName, <text>§7) oder §f/pvpbot sag <text>§7. "
+                + "Die KI antwortet für deinen Bot und legt seine Ziele fest (Durchspielen, Aufträge, Kämpfen …). Modell: §f"
+                + BotAi.INSTANCE.model() + (BotVoice.available() ? "§7 · Voice Chat: §aan" : "§7 · Voice Chat: §caus")), false);
+        return key ? 1 : 0;
+    }
+
+    private static int aiKey(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        String key = StringArgumentType.getString(ctx, "key").strip();
+        if (!key.startsWith("sk-")) {
+            ctx.getSource().sendFailure(Component.literal("Das sieht nicht wie ein Anthropic-API-Key aus (beginnt mit sk-)."));
+            return 0;
+        }
+        BotAi.INSTANCE.setKey(player.getUUID(), key);
+        // (The key is never shown again or written to the log.)
+        ctx.getSource().sendSuccess(() -> Component.literal("§aAPI-Key gespeichert. §7Schreib jetzt im Chat §f@bot hallo"), false);
+        return 1;
+    }
+
+    private static int aiOff(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        BotAi.INSTANCE.setKey(player.getUUID(), null);
+        ctx.getSource().sendSuccess(() -> Component.literal("§eAPI-Key gelöscht, KI-Chat aus."), false);
+        return 1;
+    }
+
+    private static int aiSay(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        PvpBotEntity bot = nearestBot(ctx);
+        if (bot == null) {
+            ctx.getSource().sendFailure(Component.literal("Du hast keine Bots in der Nähe. Erstelle einen mit /pvpbot survival"));
+            return 0;
+        }
+        String text = StringArgumentType.getString(ctx, "text");
+        player.sendSystemMessage(Component.literal("§7<" + player.getName().getString() + " → " + bot.getName().getString() + "> " + text));
+        BotAi.INSTANCE.ask(player, bot, text);
+        return 1;
     }
 
     private static int teleport(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

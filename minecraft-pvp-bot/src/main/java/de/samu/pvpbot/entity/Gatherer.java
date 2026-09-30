@@ -736,6 +736,12 @@ final class Gatherer {
                 return s;
             }
         }
+        if (this.orderRes != null || this.orderItem != null) {
+            Step s = this.orderStep();
+            if (s != null) {
+                return s;
+            }
+        }
         if (this.speedrun && !this.portalBuilt) {
             return this.speedrunStep();
         }
@@ -758,6 +764,82 @@ final class Gatherer {
         }
         this.goalLabel = null;
         return null;
+    }
+
+    // ------------------------------------------------------------------ orders (from the AI chat)
+
+    private @Nullable Res orderRes;
+    private @Nullable Item orderItem;
+    private int orderCount;
+
+    /**
+     * An order: fetch {@code count} of a resource (by its name, e.g. "diamond") or of a craftable item
+     * (by its id, e.g. "iron_pickaxe"). Returns null when accepted, else why not.
+     */
+    @Nullable String order(String what, int count) {
+        String key = what.toLowerCase(java.util.Locale.ROOT).replace("minecraft:", "").trim();
+        this.orderRes = null;
+        this.orderItem = null;
+        for (Res res : Res.values()) {
+            if (res.name().equalsIgnoreCase(key) || res.label.equalsIgnoreCase(key)) {
+                this.orderRes = res;
+            }
+        }
+        if (this.orderRes == null) {
+            net.minecraft.resources.Identifier id = net.minecraft.resources.Identifier.tryParse("minecraft:" + key.replace(' ', '_'));
+            Item item = id == null ? null : net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+            if (item == null || !RECIPES.containsKey(item)) {
+                return "kann ich nicht besorgen (möglich: " + orderOptions() + ")";
+            }
+            this.orderItem = item;
+        }
+        this.orderCount = Math.max(1, Math.min(count, 64 * 4));
+        this.enabled = true;
+        this.step = null;
+        this.replanTimer = 0;
+        return null;
+    }
+
+    void cancelOrder() {
+        this.orderRes = null;
+        this.orderItem = null;
+    }
+
+    @Nullable String currentOrder() {
+        if (this.orderRes != null) {
+            return this.orderCount + " " + this.orderRes.label;
+        }
+        return this.orderItem == null ? null : this.orderCount + " " + new ItemStack(this.orderItem).getHoverName().getString();
+    }
+
+    static String orderOptions() {
+        StringBuilder sb = new StringBuilder();
+        for (Res res : Res.values()) {
+            sb.append(res.name().toLowerCase(java.util.Locale.ROOT)).append(", ");
+        }
+        for (Item item : RECIPES.keySet()) {
+            sb.append(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).getPath()).append(", ");
+        }
+        return sb.substring(0, Math.max(0, sb.length() - 2));
+    }
+
+    private @Nullable Step orderStep() {
+        String label = this.currentOrder();
+        Item item = this.orderItem;
+        int have = this.orderRes != null ? this.kit().count(this.orderRes.match) : this.kit().count(st -> st.is(item));
+        if (have >= this.orderCount) {
+            this.cancelOrder();
+            this.bot.tellOwner("Auftrag erledigt: " + label + " hab ich.", true);
+            return null;
+        }
+        Step s = this.orderRes != null ? this.resolve(this.orderRes, this.orderCount, 0) : this.resolveItem(item, 0);
+        if (s == null) {
+            this.cancelOrder();
+            this.bot.tellOwner("Auftrag abgebrochen: " + label + " bekomme ich gerade nicht.", true);
+            return null;
+        }
+        this.goalLabel = "Auftrag: " + label;
+        return s;
     }
 
     // ------------------------------------------------------------------ home, chests, spare sets
@@ -3605,17 +3687,23 @@ final class Gatherer {
         BlockPos spot = this.poleSpot;
         double dx = spot.getX() + 0.5 - this.bot.getX();
         double dz = spot.getZ() + 0.5 - this.bot.getZ();
-        if (dx * dx + dz * dz > 0.6 * 0.6 || this.bot.getY() > spot.getY() + 0.5) {
+        // (Higher up than the spot is fine: the pole just starts there.)
+        if (dx * dx + dz * dz > 0.6 * 0.6) {
             if (++this.poleWalk > 900) {
                 // Cannot get there: another spot next time.
+                this.badPoleSpots.add(spot);
                 this.poleSpot = null;
                 this.giveUpCrystal(crystal, "cannot reach pole spot");
                 return;
             }
-            if (dx * dx + dz * dz < 3.0 * 3.0) {
+            boolean stuck = this.noProgress();
+            if (this.poleWalk > 300 && stuck) {
+                // No way there on foot: dig one, like a player would.
+                this.tunnelTowards(level, spot);
+            } else if (dx * dx + dz * dz < 3.0 * 3.0) {
                 this.bot.getNavigation().stop();
                 this.bot.getMoveControl().setWantedPosition(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 0.8);
-            } else if (this.bot.getNavigation().isDone() || this.noProgress()) {
+            } else if (this.bot.getNavigation().isDone() || stuck) {
                 this.bot.getNavigation().moveTo(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 1.1);
             }
             return;
@@ -3826,14 +3914,25 @@ final class Gatherer {
             }
             int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos ground = new BlockPos(x, y - 1, z);
-            if (y > level.getMinY() + 10 && level.getBlockState(ground).is(Blocks.END_STONE) && new Vec3(x, 0, z).horizontalDistance() < 90.0) {
-                return new BlockPos(x, y, z);
+            // (Real ground, not the top of one of its old poles: those are one block wide.)
+            int floor = 0;
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                if (!level.getBlockState(ground.relative(d)).getCollisionShape(level, ground.relative(d)).isEmpty()) {
+                    floor++;
+                }
+            }
+            BlockPos spot = new BlockPos(x, y, z);
+            if (y > level.getMinY() + 10 && level.getBlockState(ground).is(Blocks.END_STONE) && floor >= 2
+                    && !this.badPoleSpots.contains(spot) && new Vec3(x, 0, z).horizontalDistance() < 90.0) {
+                return spot;
             }
         }
         return null;
     }
 
     private @Nullable BlockPos poleSpot;
+    /** Pole spots it could not walk to (another one next time). */
+    private final java.util.Set<BlockPos> badPoleSpots = new java.util.HashSet<>();
     private java.util.@Nullable UUID poleFor;
     private int poleWalk;
     private int poleShots;
@@ -4045,6 +4144,8 @@ final class Gatherer {
         return false;
     }
 
+    private int mineBudget = 600;
+
     private void doMine(ServerLevel level, Ore ore) {
         if (this.mineTarget == null || !ore.match.test(level.getBlockState(this.mineTarget))) {
             this.stopBreaking();
@@ -4059,8 +4160,11 @@ final class Gatherer {
         if (!target.equals(this.mineSince)) {
             this.mineSince = target;
             this.mineTargetTicks = 0;
+            // Diamonds are worth a longer way (digging over to them, bridging a cave).
+            double far = Math.sqrt(this.bot.blockPosition().distSqr(target));
+            this.mineBudget = ore == Ore.DIAMOND ? 600 + (int) (far * 80.0) : 600;
         }
-        if (++this.mineTargetTicks > 600) {
+        if (++this.mineTargetTicks > this.mineBudget) {
             // 30 seconds and still not mined (out of reach, behind water ...): take another one.
             if (PvpBotEntity.DEBUG) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   gather: gives up on {} at {}", ore, target.toShortString());
@@ -4148,7 +4252,11 @@ final class Gatherer {
                 return;
             }
         }
-        // Path is clear: step forward (and up if needed).
+        // Path is clear: step forward (and up if needed) - over a gap only on a block it puts there.
+        if (dy >= 0 && this.bot.onGround() && level.getBlockState(front.below()).getCollisionShape(level, front.below()).isEmpty()
+                && level.getFluidState(front.below()).isEmpty() && this.bridge(level, front.below())) {
+            return;
+        }
         Vec3 next = Vec3.atBottomCenterOf(dy > 0 ? front.above() : front);
         this.bot.getMoveControl().setWantedPosition(next.x, next.y, next.z, 1.0);
         if (dy > 0 && this.bot.onGround()) {

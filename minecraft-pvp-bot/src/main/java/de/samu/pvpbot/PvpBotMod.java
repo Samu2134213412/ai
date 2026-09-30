@@ -1,5 +1,6 @@
 package de.samu.pvpbot;
 
+import de.samu.pvpbot.ai.BotAi;
 import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.brain.TaskLearner;
 import de.samu.pvpbot.entity.PvpBotEntity;
@@ -10,6 +11,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -85,7 +87,11 @@ public class PvpBotMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-memory.json"));
             TaskLearner.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-tasks.json"));
+            BotAi.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-ai.json"));
         });
+
+        // Talking to your bot in the chat: "@bot ..." - answered by the AI (with the player's own API key).
+        ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> BotAi.INSTANCE.onChat(sender, message.signedContent()));
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             BotBrain.INSTANCE.save();
             TaskLearner.INSTANCE.save();

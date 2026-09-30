@@ -474,6 +474,27 @@ public class PvpBotEntity extends PathfinderMob {
         return this.gatherer.describe();
     }
 
+    /** An order from the AI chat: fetch this. Returns null when accepted, else why not. */
+    public @Nullable String order(String what, int count) {
+        return this.gatherer.order(what, count);
+    }
+
+    public void cancelOrder() {
+        this.gatherer.cancelOrder();
+    }
+
+    public @Nullable String currentOrder() {
+        return this.gatherer.currentOrder();
+    }
+
+    public static String orderOptions() {
+        return Gatherer.orderOptions();
+    }
+
+    public boolean isTalking() {
+        return this.talk;
+    }
+
     /** Called after crafting or picking something up: wear the best armor, keep a weapon in hand. */
     void onKitChanged() {
         this.kit.equipBest(this, this.isFallFlying());
@@ -675,6 +696,11 @@ public class PvpBotEntity extends PathfinderMob {
 
         this.gatherer.keepChunksLoaded();
         this.gatherer.reflexActive = this.gatherer.reflexes();
+        if (this.getTarget() == null && this.getOwner() instanceof ServerPlayer talker && talker.level() == this.level()
+                && this.distanceToSqr(talker) < 16.0 * 16.0 && de.samu.pvpbot.voice.BotVoice.isSpeaking(talker.getUUID())) {
+            // Its owner talks (Simple Voice Chat): it turns round and listens.
+            this.getLookControl().setLookAt(talker, 30.0F, 30.0F);
+        }
         this.guardLedge(level);
         this.tickRetreat(level);
         if (this.windCooldown > 0) this.windCooldown--;

@@ -79,12 +79,14 @@ Neues lernt, schreibt er es in den Chat.
 1. **Fabric installieren**: Lade den Installer von <https://fabricmc.net/use/installer/>,
    starte ihn, wähle **Minecraft 26.3** aus und klicke auf *Installieren*.
 2. **Fabric API** herunterladen (Version für 26.3): <https://modrinth.com/mod/fabric-api>
-3. Die Mod(s) herunterladen (siehe unten) – du kannst eine oder beide nehmen.
-4. Lege die `.jar`-Dateien in deinen `mods`-Ordner:
+3. **Simple Voice Chat** herunterladen (Fabric, Version für 26.3): <https://modrinth.com/plugin/simple-voice-chat>
+   – **Pflicht** für den PvP-Bot (Server *und* alle Spieler).
+4. Die Mod(s) herunterladen (siehe unten) – du kannst eine oder beide nehmen.
+5. Lege die `.jar`-Dateien in deinen `mods`-Ordner:
    - Windows: `%appdata%\.minecraft\mods` (in die Adresszeile vom Explorer eingeben)
    - macOS: `~/Library/Application Support/minecraft/mods`
    - Linux: `~/.minecraft/mods`
-5. Starte im Minecraft Launcher das Profil **fabric-loader-26.3**.
+6. Starte im Minecraft Launcher das Profil **fabric-loader-26.3**.
 
 ### Wo bekomme ich die `.jar`-Dateien?
 
@@ -142,6 +144,19 @@ Netherportal bauen und anzünden. Die nächsten Etappen (Nether, Stronghold, Dra
 | `/pvpbot brain` / `brain reset` | Zeigt bzw. löscht, was die Bots gelernt haben |
 | `/pvpbot chat on\|off` | Ob die Bots dir im Chat erzählen, was sie lernen oder ob sie feststecken |
 | `/pvpbot tp` · `list` · `remove` | Herholen · Status · Entfernen |
+| `/pvpbot ki key <key>` | Deinen **Anthropic-API-Key** hinterlegen (von <https://console.anthropic.com>). Jeder Spieler nutzt seinen eigenen Key; er wird in `config/pvpbot-ai.json` gespeichert und nie im Chat oder Log gezeigt. `/pvpbot ki` zeigt den Status, `/pvpbot ki aus` löscht den Key. |
+| `@bot <text>` im Chat | **Mit deinem Bot reden** (auch `@Name <text>`, `Name, <text>` oder `/pvpbot sag <text>`). Die KI (Claude) antwortet für ihn **und legt seine Ziele fest**: „spiel Minecraft durch“, „hol mir 10 Eisen“, „bau mir eine Eisenspitzhacke“, „komm mit“, „geh nach Hause“, „greif den Zombie an“, „hör auf“. |
+
+## KI-Chat & Voice Chat
+
+- **KI-Chat:** Deine Nachricht und der Zustand des Bots (Leben, Ort, Ausrüstung, aktueller Plan) gehen an Claude
+  (Modell `claude-opus-5-5`, änderbar in `config/pvpbot-ai.json` → `"model"`). Die KI entscheidet selbst, ob sie nur
+  antwortet oder dem Bot ein Ziel gibt (Werkzeuge: *Ziel setzen*, *Sammelauftrag*, *angreifen*). Fair bleibt es trotzdem:
+  angreifen kann er nur, was er selbst sieht. Ist der Auftrag fertig, meldet er sich. Falls Claude eine Anfrage ablehnt,
+  versucht es der Server automatisch mit dem empfohlenen Ersatzmodell (server-side fallback, `"fallbacks": "default"`).
+  Serverbetreiber können in `config/pvpbot-ai.json` einen `"serverKey"` für alle eintragen.
+- **Simple Voice Chat:** Antwortet dein Bot, hörst du ihn auch „reden“ – ein kurzes Brabbeln von dort, wo er steht
+  (Reichweite 32 Blöcke). Sprichst du in dein Mikro, dreht er sich zu dir um und hört zu.
 
 ## Befehle – Autopilot
 

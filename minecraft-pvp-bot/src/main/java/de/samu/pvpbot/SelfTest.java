@@ -337,6 +337,9 @@ final class SelfTest {
             cleanup();
             index++;
             if (index >= SCENARIOS.size()) {
+                PvpBotMod.LOGGER.info(TAG + "voice chat running: " + de.samu.pvpbot.voice.BotVoice.available()
+                        + ", babble samples: " + de.samu.pvpbot.voice.BotVoice.babble("Hallo, ich hole dir Eisen!", 7).length
+                        + ", AI orders: " + PvpBotEntity.orderOptions());
                 PvpBotMod.LOGGER.info(TAG + "==================== SUMMARY");
                 RESULTS.forEach(r -> PvpBotMod.LOGGER.info(TAG + r));
                 PvpBotMod.LOGGER.info(TAG + "==================== BRAIN");
