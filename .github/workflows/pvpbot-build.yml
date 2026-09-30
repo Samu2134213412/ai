@@ -131,6 +131,7 @@ jobs:
             [ $SECONDS -lt 7200 ] || break
           done
           grep -E "SELFTEST|Exception|FATAL|at de\.samu" full.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" > events.log || true
+          echo "===== EVENTS (first) ====="; head -600 events.log
           echo "===== EVENTS (last) ====="; tail -800 events.log
           echo "===== RESULT ====="
           grep -hE "FULL RUN|\[SELFTEST\] (PASS|FAIL)" full-*.log || true

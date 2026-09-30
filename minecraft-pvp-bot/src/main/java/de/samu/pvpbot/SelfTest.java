@@ -415,8 +415,10 @@ final class SelfTest {
         if (stall >= STUCK_SECONDS && !stuckNow) {
             stuckNow = true;
             stuckEpisodes++;
-            PvpBotMod.LOGGER.info(TAG + String.format("  STUCK #%d at t=%ds: no progress for %ds at %s in %s | %s | kit %s",
+            PvpBotMod.LOGGER.info(TAG + String.format("  STUCK #%d at t=%ds: no progress for %ds at %s in %s (water %s, ground %s, feet %s, below %s) | %s | kit %s",
                     stuckEpisodes, now, stall, bot.blockPosition().toShortString(), bot.level().dimension().toString(),
+                    bot.isInWater(), bot.onGround(), bot.level().getBlockState(bot.blockPosition()).getBlock().getName().getString(),
+                    bot.level().getBlockState(bot.blockPosition().below()).getBlock().getName().getString(),
                     bot.describeNeeds(), sig));
         }
         var kit = bot.getKit();

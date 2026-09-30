@@ -1978,6 +1978,11 @@ final class Gatherer {
                 this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
             return new ClimbUp("Holz gibt es oben"); // (no trees in caves)
         }
+        if (ore == Ore.STONE && this.nearest(ore) == null && !this.bot.isInWater()
+                && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            // No stone in sight: it is right under the grass - dig a staircase down, like a player.
+            return new Descend();
+        }
         return this.nearest(ore) != null ? new Mine(ore) : new Explore(ore.label);
     }
 
@@ -4112,6 +4117,9 @@ final class Gatherer {
         for (BlockPos p : list) {
             if (this.blacklist.contains(p) || !ore.match.test(this.level().getBlockState(p))) {
                 continue;
+            }
+            if (ore != Ore.WATER && ore != Ore.LAVA && this.level().getFluidState(p.above()).is(net.minecraft.tags.FluidTags.WATER)) {
+                continue; // (under water - the bottom of a lake or the sea: nobody mines there)
             }
             // Exposed blocks are much cheaper to reach than buried ones.
             double score = this.bot.blockPosition().distSqr(p) * (this.isExposed(p) ? 1.0 : 3.0);
