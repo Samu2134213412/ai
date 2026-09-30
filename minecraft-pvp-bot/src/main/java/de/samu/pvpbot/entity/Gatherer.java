@@ -2716,7 +2716,16 @@ final class Gatherer {
         this.visitedCells.add(cellKey(here));
         BlockPos best = null;
         double bestDist = Double.MAX_VALUE;
+        BlockPos spawner = this.nearest(Ore.SPAWNER);
+        if (spawner != null && !this.visitedCells.contains(cellKey(spawner)) && spawner.distSqr(here) < 64 * 64) {
+            // The only spawner in a stronghold (silverfish) is in the end portal room: go there.
+            best = spawner;
+            bestDist = 0.0;
+        }
         for (BlockPos p : this.known.getOrDefault(Ore.STRONGHOLD, List.of())) {
+            if (best != null && bestDist == 0.0) {
+                break;
+            }
             if (this.visitedCells.contains(cellKey(p)) || this.blacklist.contains(p)) {
                 continue;
             }
@@ -3592,7 +3601,7 @@ final class Gatherer {
         if (list.contains(p)) {
             return;
         }
-        int cap = ore == Ore.STRONGHOLD || ore == Ore.FORTRESS ? 512 : 128;
+        int cap = ore == Ore.STRONGHOLD ? 2048 : ore == Ore.FORTRESS ? 512 : 128;
         if (list.size() >= cap) {
             list.remove(0);
         }
