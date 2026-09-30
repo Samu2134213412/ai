@@ -2967,8 +2967,9 @@ final class Gatherer {
                 return;
             }
             if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
-                // Open on this side: down again, then out and up for the shot.
+                // Open on this side: down again, then out and up for the shot - from this same side.
                 this.cageOpened.add(crystal.getUUID());
+                this.cageSide.put(crystal.getUUID(), this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0));
             }
             if (PvpBotEntity.DEBUG) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   cage at {}: {}", crystal.blockPosition().toShortString(),
@@ -3048,6 +3049,9 @@ final class Gatherer {
     private @Nullable BlockPos findPoleSpot(ServerLevel level, net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal, boolean caged) {
         Vec3 c = crystal.position();
         Vec3 toBot = this.bot.position().subtract(c).multiply(1.0, 0.0, 1.0);
+        if (this.cageSide.containsKey(crystal.getUUID())) {
+            toBot = this.cageSide.get(crystal.getUUID()); // (the side where the cage is open)
+        }
         Vec3 toMiddle = new Vec3(-c.x, 0.0, -c.z);
         int radius = 0;
         if (caged) {
@@ -3092,6 +3096,7 @@ final class Gatherer {
     private int poleStall;
     private boolean poleDone;
     private final java.util.Set<java.util.UUID> cageOpened = new java.util.HashSet<>();
+    private final java.util.Map<java.util.UUID, Vec3> cageSide = new java.util.HashMap<>();
 
     private int towerGroundY = Integer.MIN_VALUE;
     private java.util.@Nullable UUID towerCrystal;
