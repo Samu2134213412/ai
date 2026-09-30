@@ -709,7 +709,7 @@ final class Gatherer {
                 // Worn: the next one now, while there is still a pickaxe to get the stuff with.
                 Item spare = pick.is(Items.DIAMOND_PICKAXE) || pick.is(Items.NETHERITE_PICKAXE) ? Items.IRON_PICKAXE
                         : pick.is(Items.GOLDEN_PICKAXE) ? Items.STONE_PICKAXE : pick.getItem();
-                needs.add(new Need(spare, "eine Ersatz-Spitzhacke"));
+                needs.add(0, new Need(spare, "eine Ersatz-Spitzhacke")); // (first: without one nothing else works)
             }
         }
         if (this.autonomous && this.needPickaxe(Items.DIAMOND_PICKAXE, 99) != null) {
