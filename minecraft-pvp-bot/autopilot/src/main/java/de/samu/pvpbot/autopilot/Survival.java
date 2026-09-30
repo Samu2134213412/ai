@@ -817,16 +817,16 @@ final class Survival {
         }
         // No stone in sight: dig straight down to it like a player (up top it is only dirt), and
         // later build back up with the dirt. A staircase only where straight down is not safe.
-        if (this.digDown(mc, p, level)) {
+        if (this.digDown(mc, p, level, 40)) {
             return true;
         }
         return this.digStairs(mc, p, level, true);
     }
 
     /** Straight down, one block at a time, standing in the middle of the hole. False where that is not safe. */
-    private boolean digDown(Minecraft mc, LocalPlayer p, Level level) {
+    private boolean digDown(Minecraft mc, LocalPlayer p, Level level, int minY) {
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        if (feet.getY() < 40 || p.isInWater()) {
+        if (feet.getY() <= minY || p.isInWater()) {
             return false;
         }
         BlockPos below = feet.below();
@@ -845,7 +845,7 @@ final class Survival {
         if (PathFinder.body(level, below) && PathFinder.body(level, below.below())) {
             return false; // a cave right under it: the staircase handles drops
         }
-        this.say(p, "gräbt nach unten zum Stein (y " + feet.getY() + ")");
+        this.say(p, "gräbt nach unten (y " + feet.getY() + ")");
         Vec3 center = Vec3.atBottomCenterOf(feet);
         double off = center.subtract(p.position()).horizontalDistance();
         if (off > 0.3 && p.onGround()) {
@@ -869,7 +869,11 @@ final class Survival {
         if (kind == Kind.DIAMOND && pickaxeTier(p) < 3) {
             return false;
         }
-        // Down to the right depth, then a straight tunnel (turning away from lava).
+        // Down to the right depth (straight down where that is safe, else a staircase), then a
+        // straight tunnel (turning away from lava).
+        if (p.getY() > depth + 1 && this.digDown(mc, p, level, depth)) {
+            return true;
+        }
         return this.digStairs(mc, p, level, p.getY() > depth);
     }
 
