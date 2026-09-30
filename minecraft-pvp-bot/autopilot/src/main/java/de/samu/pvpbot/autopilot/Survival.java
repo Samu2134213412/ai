@@ -1094,8 +1094,8 @@ final class Survival {
             // Lava overhead: go sideways first.
             return this.explore(mc, p, level, "sucht einen Weg nach oben");
         }
-        if (!level.getFluidState(head).isEmpty() || p.isInWater()) {
-            // Water: just swim up.
+        if (!level.getFluidState(head).isEmpty() || p.isUnderWater()) {
+            // Deep water: just swim up (with only the feet in water it builds up as usual).
             this.ap.kJump = true;
             return true;
         }
