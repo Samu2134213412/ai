@@ -792,8 +792,50 @@ final class Survival {
         if (stone != null && stone.distSqr(p.blockPosition()) < 32 * 32) {
             return this.mine(mc, p, level, stone);
         }
-        // No stone in sight: dig down a staircase until there is.
+        // No stone in sight: dig straight down to it like a player (up top it is only dirt), and
+        // later build back up with the dirt. A staircase only where straight down is not safe.
+        if (this.digDown(mc, p, level)) {
+            return true;
+        }
         return this.digStairs(mc, p, level, true);
+    }
+
+    /** Straight down, one block at a time, standing in the middle of the hole. False where that is not safe. */
+    private boolean digDown(Minecraft mc, LocalPlayer p, Level level) {
+        BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+        if (feet.getY() < 40 || p.isInWater()) {
+            return false;
+        }
+        BlockPos below = feet.below();
+        for (int i = 1; i <= 3; i++) {
+            BlockPos b = feet.below(i);
+            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || level.getBlockState(b).getDestroySpeed(level, b) < 0.0F) {
+                return false;
+            }
+        }
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            // (Water right next to the hole would pour in.)
+            if (!level.getFluidState(below.relative(d)).isEmpty() || !level.getFluidState(feet.relative(d)).isEmpty()) {
+                return false;
+            }
+        }
+        if (PathFinder.body(level, below) && PathFinder.body(level, below.below())) {
+            return false; // a cave right under it: the staircase handles drops
+        }
+        this.say(p, "gräbt nach unten zum Stein (y " + feet.getY() + ")");
+        Vec3 center = Vec3.atBottomCenterOf(feet);
+        double off = center.subtract(p.position()).horizontalDistance();
+        if (off > 0.3 && p.onGround()) {
+            // To the middle of the block first, or it stays standing on the edge.
+            this.ap.face(p, center.subtract(p.position()).multiply(1.0, 0.0, 1.0), 40.0F);
+            this.ap.kForward = true;
+            this.ap.kSneak = true; // (slowly, so it does not walk past the middle)
+            return true;
+        }
+        if (PathFinder.body(level, below)) {
+            return true; // falling into the hole just dug
+        }
+        return this.mine(mc, p, level, below);
     }
 
     private boolean mineOre(Minecraft mc, LocalPlayer p, Level level, Kind kind, int depth) {

@@ -1205,6 +1205,7 @@ public final class Autopilot {
     private int lootId = -1;
     private int deadTicks;
     private int lootTicks;
+    private int lootCarried;
 
     boolean collectLoot(Minecraft mc, LocalPlayer p) {
         net.minecraft.world.entity.item.ItemEntity closest = null;
@@ -1221,8 +1222,18 @@ public final class Autopilot {
         if (closest == null) {
             return false;
         }
+        // The clock only starts again once something is picked up (switching between two items it
+        // cannot reach must not keep it here forever).
+        int carried = 0;
+        for (ItemStack st : p.getInventory().getNonEquipmentItems()) {
+            carried += st.getCount();
+        }
         if (closest.getId() != this.lootId) {
             this.lootId = closest.getId();
+            this.lootTicks = Math.min(this.lootTicks, 60);
+        }
+        if (carried != this.lootCarried) {
+            this.lootCarried = carried;
             this.lootTicks = 0;
         }
         if (++this.lootTicks > 100) {
