@@ -2596,7 +2596,7 @@ final class Gatherer {
 
     private void doHuntMob(net.minecraft.world.entity.EntityType<?> type) {
         LivingEntity mob = this.visibleMob(type);
-        if (mob == null) {
+        if (mob == null || this.bot.isRetreating()) {
             this.step = null;
             return;
         }

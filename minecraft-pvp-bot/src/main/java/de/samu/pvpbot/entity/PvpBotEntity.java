@@ -588,6 +588,55 @@ public class PvpBotEntity extends PathfinderMob {
 
     // ------------------------------------------------------------------ server tick
 
+    private int retreatUntil;
+
+    public boolean isRetreating() {
+        return this.tickCount < this.retreatUntil;
+    }
+
+    /**
+     * Several monsters on it and low on health (a blaze spawner): back off like a player, eat, and
+     * only go on once it is healthy again - one at a time instead of all of them at once.
+     */
+    private void tickRetreat(ServerLevel level) {
+        if (!this.gatherer.isSpeedrun() && !this.gatherer.isAutonomousMode()) {
+            return;
+        }
+        List<net.minecraft.world.entity.monster.Monster> near = level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
+                this.getBoundingBox().inflate(14.0), m -> m.isAlive() && m.getTarget() == this);
+        if (!this.isRetreating()) {
+            if (this.getHealth() >= 8.0F || near.size() < 2) {
+                return;
+            }
+            this.retreatUntil = this.tickCount + 200;
+            this.tellOwner("§6Zu viele auf einmal – ich ziehe mich zurück und esse.", false);
+            if (DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   retreat: hp {} with {} monsters on it", this.getHealth(), near.size());
+            }
+        }
+        if (near.isEmpty() && this.getHealth() >= 14.0F || this.getHealth() >= 17.0F) {
+            this.retreatUntil = 0;
+            return;
+        }
+        this.setTarget(null);
+        if (near.isEmpty()) {
+            return;
+        }
+        Vec3 center = Vec3.ZERO;
+        for (var m : near) {
+            center = center.add(m.position());
+        }
+        center = center.scale(1.0 / near.size());
+        Vec3 away = this.position().subtract(center).multiply(1.0, 0.0, 1.0);
+        if (away.lengthSqr() < 1.0E-4) {
+            away = new Vec3(1.0, 0.0, 0.0);
+        }
+        Vec3 goal = this.position().add(away.normalize().scale(8.0));
+        if (this.getNavigation().isDone() || this.tickCount % 20 == 0) {
+            this.getNavigation().moveTo(goal.x, goal.y, goal.z, 1.3);
+        }
+    }
+
     /**
      * While fighting: never step off a ledge into a deep drop or lava (dodging a blaze on a fortress
      * bridge). Like a player who sneaks at the edge: stop instead.
@@ -625,6 +674,7 @@ public class PvpBotEntity extends PathfinderMob {
         this.gatherer.keepChunksLoaded();
         this.gatherer.reflexActive = this.gatherer.reflexes();
         this.guardLedge(level);
+        this.tickRetreat(level);
         if (this.windCooldown > 0) this.windCooldown--;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
         if (this.potionCooldown > 0) this.potionCooldown--;
@@ -1001,6 +1051,10 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private void refreshTarget(ServerLevel level) {
+        if (this.isRetreating()) {
+            this.setTarget(null);
+            return;
+        }
         LivingEntity current = this.getTarget();
         if (current != null && !this.isValidTarget(current)) {
             if (this.duelOwner && this.isOwnedBy(current)) {
