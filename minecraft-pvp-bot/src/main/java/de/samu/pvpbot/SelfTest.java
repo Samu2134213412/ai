@@ -159,6 +159,12 @@ final class SelfTest {
         ServerLifecycleEvents.SERVER_STARTED.register(SelfTest::setup);
         ServerTickEvents.END_SERVER_TICK.register(SelfTest::tick);
         ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamage, damageTaken, blocked) -> {
+            if (bot != null && entity == bot && damageTaken >= 2.0F) {
+                PvpBotMod.LOGGER.info(TAG + String.format("  bot took %.1f from %s (%s) at %s, hp now %.1f, %s",
+                        damageTaken, source.typeHolder().getRegisteredName(),
+                        source.getEntity() == null ? "-" : source.getEntity().getName().getString(),
+                        bot.blockPosition().toShortString(), bot.getHealth(), bot.describeState()));
+            }
             if (bot != null && source.getEntity() == bot) {
                 String type = source.typeHolder().getRegisteredName();
                 if (type.contains("mace")) {

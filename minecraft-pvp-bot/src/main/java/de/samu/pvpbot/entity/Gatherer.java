@@ -3090,6 +3090,10 @@ final class Gatherer {
                 this.bot.getMoveControl().setWantedPosition(next.x, this.bot.getY(), next.z, 0.5);
                 return;
             }
+            if (hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK && level.getBlockState(hit.getBlockPos()).is(Blocks.IRON_BARS)) {
+                // Bars out of reach, but still in the air (just jumped up the pole): land first.
+                return;
+            }
             if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
                 // A bigger hole: every bar on this side within reach (the shot from further out comes
                 // in at a slightly different angle).
