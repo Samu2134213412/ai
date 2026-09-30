@@ -972,6 +972,28 @@ public class PvpBotEntity extends PathfinderMob {
         }
     }
 
+    /** A direction to hop to with ground under it and no lava near; NaN if there is none. */
+    private double safeHopAngle(ServerLevel level) {
+        double start = this.random.nextDouble() * Math.PI * 2.0;
+        for (int k = 0; k < 8; k++) {
+            double a = start + k * Math.PI / 4.0;
+            BlockPos land = BlockPos.containing(this.getX() + Math.cos(a) * 1.6, this.getY(), this.getZ() + Math.sin(a) * 1.6);
+            boolean ground = false;
+            boolean lava = false;
+            for (int dy = -3; dy <= 1; dy++) {
+                BlockPos p = land.above(dy);
+                lava |= level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA);
+                if (dy < 0 && dy >= -2 && !level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+                    ground = true;
+                }
+            }
+            if (ground && !lava) {
+                return a;
+            }
+        }
+        return Double.NaN;
+    }
+
     /** Tries ever stronger ways out: hop aside, wind charge, dig free, teleport. */
     private void unstuck(ServerLevel level) {
         this.unstuckStage++;
@@ -990,7 +1012,11 @@ public class PvpBotEntity extends PathfinderMob {
             this.setMode(Mode.GROUND);
         }
         this.getNavigation().stop();
-        double angle = this.random.nextDouble() * Math.PI * 2.0;
+        double angle = this.safeHopAngle(level);
+        if (Double.isNaN(angle) && this.unstuckStage <= 2) {
+            this.unstuckStage = 2; // (no safe side to hop to - lava or a drop all round: dig free instead)
+            angle = 0.0;
+        }
         String how;
         switch (this.unstuckStage) {
             case 1 -> {

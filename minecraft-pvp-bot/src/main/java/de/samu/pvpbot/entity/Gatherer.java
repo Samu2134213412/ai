@@ -4408,6 +4408,9 @@ final class Gatherer {
             if (ore != Ore.WATER && ore != Ore.LAVA && this.level().getFluidState(p.above()).is(net.minecraft.tags.FluidTags.WATER)) {
                 continue; // (under water - the bottom of a lake or the sea: nobody mines there)
             }
+            if (ore != Ore.LAVA && ore != Ore.OBSIDIAN && ore != Ore.WATER && this.lavaNear(p, ore == Ore.DIAMOND ? 1 : 2)) {
+                continue; // (next to lava: one wrong step and everything is gone)
+            }
             // Exposed blocks are much cheaper to reach than buried ones.
             double score = this.bot.blockPosition().distSqr(p) * (this.isExposed(p) ? 1.0 : 3.0);
             if (score < bestScore) {
@@ -4547,6 +4550,21 @@ final class Gatherer {
                 return;
             }
         }
+        // Going down: never into a drop (a cave under the next block) - a block there, or not this way.
+        if (dy < 0 && this.bot.onGround()) {
+            BlockPos land = front.below();
+            int depth = 0;
+            while (depth < 4 && level.getBlockState(land.below(depth + 1)).getCollisionShape(level, land.below(depth + 1)).isEmpty()) {
+                depth++;
+            }
+            if (depth >= 3 || level.getFluidState(land.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA)) {
+                if (!this.bridge(level, land.below())) {
+                    this.digDir = this.digDir.getClockWise();
+                    this.noProgressTicks = 0;
+                }
+                return;
+            }
+        }
         // Path is clear: step forward (and up if needed) - over a gap only on a block it puts there.
         if (dy >= 0 && this.bot.onGround() && level.getBlockState(front.below()).getCollisionShape(level, front.below()).isEmpty()
                 && level.getFluidState(front.below()).isEmpty() && this.bridge(level, front.below())) {
@@ -4558,6 +4576,15 @@ final class Gatherer {
             this.bot.getJumpControl().jump();
         }
         this.noProgressTicks = 20;
+    }
+
+    private boolean lavaNear(BlockPos p, int r) {
+        for (BlockPos q : BlockPos.betweenClosed(p.offset(-r, -r, -r), p.offset(r, r, r))) {
+            if (this.level().getFluidState(q).is(net.minecraft.tags.FluidTags.LAVA)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean nearLava(ServerLevel level, BlockPos p) {
