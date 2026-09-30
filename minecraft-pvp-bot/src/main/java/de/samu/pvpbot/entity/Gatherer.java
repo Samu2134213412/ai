@@ -1627,6 +1627,11 @@ final class Gatherer {
                 toClear.set(1, front);
             }
         }
+        if (this.bot.getY() - feet.getY() > 0.05) {
+            // Standing higher than a full block (on a fence, a slab): the head reaches into the
+            // third block up.
+            toClear.add(0, front.above(2));
+        }
         for (BlockPos p : toClear) {
             BlockState state = level.getBlockState(p);
             boolean danger = this.nearLava(level, p) || !level.getFluidState(p).isEmpty() || state.getDestroySpeed(level, p) < 0.0F;
