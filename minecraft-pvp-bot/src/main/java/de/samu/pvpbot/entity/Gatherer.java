@@ -2033,7 +2033,7 @@ final class Gatherer {
                 if (to.y > 3.0) {
                     this.doDigUp(level);
                 } else {
-                    this.doDig(level, false);
+                    this.doDig(level, to.y < -3.0 && this.bot.getY() > 40.0);
                 }
             }
             this.step = null;
