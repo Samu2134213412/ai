@@ -687,9 +687,12 @@ final class Gatherer {
                 }
             }
         }
-        if (this.speedrun && this.portalBuilt && this.needPickaxe(Items.STONE_PICKAXE, 99) != null) {
+        int ingots = kit.count(st -> st.is(Items.IRON_INGOT));
+        // (No stone in the nether: there a wooden pickaxe has to do - netherrack and bricks are soft.)
+        Item minPick = this.inNether() && ingots < 3 && kit.count(Res.COBBLE.match) < 3 ? Items.WOODEN_PICKAXE : Items.STONE_PICKAXE;
+        if (this.speedrun && this.portalBuilt && this.needPickaxe(minPick, 99) != null) {
             // Worn out all its pickaxes (the nether eats them): a new one before anything else.
-            needs.add(new Need(kit.count(st -> st.is(Items.IRON_INGOT)) >= 3 ? Items.IRON_PICKAXE : Items.STONE_PICKAXE, "eine Spitzhacke"));
+            needs.add(new Need(ingots >= 3 ? Items.IRON_PICKAXE : minPick, "eine Spitzhacke"));
         }
         if (this.autonomous && this.needPickaxe(Items.DIAMOND_PICKAXE, 99) != null) {
             needs.add(new Need(Items.DIAMOND_PICKAXE, "eine Diamantspitzhacke"));
