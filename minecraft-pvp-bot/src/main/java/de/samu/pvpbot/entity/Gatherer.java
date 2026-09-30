@@ -2621,6 +2621,10 @@ final class Gatherer {
             }
         } else if (this.bot.position().distanceToSqr(center) > 2.0) {
             this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1);
+            if (this.bot.position().distanceToSqr(center) < 9.0 && center.y > this.bot.getY() + 0.5 && this.bot.onGround()) {
+                // The portal stands on its obsidian frame, a block up: jump in.
+                this.bot.getJumpControl().jump();
+            }
             if (this.bot.position().distanceToSqr(center) < 9.0) {
                 this.bot.getMoveControl().setWantedPosition(center.x, center.y, center.z, 1.0);
             }
