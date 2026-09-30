@@ -357,6 +357,8 @@ final class Gatherer {
     private boolean eyeWentDown;
     /** Where the eye of ender went down: the stronghold is under here, the search stays close. */
     private @Nullable BlockPos eyeDownAt;
+    private int strongholdDigTicks = -1;
+    private static final int[] STRONGHOLD_LEVELS = {0, -20, 20, -40};
     private int legTicks;
     private @Nullable BlockPos lastSafe;
     private double legBest;
@@ -934,6 +936,17 @@ final class Gatherer {
     }
 
     /** In a pit: the ground two blocks away is higher than its head on at least three sides. */
+    /** Solid blocks on all four sides at its feet (a hole in a tower, a shaft): only up is out. */
+    private boolean walledIn(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            if (level.getBlockState(feet.relative(d)).getCollisionShape(level, feet.relative(d)).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean inPit(ServerLevel level) {
         BlockPos feet = this.bot.blockPosition();
         int walls = 0;
@@ -993,6 +1006,8 @@ final class Gatherer {
     private int watchKit;
     private int watchTicks;
     private int freeTicks;
+    private int watchStreak;
+    private @Nullable BlockPos lastWatchdogAt;
 
     /**
      * Not moved and nothing new in the kit for a minute while there is work: whatever it is doing
@@ -1001,12 +1016,12 @@ final class Gatherer {
     private boolean watchdog(ServerLevel level) {
         if (this.freeTicks > 0) {
             this.freeTicks--;
-            if (this.freeTicks % 60 == 0) {
+            if (this.freeTicks % 60 == 0 && this.watchStreak < 2) {
                 this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
             }
             if (this.bot.isInWater()) {
                 this.climbOutOfWater(level);
-            } else if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
+            } else if (this.inPit(level) || this.walledIn(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
                 this.doDigUp(level);
             } else {
                 this.doDig(level, false);
@@ -1037,15 +1052,21 @@ final class Gatherer {
                     this.bot.horizontalCollision, bn(level, f), bn(level, f.above()), bn(level, f.below()),
                     bn(level, f.north()), bn(level, f.east()), bn(level, f.south()), bn(level, f.west()), bn(level, f.above(2)),
                     this.bot.getTarget() == null ? "-" : this.bot.getTarget().getName().getString(), this.bot.getNavigation().isDone() ? "done" : "moving");
+            PvpBotMod.LOGGER.info("[SELFTEST]   WATCHDOG: explore target {}, streak {}", this.exploreTarget, this.watchStreak);
         }
         this.watchTicks = 0;
+        // Stuck at the same place again: get further away each time (one direction, longer).
+        BlockPos here = this.bot.blockPosition();
+        this.watchStreak = this.lastWatchdogAt != null && this.lastWatchdogAt.distSqr(here) < 12 * 12 ? Math.min(this.watchStreak + 1, 6) : 0;
+        this.lastWatchdogAt = here;
         this.step = null;
         this.bot.setTarget(null);
         this.netherGoal = null;
         this.mineTarget = null;
         this.poleSpot = null;
-        this.freeTicks = 200;
+        this.freeTicks = 200 * (1 + this.watchStreak);
         this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
+        this.exploreHeading = Double.NaN;
         return true;
     }
 
@@ -1337,7 +1358,18 @@ final class Gatherer {
             if (this.nearest(Ore.STRONGHOLD) != null) {
                 return new ExploreStronghold();
             }
-            return this.bot.getY() > 0.0 ? new Descend() : new StripMine();
+            // Strongholds lie at different depths: tunnel a while at one level, then the next.
+            if (this.strongholdDigTicks < 0) {
+                this.strongholdDigTicks = this.bot.tickCount;
+            }
+            int level = STRONGHOLD_LEVELS[((this.bot.tickCount - this.strongholdDigTicks) / 6000) % STRONGHOLD_LEVELS.length];
+            if (this.bot.getY() > level + 2.0) {
+                return new Descend();
+            }
+            if (this.bot.getY() < level - 3.0) {
+                return new ClimbUp("Festung weiter oben suchen");
+            }
+            return new StripMine();
         }
         if (kit.count(Res.EYE.match) == 0) {
             this.goalLabel = "neue Enderaugen (alle verbraucht)";
@@ -2749,6 +2781,10 @@ final class Gatherer {
                 }
                 this.bot.tellOwner("§6Lava! §7Block drunter und raus.", false);
             }
+        } else if (level.getFluidState(feet).is(net.minecraft.tags.FluidTags.LAVA) && this.kit().count(BRIDGE_BLOCK) > 0
+                && level.getBlockState(feet.below()).canBeReplaced()) {
+            // Under the surface: a block under its feet each time, up and out (like out of water).
+            this.bridge(level, feet.below(), false);
         }
         this.bot.getJumpControl().jump();
         // Out the nearest way: the closest shore around (the last safe spot may be far up a cliff).
