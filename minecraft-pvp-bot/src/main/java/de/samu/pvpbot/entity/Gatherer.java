@@ -1134,6 +1134,12 @@ final class Gatherer {
 
     private @Nullable BlockPos landGoal;
     private @Nullable BlockPos lastLand;
+    /** 24x24 areas of the overworld it has walked through (for exploring: new country first). */
+    private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
+
+    private static long cellOf(Vec3 p) {
+        return net.minecraft.world.level.ChunkPos.asLong(Mth.floor(p.x / 24.0), Mth.floor(p.z / 24.0));
+    }
     private int swimTicks;
 
     /** In open water (sea, lake): swim to the nearest land it can see, like a player. */
@@ -1149,9 +1155,14 @@ final class Gatherer {
         if (this.landGoal == null || this.swimTicks % 100 == 0) {
             this.landGoal = null;
             BlockPos here = this.bot.blockPosition();
+            boolean ahead = !Double.isNaN(this.exploreHeading);
+            for (int pass = ahead ? 0 : 1; pass < 2 && this.landGoal == null; pass++)
             for (int r = 4; r <= 64 && this.landGoal == null; r += 4) {
                 for (int k = 0; k < 16; k++) {
                     double a = Math.PI * 2.0 * k / 16.0;
+                    if (pass == 0 && Math.cos(a - this.exploreHeading) < 0.2) {
+                        continue; // (first: land on the way it is going, not back where it came from)
+                    }
                     int x = here.getX() + (int) Math.round(Math.cos(a) * r);
                     int z = here.getZ() + (int) Math.round(Math.sin(a) * r);
                     int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
@@ -1162,12 +1173,13 @@ final class Gatherer {
                     }
                 }
             }
-            if (this.landGoal == null && this.lastLand != null && this.lastLand.distSqr(here) < 512 * 512) {
+            if (this.landGoal == null && this.lastLand != null && this.lastLand.distSqr(here) > 160 * 160 && this.lastLand.distSqr(here) < 512 * 512) {
                 // Open sea, no land in sight: back to the last shore it stood on (not on across the ocean).
                 this.landGoal = this.lastLand;
             }
             if (this.landGoal == null) {
-                this.landGoal = here.relative(this.digDir, 32);
+                this.landGoal = Double.isNaN(this.exploreHeading) ? here.relative(this.digDir, 32)
+                        : here.offset((int) (Math.cos(this.exploreHeading) * 32), 0, (int) (Math.sin(this.exploreHeading) * 32));
             }
             if (PvpBotEntity.DEBUG) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   swims to land at {} from {}", this.landGoal.toShortString(), here.toShortString());
@@ -2166,6 +2178,9 @@ final class Gatherer {
         if (this.bot.onGround() && !this.bot.isInWater() && this.bot.tickCount % 20 == 0 && level.canSeeSky(this.bot.blockPosition().above())) {
             this.lastLand = this.bot.blockPosition();
         }
+        if (this.bot.tickCount % 20 == 0 && this.visitedCells.add(cellOf(this.bot.position())) && this.visitedCells.size() > 20000) {
+            this.visitedCells.clear();
+        }
         if ((this.speedrun || this.autonomous) && this.swimToLand(level)) {
             return;
         }
@@ -2465,23 +2480,24 @@ final class Gatherer {
                 candidate = this.anchor.add(pos.subtract(this.anchor).scale(-0.5));
             }
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);
-            if (this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
-                // Round a lake or the sea rather than across it (a player looking for trees does too).
-                for (int turn = 1; turn < 8 && !this.level().getFluidState(BlockPos.containing(candidate.x, y - 1, candidate.z)).isEmpty(); turn++) {
-                    double a = angle + (turn % 2 == 1 ? 1 : -1) * ((turn + 1) / 2) * (Math.PI / 4);
-                    candidate = pos.add(Math.cos(a) * 32.0, 0.0, Math.sin(a) * 32.0);
-                    y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);
-                    if (this.level().getFluidState(BlockPos.containing(candidate.x, y - 1, candidate.z)).isEmpty() && (this.speedrun || this.autonomous)) {
+            if ((this.speedrun || this.autonomous) && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+                // Like a player looking for something: out into country it has not seen yet, keeping
+                // its direction, on dry land where it can (across water where it has to).
+                double bestScore = -Double.MAX_VALUE;
+                for (int k = 0; k < 12; k++) {
+                    double a = angle + k * (Math.PI * 2.0 / 12.0);
+                    Vec3 c = pos.add(Math.cos(a) * 40.0, 0.0, Math.sin(a) * 40.0);
+                    int cy = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) c.x, (int) c.z);
+                    boolean dry = this.level().getFluidState(BlockPos.containing(c.x, cy - 1, c.z)).isEmpty();
+                    double score = (this.visitedCells.contains(cellOf(c)) ? 0.0 : 3.0) + (dry ? 1.5 : 0.0)
+                            + Math.cos(a - angle) + this.bot.getRandom().nextDouble() * 0.3;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        candidate = c;
+                        y = cy;
                         this.exploreHeading = a;
                     }
                 }
-            }
-            if (this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD && this.lastLand != null
-                    && !this.level().getFluidState(BlockPos.containing(candidate.x, y - 1, candidate.z)).isEmpty()) {
-                // Water every way: the sea. Go along the shore instead (back to where there was land).
-                this.exploreHeading = Math.atan2(this.lastLand.getZ() - pos.z, this.lastLand.getX() - pos.x) + Math.PI / 2;
-                candidate = Vec3.atBottomCenterOf(this.lastLand);
-                y = this.lastLand.getY();
             }
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
