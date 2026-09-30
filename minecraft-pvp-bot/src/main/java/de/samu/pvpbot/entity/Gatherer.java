@@ -978,8 +978,19 @@ final class Gatherer {
     private void doDigUp(ServerLevel level) {
         this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
-        BlockPos step = feet.relative(this.digDir).above();
-        for (BlockPos p : new BlockPos[]{feet.above(2), step.above(), step.above(2)}) {
+        // A staircase up, one block per step: the block in front is the step, with room above it
+        // for the body and above the head for the jump.
+        if (feet.getY() > this.digUpBestY) {
+            this.digUpBestY = feet.getY();
+            this.digUpTicks = 0;
+        } else if (++this.digUpTicks > 100) {
+            // Not getting higher this way: another direction.
+            this.digUpTicks = 0;
+            this.digUpBestY = feet.getY();
+            this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+        }
+        BlockPos step = feet.relative(this.digDir);
+        for (BlockPos p : new BlockPos[]{feet.above(2), step.above(2), step.above()}) {
             BlockState state = level.getBlockState(p);
             if (!level.getFluidState(p).isEmpty() || this.nearLava(level, p) || state.getDestroySpeed(level, p) < 0.0F) {
                 this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
@@ -991,13 +1002,20 @@ final class Gatherer {
             }
         }
         if (level.getBlockState(step).getCollisionShape(level, step).isEmpty()) {
-            // Nothing to stand on: just walk forward (the step is dug out already).
-            this.bot.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY() - 1, step.getZ() + 0.5, 1.0);
+            // No step there (air, or a drop): put a block down as the step, like a player would.
+            if (!this.bot.onGround() || !this.bridge(level, step, false)) {
+                this.digDir = this.digDir.getClockWise();
+            }
             return;
         }
+        if (this.bot.onGround()) {
+            this.bot.getJumpControl().jump();
+        }
         this.bot.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY() + 1, step.getZ() + 0.5, 1.0);
-        this.bot.getJumpControl().jump();
     }
+
+    private int digUpBestY = Integer.MIN_VALUE;
+    private int digUpTicks;
 
     /** Places a chest from its kit on free ground next to home (not touching another chest). */
     private void doPlaceChest(ServerLevel level) {
