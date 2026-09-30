@@ -1071,6 +1071,8 @@ final class Gatherer {
     }
 
     private int wetTicks;
+    private int poolTicks;
+    private @Nullable Vec3 poolPos;
 
     /** Like a player in a pit of water: jump and put a block under its feet each time, up and out. */
     private void climbOutOfWater(ServerLevel level) {
@@ -1080,8 +1082,39 @@ final class Gatherer {
         BlockPos below = feet.below();
         if (level.getBlockState(below).canBeReplaced()) {
             this.bridge(level, below, false);
-        } else if (!level.getBlockState(feet.above(2)).getCollisionShape(level, feet.above(2)).isEmpty()) {
+            return;
+        }
+        if (!level.getBlockState(feet.above(2)).getCollisionShape(level, feet.above(2)).isEmpty()) {
             this.breakBlock(level, feet.above(2)); // a ceiling over the pool
+            return;
+        }
+        // Standing on the bottom, head out of the water: onto a step next to it (made of a block
+        // into the water if there is none), like a player climbing out of a pool.
+        Direction stepDir = null;
+        Direction fillDir = null;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos side = feet.relative(d);
+            boolean roomOnTop = level.getBlockState(side.above()).getCollisionShape(level, side.above()).isEmpty()
+                    && level.getBlockState(side.above(2)).getCollisionShape(level, side.above(2)).isEmpty()
+                    && level.getFluidState(side.above()).isEmpty();
+            if (!roomOnTop) {
+                continue;
+            }
+            if (!level.getBlockState(side).getCollisionShape(level, side).isEmpty()) {
+                stepDir = d;
+                break;
+            }
+            if (fillDir == null && level.getBlockState(side).canBeReplaced()) {
+                fillDir = d;
+            }
+        }
+        if (stepDir == null && fillDir != null) {
+            this.bridge(level, feet.relative(fillDir), false);
+            stepDir = fillDir;
+        }
+        if (stepDir != null) {
+            BlockPos top = feet.relative(stepDir).above();
+            this.bot.getMoveControl().setWantedPosition(top.getX() + 0.5, top.getY(), top.getZ() + 0.5, 1.0);
         }
     }
 
@@ -1583,6 +1616,19 @@ final class Gatherer {
         ServerLevel level = this.level();
         if (this.escapeLava(level)) {
             return;
+        }
+        if (this.speedrun && this.bot.isInWater() && this.bot.getTarget() == null) {
+            if (this.poolPos == null || this.bot.position().distanceToSqr(this.poolPos) > 4.0 * 4.0) {
+                this.poolPos = this.bot.position();
+                this.poolTicks = 0;
+            } else if (++this.poolTicks > 200) {
+                // Ten seconds in the water without getting anywhere: out of it, whatever the plan was.
+                this.climbOutOfWater(level);
+                return;
+            }
+        } else {
+            this.poolTicks = 0;
+            this.poolPos = null;
         }
         if (this.bot.isInWall()) {
             // Gravel or sand fell onto its head: dig itself free before it suffocates.
@@ -2750,6 +2796,11 @@ final class Gatherer {
         }
         this.stopBreaking();
         this.bot.getNavigation().stop();
+        if (PvpBotEntity.DEBUG && this.bot.tickCount % 10 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   lava: at {} feet {} above {} below {} blocks {} fireRes {} lastSafe {}", feet.toShortString(),
+                    bn(level, feet), bn(level, feet.above()), bn(level, feet.below()), this.kit().count(BRIDGE_BLOCK),
+                    this.bot.hasEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE), this.lastSafe);
+        }
         this.drinkFireResistance(level);
         if (level.dimension() != net.minecraft.world.level.Level.NETHER && this.kit().count(st -> st.is(Items.WATER_BUCKET)) > 0
                 && level.getBlockState(feet).getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
