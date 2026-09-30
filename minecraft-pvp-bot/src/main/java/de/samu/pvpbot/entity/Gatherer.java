@@ -616,6 +616,9 @@ final class Gatherer {
             int z = Mth.floor(this.bot.getZ() + Math.sin(angle) * dist);
             for (int dy = -8; dy <= 8; dy++) {
                 BlockPos feet = new BlockPos(x, this.bot.getBlockY() + dy, z);
+                if (feet.getY() >= 127) {
+                    break; // (nothing spawns up on the bedrock roof)
+                }
                 if (!level.getBlockState(feet.below()).isFaceSturdy(level, feet.below(), Direction.UP)
                         || !level.getBlockState(feet).isAir() || !level.getBlockState(feet.above()).isAir() || !level.getBlockState(feet.above(2)).isAir()) {
                     continue;
@@ -3346,6 +3349,11 @@ final class Gatherer {
         if (state.getCollisionShape(level, pos).isEmpty() && state.isAir()) {
             this.stopBreaking();
             return true;
+        }
+        if (state.getDestroySpeed(level, pos) < 0.0F) {
+            // Bedrock, barriers, end portal frames: nobody can break those.
+            this.stopBreaking();
+            return false;
         }
         if (!pos.equals(this.breaking)) {
             this.stopBreaking();
