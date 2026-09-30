@@ -1936,7 +1936,8 @@ final class Gatherer {
             }
         }
         if (this.speedrun && this.wet(level) && this.bot.getTarget() == null) {
-            if (this.poolPos == null || this.bot.position().distanceToSqr(this.poolPos) > 4.0 * 4.0) {
+            if (this.poolPos == null || this.bot.getY() > this.poolPos.y + 2.0) {
+                // (Only real progress upwards counts: drifting around under water does not.)
                 this.poolPos = this.bot.position();
                 this.poolTicks = 0;
             } else if (++this.poolTicks > 200) {
