@@ -1708,9 +1708,9 @@ final class Gatherer {
             case Mine mine -> this.doMine(level, mine.ore());
             case Hunt hunt -> this.doHunt();
             case Explore explore -> {
-                if (explore.reason().contains("Holz") && level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD && level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                         this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
-                    // Trees grow up top: a staircase up first.
+                    // Trees, animals, endermen at night: all up top - a staircase up first.
                     this.doDigUp(level);
                     this.step = null;
                 } else {
