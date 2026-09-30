@@ -2630,7 +2630,9 @@ final class Gatherer {
             this.poleDone = true;
             return;
         }
-        if (los) {
+        // Up level with it before shooting: from below, arrows catch the edge of its tower.
+        boolean high = this.bot.getEyeY() >= crystal.getY() + 0.5;
+        if (los && (high || this.poleStall > 100)) {
             this.shootCrystal(crystal);
             if (this.poleShots > 10) {
                 this.giveUpCrystal(crystal);
@@ -2772,6 +2774,12 @@ final class Gatherer {
         BlockPos below = this.bot.blockPosition().below();
         if (!level.getBlockState(below).getCollisionShape(level, below).isEmpty()) {
             this.breakBlock(level, below);
+        } else if (this.bot.onGround()) {
+            // Standing on the edge of the ground next to the pole: down already.
+            this.towerGroundY = Integer.MIN_VALUE;
+            this.towerCrystal = null;
+            this.poleDone = false;
+            return false;
         }
         return true;
     }
