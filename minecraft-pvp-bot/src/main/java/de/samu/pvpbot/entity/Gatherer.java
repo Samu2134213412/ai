@@ -924,6 +924,9 @@ final class Gatherer {
         }
         if (level.getBlockState(step).getCollisionShape(level, step).isEmpty()) {
             // No step there (air, or a drop): put a block down as the step, like a player would.
+            if (this.kit().count(BRIDGE_BLOCK) == 0 && this.mineAnyStone(level)) {
+                return; // (nothing to build with: a few blocks from the walls around first)
+            }
             if (!this.bot.onGround() || !this.bridge(level, step, false)) {
                 this.digDir = this.digDir.getClockWise();
             }
@@ -935,7 +938,6 @@ final class Gatherer {
         this.bot.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY() + 1, step.getZ() + 0.5, 1.0);
     }
 
-    /** In a pit: the ground two blocks away is higher than its head on at least three sides. */
     /** Drops on all four sides (standing on a pillar or a thin ledge). */
     private boolean onPillar(ServerLevel level) {
         BlockPos feet = this.bot.blockPosition();
@@ -959,6 +961,7 @@ final class Gatherer {
         return true;
     }
 
+    /** In a pit: the ground two blocks away is higher than its head on at least three sides. */
     private boolean inPit(ServerLevel level) {
         BlockPos feet = this.bot.blockPosition();
         int walls = 0;
@@ -1087,6 +1090,7 @@ final class Gatherer {
     }
 
     private int wetTicks;
+    boolean reflexActive;
     private int poolTicks;
     private @Nullable Vec3 poolPos;
 
@@ -1132,6 +1136,32 @@ final class Gatherer {
             BlockPos top = feet.relative(stepDir).above();
             this.bot.getMoveControl().setWantedPosition(top.getX() + 0.5, top.getY(), top.getZ() + 0.5, 1.0);
         }
+    }
+
+    /** Breaks the closest stone-like block it can see within reach (not the one it stands on). */
+    private boolean mineAnyStone(ServerLevel level) {
+        BlockPos feet = this.bot.blockPosition();
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(feet.offset(-4, -1, -4), feet.offset(4, 3, 4))) {
+            BlockState st = level.getBlockState(p);
+            boolean stone = st.is(Blocks.STONE) || st.is(Blocks.DEEPSLATE) || st.is(Blocks.DIRT) || st.is(Blocks.GRANITE)
+                    || st.is(Blocks.DIORITE) || st.is(Blocks.ANDESITE) || st.is(Blocks.TUFF) || st.is(Blocks.NETHERRACK)
+                    || st.is(Blocks.BLACKSTONE) || st.is(Blocks.END_STONE) || st.is(Blocks.COBBLESTONE);
+            if (!stone || p.equals(feet.below()) || this.nearLava(level, p) || !this.seesBlock(level, p)) {
+                continue;
+            }
+            double d = this.bot.getEyePosition().distanceToSqr(Vec3.atCenterOf(p));
+            if (d < bestDist && d < 4.5 * 4.5) {
+                best = p.immutable();
+                bestDist = d;
+            }
+        }
+        if (best == null) {
+            return false;
+        }
+        this.breakBlock(level, best);
+        return true;
     }
 
     private static String bn(ServerLevel level, BlockPos p) {
@@ -1634,9 +1664,31 @@ final class Gatherer {
 
     // ------------------------------------------------------------------ doing
 
-    void tick() {
+    /**
+     * Reflexes that must work whatever the bot is busy with (fighting, planning, nothing): out of
+     * lava, out of a cobweb. Runs every tick from the entity. Returns true while one is acting.
+     */
+    boolean reflexes() {
+        if (!this.speedrun && !this.autonomous || this.kit().isInfinite()) {
+            return false;
+        }
         ServerLevel level = this.level();
         if (this.escapeLava(level)) {
+            return true;
+        }
+        for (BlockPos web : new BlockPos[]{this.bot.blockPosition(), this.bot.blockPosition().above(), this.bot.blockPosition().above(2)}) {
+            if (level.getBlockState(web).is(Blocks.COBWEB)) {
+                // Caught in a cobweb (strongholds, mineshafts): cut it, like a player with a sword.
+                this.breakBlock(level, web);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void tick() {
+        ServerLevel level = this.level();
+        if (this.reflexActive) {
             return;
         }
         if (this.speedrun && this.bot.isInWater() && this.bot.getTarget() == null) {
@@ -2823,6 +2875,7 @@ final class Gatherer {
         }
         this.stopBreaking();
         this.bot.getNavigation().stop();
+        this.bot.setTarget(null); // (no fight is worth burning for)
         if (PvpBotEntity.DEBUG && this.bot.tickCount % 10 == 0) {
             PvpBotMod.LOGGER.info("[SELFTEST]   lava: at {} feet {} above {} below {} blocks {} fireRes {} lastSafe {}", feet.toShortString(),
                     bn(level, feet), bn(level, feet.above()), bn(level, feet.below()), this.kit().count(BRIDGE_BLOCK),

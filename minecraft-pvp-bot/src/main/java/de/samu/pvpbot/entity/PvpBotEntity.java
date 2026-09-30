@@ -594,6 +594,7 @@ public class PvpBotEntity extends PathfinderMob {
         this.refreshTarget(level);
 
         this.gatherer.keepChunksLoaded();
+        this.gatherer.reflexActive = this.gatherer.reflexes();
         if (this.windCooldown > 0) this.windCooldown--;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
         if (this.potionCooldown > 0) this.potionCooldown--;
