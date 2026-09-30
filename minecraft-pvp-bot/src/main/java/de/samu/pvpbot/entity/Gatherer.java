@@ -2224,7 +2224,9 @@ final class Gatherer {
             }
             BlockPos stand = standBeside(level, goal);
             this.bot.getNavigation().moveTo(stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 1.1);
-            if (this.bot.getNavigation().isDone()) {
+            // (A "path" that does not move it for 3 seconds is no path either.)
+            if (this.bot.getNavigation().isDone() || this.netherGoalTicks > 60) {
+                this.bot.getNavigation().stop();
                 // No path: tunnel towards it.
                 Vec3 to = Vec3.atCenterOf(goal).subtract(this.bot.position());
                 this.digDir = Math.abs(to.x) > Math.abs(to.z) ? (to.x > 0 ? Direction.EAST : Direction.WEST) : (to.z > 0 ? Direction.SOUTH : Direction.NORTH);
