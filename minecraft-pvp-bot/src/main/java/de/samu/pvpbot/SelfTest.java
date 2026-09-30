@@ -597,6 +597,8 @@ final class SelfTest {
         // What stage 1 leaves in the inventory anyway: cobblestone (for bridging and pillaring).
         kit.add(new ItemStack(Items.COBBLESTONE, 64));
         kit.add(new ItemStack(Items.COBBLESTONE, 64));
+        // ... and the water bucket it made the obsidian with.
+        kit.add(new ItemStack(Items.WATER_BUCKET));
         ItemStack fireRes = new ItemStack(Items.POTION);
         fireRes.set(net.minecraft.core.component.DataComponents.POTION_CONTENTS,
                 new net.minecraft.world.item.alchemy.PotionContents(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE));
@@ -616,7 +618,6 @@ final class SelfTest {
         List<ItemStack> kit = new ArrayList<>(stage3Kit());
         kit.add(new ItemStack(Items.DIAMOND_SWORD));
         kit.add(new ItemStack(Items.ARROW, 64));
-        kit.add(new ItemStack(Items.WATER_BUCKET));
         return kit;
     }
 
