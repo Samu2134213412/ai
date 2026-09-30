@@ -1114,6 +1114,9 @@ final class Gatherer {
         // (Playing through, there is always work - in the End only while crystals are left: waiting
         // for the dragon to come down is fine.)
         boolean busy = this.speedrun && !this.gameBeaten && (!this.inEnd() || this.anyCrystal()) || this.autonomous && this.step != null;
+        if (this.towerGroundY != Integer.MIN_VALUE || !this.bot.onGround()) {
+            busy = false; // up on its own pole (waiting for a clear shot) or mid-air: not stuck, and no place to dig
+        }
         if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 3.0 * 3.0 || kit != this.watchKit) {
             this.watchPos = this.bot.position();
             this.watchKit = kit;
