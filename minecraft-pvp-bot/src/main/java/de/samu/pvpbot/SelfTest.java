@@ -423,8 +423,9 @@ final class SelfTest {
                                     fortress.atY(64), 200, 16, 16);
                             if (warped != null) {
                                 BlockPos w = warped.getFirst();
-                                int ax = fortress.getX() + (w.getX() - fortress.getX()) * 2 / 5;
-                                int az = fortress.getZ() + (w.getZ() - fortress.getZ()) * 2 / 5;
+                                // (In the forest itself: firmer ground than the lava caverns between.)
+                                int ax = w.getX();
+                                int az = w.getZ();
                                 sx = ax * 8;
                                 sz0 = az * 8;
                                 PvpBotMod.LOGGER.info(TAG + "  (info) start between fortress " + fortress.toShortString() + " and warped forest "
