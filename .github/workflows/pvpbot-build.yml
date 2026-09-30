@@ -15,6 +15,14 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
       - uses: gradle/actions/setup-gradle@v4
+      - name: Simple Voice Chat versions (Modrinth)
+        run: |
+          MC=$(grep '^minecraft_version' gradle.properties | cut -d= -f2)
+          echo "minecraft $MC"
+          curl -s "https://api.modrinth.com/v2/project/simple-voice-chat/version?loaders=%5B%22fabric%22%5D" | python3 -c "
+          import sys,json
+          for v in json.load(sys.stdin)[:15]: print('VC', v['version_number'], v['game_versions'][-4:], [f['url'] for f in v['files']][:1])"
+          curl -s https://maven.maxhenkel.de/repository/public/de/maxhenkel/voicechat/voicechat-api/maven-metadata.xml | grep -oE "<(latest|release)>[^<]+" || true
       - name: Build
         run: ./gradlew --no-daemon build
       - uses: actions/upload-artifact@v4
