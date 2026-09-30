@@ -2076,7 +2076,8 @@ final class Gatherer {
         if (this.kit().count(Res.COAL.match) == 0 && this.spareWood() < 2) {
             // Fuel: coal if we know where it is (or underground, where it is); wood only up top.
             if (this.needPickaxe(Items.WOODEN_PICKAXE, depth) == null) {
-                if (!this.known.getOrDefault(Ore.COAL, List.of()).isEmpty()) {
+                BlockPos coal = this.nearest(Ore.COAL);
+                if (coal != null && (coal.distSqr(this.bot.blockPosition()) < 20 * 20 || !this.underground())) {
                     return new Mine(Ore.COAL);
                 }
                 if (this.underground() && (this.speedrun || this.autonomous)) {
