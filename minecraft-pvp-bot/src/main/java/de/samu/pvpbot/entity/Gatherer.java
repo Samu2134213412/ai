@@ -1185,7 +1185,14 @@ final class Gatherer {
         this.bot.getJumpControl().jump();
         BlockPos below = feet.below();
         if (level.getBlockState(below).canBeReplaced()) {
-            this.bridge(level, below, false);
+            if (!this.bridge(level, below, false) && !this.mineAnyStone(level)) {
+                // Nothing to build with and no stone in reach: swim up to the surface.
+                BlockPos up = feet;
+                while (up.getY() < level.getMaxY() && !level.getFluidState(up).isEmpty()) {
+                    up = up.above();
+                }
+                this.bot.getMoveControl().setWantedPosition(this.bot.getX(), up.getY() + 0.5, this.bot.getZ(), 1.0);
+            }
             return;
         }
         if (!level.getBlockState(feet.above(2)).getCollisionShape(level, feet.above(2)).isEmpty()) {
