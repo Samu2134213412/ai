@@ -1087,6 +1087,21 @@ final class Survival {
      */
     private boolean digUp(Minecraft mc, LocalPlayer p, Level level) {
         this.say(p, "baut sich nach oben (y " + p.getBlockY() + ")");
+        // Not getting higher by building straight up (something above it cannot get through)? Then
+        // a staircase up to the side for a while, like a player digging out.
+        if (p.getBlockY() > this.upBestY) {
+            this.upBestY = p.getBlockY();
+            this.upTicks = 0;
+        } else if (++this.upTicks > 100) {
+            this.upTicks = 0;
+            this.upBestY = p.getBlockY();
+            this.stairsUpTicks = 200;
+            this.upDir = this.upDir.getClockWise();
+        }
+        if (this.stairsUpTicks > 0) {
+            this.stairsUpTicks--;
+            return this.stairsUp(mc, p, level);
+        }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
         if (!p.onGround() && this.pillarBase != null) {
             // Mid-jump: only the block under the feet now (the room above was made before jumping).
@@ -1129,6 +1144,46 @@ final class Survival {
             mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(face, Direction.UP, support, false));
             this.pillarBase = null;
         }
+        return true;
+    }
+
+    private int upBestY = Integer.MIN_VALUE;
+    private int upTicks;
+    private int stairsUpTicks;
+    private Direction upDir = Direction.NORTH;
+
+    /** One step of a staircase up: room above the head and above the step, a block to step on, jump. */
+    private boolean stairsUp(Minecraft mc, LocalPlayer p, Level level) {
+        BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+        BlockPos front = feet.relative(this.upDir);
+        for (BlockPos b : new BlockPos[]{feet.above(2), front.above(2), front.above()}) {
+            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b)) {
+                this.upDir = this.upDir.getClockWise();
+                return true;
+            }
+            if (!PathFinder.body(level, b)) {
+                return this.mine(mc, p, level, b);
+            }
+        }
+        if (PathFinder.body(level, front)) {
+            // No step: put a block there (on the block below it, like a player would).
+            int index = this.indexOf(p, st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE) || st.is(Items.DIRT) || st.is(Items.NETHERRACK));
+            if (index < 0 || PathFinder.body(level, front.below())) {
+                this.upDir = this.upDir.getClockWise();
+                return true;
+            }
+            int slot = this.ap.toHotbar(mc, p, index);
+            if (slot >= 0) {
+                p.getInventory().setSelectedSlot(slot);
+            }
+            Vec3 top = Vec3.atCenterOf(front.below()).add(0.0, 0.5, 0.0);
+            this.ap.face(p, top.subtract(p.getEyePosition()), 40.0F);
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(top, Direction.UP, front.below(), false));
+            return true;
+        }
+        this.ap.face(p, Vec3.atCenterOf(front).subtract(p.position()).multiply(1.0, 0.0, 1.0), 40.0F);
+        this.ap.kForward = true;
+        this.ap.kJump = p.onGround();
         return true;
     }
 
