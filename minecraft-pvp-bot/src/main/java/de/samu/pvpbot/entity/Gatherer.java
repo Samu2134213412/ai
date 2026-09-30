@@ -2631,6 +2631,9 @@ final class Gatherer {
         } else {
             this.bot.getNavigation().stop();
             this.bot.getMoveControl().setWantedPosition(center.x, center.y, center.z, 0.6);
+            if (center.y > this.bot.getY() + 0.5 && this.bot.onGround()) {
+                this.bot.getJumpControl().jump();
+            }
         }
         this.step = null;
     }
