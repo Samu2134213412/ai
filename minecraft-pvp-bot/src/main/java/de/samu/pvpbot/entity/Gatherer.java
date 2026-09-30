@@ -2072,11 +2072,25 @@ final class Gatherer {
      * fortress blocks and spawners once they are in sight.
      */
     private void doExploreNether(ServerLevel level) {
-        if (this.bot.getY() < 45.0) {
-            // Down at the lava sea (y 31): climb back up before going on.
+        if (this.lowCooldown > 0) {
+            this.lowCooldown--;
+        } else if (this.bot.getY() < 45.0) {
+            // Down at the lava sea (y 31): climb back up before going on - unless that gets nowhere
+            // (lava all around): then explore from here for a while.
+            if (this.bot.getBlockY() > this.lowBestY) {
+                this.lowBestY = this.bot.getBlockY();
+                this.lowTicks = 0;
+            } else if (++this.lowTicks > 300) {
+                this.lowTicks = 0;
+                this.lowBestY = Integer.MIN_VALUE;
+                this.lowCooldown = 600;
+            }
             this.doDigUp(level);
             this.step = null;
             return;
+        } else {
+            this.lowBestY = Integer.MIN_VALUE;
+            this.lowTicks = 0;
         }
         if (PvpBotEntity.DEBUG && ++this.netherLogTicks % 200 == 0) {
             BlockPos f = this.bot.blockPosition().relative(this.spiralDir);
@@ -2303,6 +2317,9 @@ final class Gatherer {
     private int sidewaysTicks;
     private final java.util.Set<Long> fortressVisited = new java.util.HashSet<>();
     private final java.util.Set<Long> fortressCells = new java.util.HashSet<>();
+    private int lowTicks;
+    private int lowBestY = Integer.MIN_VALUE;
+    private int lowCooldown;
     private int netherrackTicks;
 
     /** Mines a netherrack block it can see within reach (not the floor it stands on). */
