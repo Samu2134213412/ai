@@ -1262,7 +1262,7 @@ final class Gatherer {
         if (busy && !this.bot.onGround() && !this.bot.isInWater() && !this.bot.isInLava() && this.watchPos != null) {
             return false; // mid-air (a jump, a fall): no place to dig - but the clock keeps its count
         }
-        if (this.breaking != null && this.breakProgress > 0 && this.breakProgress % 20 == 0) {
+        if (this.busyBreaking() && this.breakProgress % 20 == 0) {
             this.watchTicks = Math.max(0, this.watchTicks - 20); // (breaking a block by hand is slow work, not being stuck)
         }
         if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 5.0 * 5.0 || kit != this.watchKit) {
@@ -1313,8 +1313,11 @@ final class Gatherer {
      */
     /** Breaking a block right now (by hand that takes a while: slow work, not being stuck). */
     boolean busyBreaking() {
-        return this.breaking != null && this.breakProgress > 0;
+        // (Only while it really works on it - a leftover "breaking" from before is no progress.)
+        return this.breaking != null && this.breakProgress > 0 && this.bot.tickCount - this.lastBreakTick < 40;
     }
+
+    private int lastBreakTick;
 
     void forceFree() {
         ServerLevel level = this.level();
@@ -4667,6 +4670,7 @@ final class Gatherer {
         }
         this.bot.lookAtBlock(pos);
         this.breakProgress++;
+        this.lastBreakTick = this.bot.tickCount;
         if (this.breakProgress % 4 == 0) {
             this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
         }

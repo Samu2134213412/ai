@@ -176,7 +176,7 @@ jobs:
           echo "eula=true" > run/eula.txt
           printf 'online-mode=false\nlevel-type=minecraft\\:flat\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=false\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
           timeout 5400 ./gradlew --no-daemon runServer -Pselftest -Pstagetest=parcours > parcours.log 2>&1 || true
-          grep -E "SELFTEST|Exception|FATAL|at de\.samu" parcours.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" | grep -E "=====|parcours:|WATCHDOG|HARD UNSTUCK|bot took|bot gone|gather: |LEARN|PASS|FAIL|Exception|at de\.samu|explore:|dig:|kit:|tunnel|stuck" | tail -1500 || true
+          grep -E "SELFTEST|Exception|FATAL|at de\.samu" parcours.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" | grep -E "=====|parcours:|WATCHDOG|HARD UNSTUCK|bot took|bot gone|gather: |LEARN|PASS|FAIL|Exception|at de\.samu|explore:|dig:|kit:|tunnel|stuck|gatherer tick|springe|baue mich" | tail -1500 || true
           echo "===== RESULT ====="
           grep -E "\[SELFTEST\] (PASS|FAIL)" parcours.log || true
           grep -q "\[SELFTEST\] DONE" parcours.log
