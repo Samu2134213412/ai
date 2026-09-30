@@ -1262,6 +1262,9 @@ final class Gatherer {
         if (busy && !this.bot.onGround() && !this.bot.isInWater() && !this.bot.isInLava() && this.watchPos != null) {
             return false; // mid-air (a jump, a fall): no place to dig - but the clock keeps its count
         }
+        if (this.breaking != null && this.breakProgress > 0 && this.breakProgress % 20 == 0) {
+            this.watchTicks = Math.max(0, this.watchTicks - 20); // (breaking a block by hand is slow work, not being stuck)
+        }
         if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 5.0 * 5.0 || kit != this.watchKit) {
             this.watchPos = this.bot.position();
             this.watchKit = kit;
@@ -2555,7 +2558,10 @@ final class Gatherer {
             Player owner = this.bot.getOwner();
             this.anchor = owner != null ? owner.position() : pos;
         }
-        if (this.exploreTarget == null || pos.distanceToSqr(this.exploreTarget) < 9.0 || this.bot.getNavigation().isDone() && ++this.actionTicks > 60) {
+        if (this.exploreTarget == null || pos.distanceToSqr(this.exploreTarget) < 9.0
+                || this.breaking == null && this.bot.getNavigation().isDone() && ++this.actionTicks > 60) {
+            // (Not while a block is half broken: stone by hand takes 7.5 s - a new target every 3 s
+            // would start over on another block every time and never get through.)
             boolean stuck = this.exploreTarget != null && pos.distanceToSqr(this.exploreTarget) >= 9.0;
             this.actionTicks = 0;
             double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;

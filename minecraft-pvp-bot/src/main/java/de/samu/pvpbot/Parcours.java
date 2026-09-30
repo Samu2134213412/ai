@@ -43,7 +43,9 @@ final class Parcours {
     static {
         add(new Course("Parcours 1: Grube (6 tief, 1 breit)", -90, 0, 3000,
                 () -> List.of(new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.OAK_PLANKS, 8)),
-                bot -> bot.getY() >= base.getY() + 7, Parcours::pit));
+                // Out of the shaft: on top of the block, or through its wall.
+                bot -> bot.getY() >= base.getY() + 7 || Math.abs(bot.getX() - (base.getX() - 90 + 0.5)) > 1.5
+                        || Math.abs(bot.getZ() - (Z + 0.5)) > 1.5, Parcours::pit));
         add(new Course("Parcours 2: im Berg eingeschlossen", -55, 0, 6000,
                 () -> List.of(new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.OAK_PLANKS, 8)),
                 bot -> bot.level().canSeeSky(bot.blockPosition().above()), Parcours::mountain));
@@ -65,7 +67,8 @@ final class Parcours {
         add(new Course("Parcours 7: Hoehlensturz (Treppe runter)", 125, 20, 5000,
                 () -> List.of(new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_SWORD),
                         new ItemStack(Items.STICK, 8), new ItemStack(Items.OAK_PLANKS, 16), new ItemStack(Items.COOKED_BEEF, 8)),
-                bot -> bot.getY() <= base.getY() + 2, Parcours::caveTower));
+                // Down past the hidden hollow (below it the bot strip-mines: the flat world is shallow).
+                bot -> bot.getY() <= base.getY() + 10, Parcours::caveTower));
     }
 
     private static void add(Course c) {
@@ -157,9 +160,9 @@ final class Parcours {
         tree(level, c.offset(-7, 0, -2));
     }
 
-    /** A 9x9 stone tower, 20 high, with a hidden 5x5x6 hollow half-way down: dig down without falling in. */
+    /** A 9x9 stone tower, 20 high, with a hidden 5x5x6 hollow just under the top: dig down without falling in. */
     private static void caveTower(ServerLevel level, BlockPos c) {
         box(level, c.offset(-4, 0, -4), c.offset(4, 19, 4), Blocks.STONE.defaultBlockState());
-        box(level, c.offset(-2, 5, -2), c.offset(2, 10, 2), Blocks.AIR.defaultBlockState());
+        box(level, c.offset(-2, 12, -2), c.offset(2, 17, 2), Blocks.AIR.defaultBlockState());
     }
 }
