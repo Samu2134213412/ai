@@ -1176,6 +1176,7 @@ final class Gatherer {
     private int wetTicks;
     boolean reflexActive;
     private int poolTicks;
+    private int poolDryTicks;
     private @Nullable Vec3 poolPos;
 
     /** Like a player in a pit of water: jump and put a block under its feet each time, up and out. */
@@ -1945,9 +1946,13 @@ final class Gatherer {
                 this.climbOutOfWater(level);
                 return;
             }
-        } else {
+        } else if (++this.poolDryTicks > 100) {
+            // (Five seconds on dry land: really out. Bobbing at the edge of the water is not.)
             this.poolTicks = 0;
             this.poolPos = null;
+        }
+        if (this.wet(level)) {
+            this.poolDryTicks = 0;
         }
         if (this.bot.isInWall()) {
             // Gravel or sand fell onto its head: dig itself free before it suffocates.
