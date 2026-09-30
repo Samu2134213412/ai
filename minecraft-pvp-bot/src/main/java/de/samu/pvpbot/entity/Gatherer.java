@@ -1190,7 +1190,7 @@ final class Gatherer {
             if (this.nearest(Ore.OBSIDIAN) != null) {
                 return new Mine(Ore.OBSIDIAN);
             }
-            return this.nearest(Ore.LAVA) != null ? new MakeObsidian() : this.deepStep();
+            return this.nearest(Ore.LAVA) != null ? new MakeObsidian() : this.lavaStep();
         }
         if (kit.count(st -> st.is(Items.FLINT_AND_STEEL)) == 0) {
             this.goalLabel = "ein Feuerzeug";
@@ -1422,6 +1422,11 @@ final class Gatherer {
     /** Diamonds and lava are deep down: dig down first, then strip-mine. */
     private Step deepStep() {
         return this.bot.getY() > -50.0 ? new Descend() : new StripMine();
+    }
+
+    /** Lava for obsidian: the caves below y -55 are full of it - tunnel at that level. */
+    private Step lavaStep() {
+        return this.bot.getY() > -55.0 ? new Descend() : new StripMine();
     }
 
     private @Nullable Step resolveItem(Item item, int depth) {

@@ -63,7 +63,8 @@ jobs:
             echo "===== try $try (seed pvpbot-${{ github.run_number }}-$try): $(grep -oE '\[SELFTEST\] (PASS|FAIL).*' stage.log | head -1)"
             grep -qE '\[SELFTEST\] FAIL.*botAlive=false' stage.log || break
           done
-          grep -E "SELFTEST|Exception|FATAL|at de\.samu" stage.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" | head -1500
+          grep -E "SELFTEST|Exception|FATAL|at de\.samu" stage.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" > events.log || true
+          head -700 events.log; echo "===== ... ====="; tail -1500 events.log
           echo "===== LAST MINUTES ====="
           grep -E "\] t= *[0-9]+s bot hp" stage.log | tail -40 || true
           echo "===== RESULT ====="
