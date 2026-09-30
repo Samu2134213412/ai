@@ -2283,16 +2283,9 @@ final class Gatherer {
             case PickUpStation pu -> this.doPickUpStation(level, pu.pos());
             case Mine mine -> this.doMine(level, mine.ore());
             case Hunt hunt -> this.doHunt();
-            case Explore explore -> {
-                if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD && level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                        this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
-                    // Trees, animals, endermen at night: all up top - a staircase up first.
-                    this.doDigUp(level);
-                    this.step = null;
-                } else {
-                    this.doExplore();
-                }
-            }
+            // (Exploring decides itself how to get anywhere without a path: up out of an open pit,
+            // otherwise a tunnel towards the target.)
+            case Explore explore -> this.doExplore();
             case ClimbUp up -> {
                 // A way out on foot first (a cave mouth, the edge of an overhang); dig only without one.
                 if (this.skyExit == null || this.bot.tickCount - this.skyExitTick > 200) {
@@ -2567,7 +2560,8 @@ final class Gatherer {
             this.anchor = owner != null ? owner.position() : pos;
         }
         if (this.exploreTarget == null || pos.distanceToSqr(this.exploreTarget) < 9.0
-                || this.breaking == null && this.bot.getNavigation().isDone() && ++this.actionTicks > 60) {
+                || this.breaking == null && this.bot.getNavigation().isDone() && ++this.actionTicks > (this.exploreTunnel ? 2400 : 60)) {
+            this.exploreTunnel = false;
             // (Not while a block is half broken: stone by hand takes 7.5 s - a new target every 3 s
             // would start over on another block every time and never get through.)
             boolean stuck = this.exploreTarget != null && pos.distanceToSqr(this.exploreTarget) >= 9.0;
@@ -2618,6 +2612,7 @@ final class Gatherer {
             // No path at all (in a pit, walled in by a cliff): make one, like a player - dig up out
             // of a hole, otherwise tunnel through towards the target (bridging gaps on the way).
             BlockPos goal = BlockPos.containing(this.exploreTarget);
+            this.exploreTunnel = true; // (keep this target while digging: a new one every block zig-zags)
             boolean sky = sl.canSeeSky(BlockPos.containing(this.bot.getEyePosition()));
             // Up only out of an open pit (or to a target far above); shut in rock the way sideways is shorter.
             if (sky && this.inPit(sl) || goal.getY() > this.bot.getBlockY() + 3) {
@@ -2634,6 +2629,7 @@ final class Gatherer {
     }
 
     private int exploreLog;
+    private boolean exploreTunnel;
 
     // --- stage 1: digging down, water, obsidian, portal
 
