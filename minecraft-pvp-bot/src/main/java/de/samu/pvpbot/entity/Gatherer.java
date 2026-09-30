@@ -24,6 +24,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.util.Mth;
@@ -1198,7 +1199,19 @@ final class Gatherer {
         if (this.visibleCrystal() != null && this.kit().count(st -> st.is(Items.ARROW)) > 0) {
             return new ShootCrystal();
         }
+        if (this.anyCrystal() && this.kit().count(st -> st.is(Items.ARROW)) > 0 && ++this.crystalRetryTicks > 1200) {
+            // Gave up on the last ones for a while: try them again (the pole may work from another side).
+            this.crystalRetryTicks = 0;
+            this.crystalShots.replaceAll((k, v) -> v >= 99 ? 6 : v);
+        }
         return new FightDragon();
+    }
+
+    private int crystalRetryTicks;
+
+    private boolean anyCrystal() {
+        return !this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, this.bot.getBoundingBox().inflate(200.0),
+                net.minecraft.world.entity.Entity::isAlive).isEmpty();
     }
 
     private net.minecraft.world.entity.boss.enderdragon.phases.@Nullable EnderDragonPhase<?> lastDragonPhase;
@@ -1216,10 +1229,11 @@ final class Gatherer {
         double bestDist = Double.MAX_VALUE;
         for (var c : this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class,
                 this.bot.getBoundingBox().inflate(160.0))) {
-            if (c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 18 && this.bot.hasLineOfSight(c)
-                    && this.bot.distanceToSqr(c) < bestDist) {
+            // Ones in sight first; the others (behind a tower, caged, up high) need a pole.
+            double d = this.bot.distanceToSqr(c) * (this.bot.hasLineOfSight(c) ? 1.0 : 4.0);
+            if (c.isAlive() && this.crystalShots.getOrDefault(c.getUUID(), 0) < 18 && d < bestDist) {
                 best = c;
-                bestDist = this.bot.distanceToSqr(c);
+                bestDist = d;
             }
         }
         if (best != null) {
@@ -2479,63 +2493,243 @@ final class Gatherer {
             this.step = null;
             return;
         }
+        ServerLevel level = this.level();
         if (PvpBotEntity.DEBUG && ++this.crystalLogTicks % 100 == 0) {
-            int left = this.level().getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, this.bot.getBoundingBox().inflate(200.0)).size();
-            PvpBotMod.LOGGER.info("[SELFTEST]   crystals left {} - shooting at {} (shots {}) from {}", left, crystal.blockPosition().toShortString(),
-                    this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString());
+            int left = level.getEntitiesOfClass(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, this.bot.getBoundingBox().inflate(200.0)).size();
+            PvpBotMod.LOGGER.info("[SELFTEST]   crystals left {} - shooting at {} (shots {}) from {} pole {} caged {}", left, crystal.blockPosition().toShortString(),
+                    this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString(),
+                    this.towerGroundY == Integer.MIN_VALUE ? "-" : (int) (this.bot.getY() - this.towerGroundY), this.isCaged(level, crystal));
         }
-        if (this.towerGroundY != Integer.MIN_VALUE && !crystal.getUUID().equals(this.towerCrystal) && this.descendTower(this.level())) {
-            this.step = null;
-            return;
-        }
-        Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
-        double h = away.length();
-        boolean stuck = this.noProgress();
-        boolean los = this.bot.hasLineOfSight(crystal);
-        int shots = this.crystalShots.getOrDefault(crystal.getUUID(), 0);
-        if ((shots >= 6 || !los && this.crystalNoLos > 60) && h > 10.0 && h < 40.0 && this.bot.getEyeY() < crystal.getY() - 2.0
-                && this.kit().count(BRIDGE_BLOCK) > 0) {
-            // Like a player: build up a pole of blocks for a clear, short shot from up high.
-            this.towerCrystal = crystal.getUUID();
-            this.bot.getNavigation().stop();
-            this.bot.getLookControl().setLookAt(crystal);
-            this.pillarUp(this.level());
-            this.crystalNoLos = los ? 0 : 61;
-            this.step = null;
-            return;
-        }
-        this.crystalNoLos = los ? 0 : this.crystalNoLos + 1;
-        if (this.crystalNoLos > 600) {
-            // No spot to see it from (caged, or the pillar is too tall): leave that one for later.
-            this.crystalShots.put(crystal.getUUID(), 99);
-            this.crystalTarget = null;
-            this.crystalNoLos = 0;
-            this.step = null;
-            return;
-        }
-        if (!los || h > 44.0) {
-            // Closer shots miss less, but right below the pillar its edge is in the way: about 24
-            // blocks out, further when the pillar still hides it.
-            Vec3 spot = crystal.position().add(away.normalize().scale(los ? 30.0 : Math.min(h + 8.0, 40.0)));
-            if (spot.horizontalDistance() > 60.0) {
-                // Not out near the edge of the island (the dragon knocks it into the void there).
-                spot = spot.multiply(60.0 / spot.horizontalDistance(), 1.0, 60.0 / spot.horizontalDistance());
-            }
-            int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
-            if (this.bot.getNavigation().isDone() || stuck) {
-                this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
-            }
-        } else {
-            this.bot.getNavigation().stop();
-            if (++this.crystalAimTicks >= 20) {
-                this.crystalAimTicks = 0;
-                if (this.bot.shootAt(crystal.position().add(0.0, 1.0, 0.0))) {
-                    this.crystalShots.merge(crystal.getUUID(), 1, Integer::sum);
-                }
+        if (this.towerGroundY != Integer.MIN_VALUE && (this.poleDone || !crystal.getUUID().equals(this.towerCrystal))) {
+            if (this.descendTower(level)) {
+                this.step = null;
+                return;
             }
         }
         this.step = null;
+        Vec3 away = this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
+        double h = away.length();
+        boolean los = this.bot.hasLineOfSight(crystal);
+        int shots = this.crystalShots.getOrDefault(crystal.getUUID(), 0);
+        boolean onPole = this.towerGroundY != Integer.MIN_VALUE && this.bot.getY() > this.towerGroundY + 0.5;
+        if (onPole) {
+            this.onCrystalPole(level, crystal, los);
+            return;
+        }
+        if (this.towerGroundY != Integer.MIN_VALUE && this.poleSpot != null
+                && Vec3.atBottomCenterOf(this.poleSpot).subtract(this.bot.position()).horizontalDistanceSqr() > 2.0 * 2.0) {
+            // Knocked off its pole: start a new one (the old one is in the way now).
+            this.towerGroundY = Integer.MIN_VALUE;
+            this.towerCrystal = null;
+            this.poleSpot = null;
+        }
+        boolean caged = this.isCaged(level, crystal);
+        if (los && !caged && h <= 44.0 && (shots < 6 || this.kit().count(BRIDGE_BLOCK) == 0)) {
+            this.bot.getNavigation().stop();
+            this.shootCrystal(crystal);
+            return;
+        }
+        if (this.kit().count(BRIDGE_BLOCK) == 0) {
+            // Nothing to build with: just walk around for a clear shot.
+            this.crystalNoLos++;
+            if (this.crystalNoLos > 600) {
+                this.giveUpCrystal(crystal);
+                return;
+            }
+            Vec3 spot = crystal.position().add((h < 1.0 ? new Vec3(1.0, 0.0, 0.0) : away.normalize()).scale(30.0));
+            int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mth.floor(spot.x), Mth.floor(spot.z));
+            if (this.bot.getNavigation().isDone() || this.noProgress()) {
+                this.bot.getNavigation().moveTo(spot.x, y, spot.z, 1.1);
+            }
+            return;
+        }
+        // Like a player: walk to a spot next to it (caged: right at the tower, to break the bars;
+        // otherwise far enough out that the blast cannot reach) and build a pole of blocks up.
+        if (this.poleSpot == null || !crystal.getUUID().equals(this.poleFor)) {
+            this.poleSpot = this.findPoleSpot(level, crystal, caged);
+            this.poleFor = crystal.getUUID();
+            this.poleWalk = 0;
+            if (this.poleSpot == null) {
+                this.giveUpCrystal(crystal);
+                return;
+            }
+        }
+        BlockPos spot = this.poleSpot;
+        double dx = spot.getX() + 0.5 - this.bot.getX();
+        double dz = spot.getZ() + 0.5 - this.bot.getZ();
+        if (dx * dx + dz * dz > 0.6 * 0.6 || this.bot.getY() > spot.getY() + 0.5) {
+            if (++this.poleWalk > 900) {
+                // Cannot get there: another spot next time.
+                this.poleSpot = null;
+                this.giveUpCrystal(crystal);
+                return;
+            }
+            if (dx * dx + dz * dz < 3.0 * 3.0) {
+                this.bot.getNavigation().stop();
+                this.bot.getMoveControl().setWantedPosition(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 0.8);
+            } else if (this.bot.getNavigation().isDone() || this.noProgress()) {
+                this.bot.getNavigation().moveTo(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 1.1);
+            }
+            return;
+        }
+        this.bot.getNavigation().stop();
+        this.towerCrystal = crystal.getUUID();
+        this.poleDone = false;
+        this.poleShots = 0;
+        this.poleBestY = this.bot.getY();
+        this.poleStall = 0;
+        this.pillarUp(level);
     }
+
+    /** On top of its pole: open the cage, or shoot once it sees the crystal, or build further up. */
+    private void onCrystalPole(ServerLevel level, net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal, boolean los) {
+        this.bot.getNavigation().stop();
+        if (this.bot.getY() > this.poleBestY + 0.5) {
+            this.poleBestY = this.bot.getY();
+            this.poleStall = 0;
+        } else if (++this.poleStall > 400) {
+            // Not getting any higher (no room above, or out of blocks).
+            this.poleStall = 0;
+            this.giveUpCrystal(crystal);
+            return;
+        }
+        this.bot.getLookControl().setLookAt(crystal);
+        boolean caged = this.isCaged(level, crystal);
+        double h = this.bot.position().subtract(crystal.position()).horizontalDistance();
+        if (caged && h < 8.0) {
+            // Right at the cage: break the bars between it and the crystal, then climb down and
+            // shoot from further away (the crystal's blast would kill it this close).
+            if (this.bot.getEyeY() < crystal.getY() + 0.8) {
+                this.pillarUp(level);
+                return;
+            }
+            var hit = level.clip(new net.minecraft.world.level.ClipContext(this.bot.getEyePosition(), crystal.position().add(0.0, 1.0, 0.0),
+                    net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, this.bot));
+            if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                // A bigger hole (two high) for the shot from further away.
+                hit = level.clip(new net.minecraft.world.level.ClipContext(this.bot.getEyePosition(), crystal.position().add(0.0, 0.2, 0.0),
+                        net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, this.bot));
+            }
+            if (hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK && level.getBlockState(hit.getBlockPos()).is(Blocks.IRON_BARS)
+                    && hit.getLocation().distanceTo(this.bot.getEyePosition()) < 4.5) {
+                this.breakBlock(level, hit.getBlockPos());
+                return;
+            }
+            if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                // Open on this side: down again, then out and up for the shot.
+                this.cageOpened.add(crystal.getUUID());
+            }
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   cage at {}: {}", crystal.blockPosition().toShortString(),
+                        this.cageOpened.contains(crystal.getUUID()) ? "opened" : "cannot open from here");
+            }
+            if (!this.cageOpened.contains(crystal.getUUID())) {
+                this.giveUpCrystal(crystal);
+            }
+            this.poleSpot = null;
+            this.poleDone = true;
+            return;
+        }
+        if (los) {
+            this.shootCrystal(crystal);
+            if (this.poleShots > 10) {
+                this.giveUpCrystal(crystal);
+            }
+            return;
+        }
+        if (this.bot.getEyeY() < crystal.getY() + 4.0) {
+            this.pillarUp(level);
+            return;
+        }
+        // Up high and still nothing to see: leave that one.
+        this.giveUpCrystal(crystal);
+    }
+
+    private void shootCrystal(net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal) {
+        this.bot.getLookControl().setLookAt(crystal);
+        if (++this.crystalAimTicks >= 20) {
+            this.crystalAimTicks = 0;
+            if (this.bot.shootAt(crystal.position().add(0.0, 1.0, 0.0))) {
+                this.crystalShots.merge(crystal.getUUID(), 1, Integer::sum);
+                this.poleShots++;
+            }
+        }
+    }
+
+    private void giveUpCrystal(net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal) {
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   gives up on crystal at {} for now (shots {}, at {})", crystal.blockPosition().toShortString(),
+                    this.crystalShots.getOrDefault(crystal.getUUID(), 0), this.bot.blockPosition().toShortString());
+        }
+        this.crystalShots.put(crystal.getUUID(), 99);
+        this.crystalTarget = null;
+        this.crystalNoLos = 0;
+        this.poleSpot = null;
+        this.poleDone = true;
+    }
+
+    /** Iron bars right around the crystal (the cage on the smaller towers), not yet broken open. */
+    private boolean isCaged(ServerLevel level, net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal) {
+        if (this.cageOpened.contains(crystal.getUUID())) {
+            return false;
+        }
+        BlockPos c = crystal.blockPosition();
+        for (BlockPos p : BlockPos.betweenClosed(c.offset(-2, 0, -2), c.offset(2, 3, 2))) {
+            if (level.getBlockState(p).is(Blocks.IRON_BARS)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Where to build the pole: on the ground, towards the bot (or the middle of the island). */
+    private @Nullable BlockPos findPoleSpot(ServerLevel level, net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal, boolean caged) {
+        Vec3 c = crystal.position();
+        Vec3 toBot = this.bot.position().subtract(c).multiply(1.0, 0.0, 1.0);
+        Vec3 toMiddle = new Vec3(-c.x, 0.0, -c.z);
+        int radius = 0;
+        if (caged) {
+            // How wide the obsidian tower is on this side.
+            Vec3 dir = toBot.lengthSqr() > 1.0 ? toBot.normalize() : toMiddle.normalize();
+            for (int k = 1; k <= 7; k++) {
+                BlockPos p = BlockPos.containing(c.x + dir.x * k, c.y - 3.0, c.z + dir.z * k);
+                if (level.getBlockState(p).is(Blocks.OBSIDIAN)) {
+                    radius = k;
+                }
+            }
+        }
+        double dist = caged ? radius + 1.0 : 14.0;
+        for (int attempt = 0; attempt < 16; attempt++) {
+            Vec3 base = attempt == 0 && toBot.lengthSqr() > 1.0 ? toBot.normalize()
+                    : (toMiddle.lengthSqr() > 1.0 ? toMiddle.normalize() : new Vec3(1.0, 0.0, 0.0));
+            double angle = attempt == 0 ? 0.0 : ((attempt + 1) / 2) * 0.4 * (attempt % 2 == 0 ? 1 : -1);
+            Vec3 dir = base.yRot((float) angle);
+            int x = Mth.floor(c.x + dir.x * dist);
+            int z = Mth.floor(c.z + dir.z * dist);
+            if (caged) {
+                // Right next to the obsidian: step out until the column is free.
+                for (int k = 0; k < 4 && level.getBlockState(new BlockPos(x, Mth.floor(c.y) - 3, z)).is(Blocks.OBSIDIAN); k++) {
+                    x = Mth.floor(c.x + dir.x * (dist + k + 1));
+                    z = Mth.floor(c.z + dir.z * (dist + k + 1));
+                }
+            }
+            int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos ground = new BlockPos(x, y - 1, z);
+            if (y > level.getMinY() + 10 && level.getBlockState(ground).is(Blocks.END_STONE) && new Vec3(x, 0, z).horizontalDistance() < 90.0) {
+                return new BlockPos(x, y, z);
+            }
+        }
+        return null;
+    }
+
+    private @Nullable BlockPos poleSpot;
+    private java.util.@Nullable UUID poleFor;
+    private int poleWalk;
+    private int poleShots;
+    private double poleBestY;
+    private int poleStall;
+    private boolean poleDone;
+    private final java.util.Set<java.util.UUID> cageOpened = new java.util.HashSet<>();
 
     private int towerGroundY = Integer.MIN_VALUE;
     private java.util.@Nullable UUID towerCrystal;
@@ -2571,6 +2765,7 @@ final class Gatherer {
         if (this.bot.getY() <= this.towerGroundY + 0.5) {
             this.towerGroundY = Integer.MIN_VALUE;
             this.towerCrystal = null;
+            this.poleDone = false;
             return false;
         }
         this.bot.getNavigation().stop();
@@ -2663,7 +2858,7 @@ final class Gatherer {
             // While it flies: arrows, like a player would (aim ahead of it, it is fast).
             double dist = this.bot.distanceTo(dragon);
             // (Only once the crystals are gone - they heal it - and with arrows to spare.)
-            if (dist < 40.0 && this.visibleCrystal() == null && this.kit().count(st -> st.is(Items.ARROW)) > 16 && this.bot.hasLineOfSight(dragon)
+            if (dist < 40.0 && !this.anyCrystal() && this.kit().count(st -> st.is(Items.ARROW)) > 16 && this.bot.hasLineOfSight(dragon)
                     && ++this.dragonShotTicks >= 20) {
                 this.dragonShotTicks = 0;
                 // At its body (the middle of the whole dragon is empty air between head, body and wings).
