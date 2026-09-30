@@ -1861,6 +1861,9 @@ final class Gatherer {
         return null;
     }
 
+    private int stationWalk;
+    private int stationTries;
+
     /** Puts a crafting table or furnace down next to it, like a player. */
     private void doPlaceStation(ServerLevel level, net.minecraft.world.level.block.Block block) {
         this.step = null;
@@ -1868,8 +1871,9 @@ final class Gatherer {
         if (this.kit().count(st -> st.is(item)) == 0) {
             return;
         }
-        if (this.wet(level) || !this.bot.onGround()) {
-            // Swimming or falling: first to land (a table needs ground to stand on).
+        if (this.wet(level) || !this.bot.onGround() || this.stationWalk > 0) {
+            // Swimming or falling, or no room here: first somewhere else (a table needs ground).
+            this.stationWalk = Math.max(0, this.stationWalk - 1);
             if (!this.swimToLand(level)) {
                 this.doExplore();
             }
@@ -1877,6 +1881,16 @@ final class Gatherer {
         }
         this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
+        boolean dryAround = false;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            dryAround |= !level.getBlockState(feet.relative(d).below()).getCollisionShape(level, feet.relative(d).below()).isEmpty()
+                    || !level.getBlockState(feet.relative(d)).getCollisionShape(level, feet.relative(d)).isEmpty();
+        }
+        if (!dryAround) {
+            // At the edge of a lake, water on every side: a few steps on, then try again.
+            this.stationWalk = 60;
+            return;
+        }
         for (Direction d : Direction.Plane.HORIZONTAL) {
             for (int dy = 0; dy <= 1; dy++) {
                 BlockPos p = feet.relative(d).above(dy);
@@ -1900,8 +1914,12 @@ final class Gatherer {
         }
         // No room here (a 1-wide tunnel): make some (not into water or lava).
         BlockPos room = feet.relative(this.digDir);
-        if (level.getFluidState(room).isEmpty() && !this.nearLava(level, room)) {
+        if (level.getFluidState(room).isEmpty() && !this.nearLava(level, room)
+                && !level.getBlockState(room).getCollisionShape(level, room).isEmpty()) {
             this.breakBlock(level, room);
+        } else if (++this.stationTries > 8) {
+            this.stationTries = 0;
+            this.stationWalk = 60; // (nothing to dig away either: somewhere else)
         } else {
             this.digDir = this.digDir.getClockWise();
         }
