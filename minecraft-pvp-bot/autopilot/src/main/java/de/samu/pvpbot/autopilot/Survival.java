@@ -244,9 +244,14 @@ final class Survival {
         if (p.isUnderWater() && p.getAirSupply() < p.getMaxAirSupply() / 2) {
             // Running out of air: straight up.
             this.say(p, "taucht auf");
+            BlockPos head = BlockPos.containing(p.getEyePosition()).above();
+            if (!PathFinder.body(p.level(), head) && p.level().getFluidState(head).isEmpty()) {
+                // Something solid over the head: dig through it (upwards is the way out).
+                return this.mine(mc, p, p.level(), head);
+            }
             this.ap.lookAt(p, p.getYRot(), -60.0F, 30.0F);
             this.ap.kJump = true;
-            this.ap.kForward = true;
+            this.ap.kForward = !p.horizontalCollision;
             return true;
         }
         // Watchdog: no movement and nothing new in the inventory for a minute -> something loops.
@@ -1171,7 +1176,12 @@ final class Survival {
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
         BlockPos front = feet.relative(this.upDir);
         for (BlockPos b : new BlockPos[]{feet.above(2), front.above(2), front.above()}) {
-            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b)) {
+            boolean wet = false;
+            for (Direction d : Direction.values()) {
+                wet |= !level.getFluidState(b.relative(d)).isEmpty() && !PathFinder.body(level, b);
+            }
+            // (Not through a wall that holds back water or lava: the hole would flood.)
+            if (!level.getFluidState(b).isEmpty() || PathFinder.nearLava(level, b) || wet) {
                 this.upDir = this.upDir.getClockWise();
                 return true;
             }
