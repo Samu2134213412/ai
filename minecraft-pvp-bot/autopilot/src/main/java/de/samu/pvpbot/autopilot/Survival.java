@@ -328,7 +328,9 @@ final class Survival {
                 return true;
             }
             if (hunger <= 8) {
-                if (p.getY() < 55 && !level.canSeeSky(p.blockPosition())) {
+                if (!level.canSeeSky(p.blockPosition().above()) && p.getBlockY() < level.getHeight(
+                        net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ()) - 3) {
+                    // Underground (animals live up top).
                     this.say(p, "hat Hunger – geht nach oben, Tiere suchen");
                     return this.digUp(mc, p, level);
                 }
@@ -521,6 +523,10 @@ final class Survival {
             return this.place(mc, p, level, Items.CRAFTING_TABLE, "stellt eine Werkbank auf");
         }
         if (!this.reach(p, table)) {
+            if (has(p, Items.CRAFTING_TABLE) && (this.inHole(level, p) || table.distSqr(p.blockPosition()) > 8 * 8)) {
+                // Carrying one anyway: put it down here instead of walking back.
+                return this.place(mc, p, level, Items.CRAFTING_TABLE, "stellt eine Werkbank auf");
+            }
             if (this.inHole(level, p) && table.getY() > p.getBlockY() + 1) {
                 // Down its own hole: build back up first (the path finder does not climb shafts).
                 return this.digUp(mc, p, level);
@@ -1078,14 +1084,20 @@ final class Survival {
     private boolean digUp(Minecraft mc, LocalPlayer p, Level level) {
         this.say(p, "baut sich nach oben (y " + p.getBlockY() + ")");
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        BlockPos above = feet.above(2);
-        if (!level.getFluidState(above).isEmpty() || PathFinder.nearLava(level, above)) {
-            // Water or lava overhead: go sideways first.
-            return this.explore(mc, p, level, "sucht einen Weg nach oben");
+        if (!p.onGround() && this.pillarBase != null) {
+            // Mid-jump: only the block under the feet now (the room above was made before jumping).
+            feet = this.pillarBase;
         }
-        if (!PathFinder.body(level, above)) {
-            this.pillarBase = null;
-            return this.mine(mc, p, level, above);
+        // Room for the jump: the two blocks above the head.
+        for (BlockPos above : new BlockPos[]{feet.above(2), feet.above(3)}) {
+            if (!level.getFluidState(above).isEmpty() || PathFinder.nearLava(level, above)) {
+                // Water or lava overhead: go sideways first.
+                return this.explore(mc, p, level, "sucht einen Weg nach oben");
+            }
+            if (!PathFinder.body(level, above) && p.onGround()) {
+                this.pillarBase = null;
+                return this.mine(mc, p, level, above);
+            }
         }
         int index = this.indexOf(p, st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE) || st.is(Items.DIRT) || st.is(Items.NETHERRACK));
         if (index < 0) {
