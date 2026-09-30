@@ -694,6 +694,24 @@ final class Gatherer {
             // Worn out all its pickaxes (the nether eats them): a new one before anything else.
             needs.add(new Need(ingots >= 3 ? Items.IRON_PICKAXE : minPick, "eine Spitzhacke"));
         }
+        if (this.speedrun || this.autonomous) {
+            ItemStack pick = ItemStack.EMPTY;
+            int picks = 0;
+            for (ItemStack st : kit.items()) {
+                if (pickaxeTier(st.getItem()) > 0) {
+                    picks++;
+                    if (pickaxeTier(st.getItem()) > pickaxeTier(pick.getItem())) {
+                        pick = st;
+                    }
+                }
+            }
+            if (picks == 1 && pick.isDamageableItem() && pick.getDamageValue() > pick.getMaxDamage() * 0.75) {
+                // Worn: the next one now, while there is still a pickaxe to get the stuff with.
+                Item spare = pick.is(Items.DIAMOND_PICKAXE) || pick.is(Items.NETHERITE_PICKAXE) ? Items.IRON_PICKAXE
+                        : pick.is(Items.GOLDEN_PICKAXE) ? Items.STONE_PICKAXE : pick.getItem();
+                needs.add(new Need(spare, "eine Ersatz-Spitzhacke"));
+            }
+        }
         if (this.autonomous && this.needPickaxe(Items.DIAMOND_PICKAXE, 99) != null) {
             needs.add(new Need(Items.DIAMOND_PICKAXE, "eine Diamantspitzhacke"));
         }
@@ -1033,8 +1051,9 @@ final class Gatherer {
         if (feet.getY() > this.digUpBestY) {
             this.digUpBestY = feet.getY();
             this.digUpTicks = 0;
-        } else if (++this.digUpTicks > 100) {
-            // Not getting higher this way: another direction.
+        } else if (this.breaking == null && ++this.digUpTicks > 100) {
+            // Not getting higher this way: another direction. (Breaking a block is not "not getting
+            // higher": stone by hand takes 7.5 s, and switching before that never breaks one.)
             this.digUpTicks = 0;
             this.digUpBestY = feet.getY();
             this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
@@ -1139,8 +1158,11 @@ final class Gatherer {
                 PvpBotMod.LOGGER.info("[SELFTEST]   swims to land at {} from {}", this.landGoal.toShortString(), here.toShortString());
             }
         }
-        this.bot.getNavigation().stop();
-        this.bot.getMoveControl().setWantedPosition(this.landGoal.getX() + 0.5, this.landGoal.getY(), this.landGoal.getZ() + 0.5, 1.0);
+        if (this.swimTicks % 20 == 0 || this.bot.getNavigation().isDone()) {
+            if (!this.bot.getNavigation().moveTo(this.landGoal.getX() + 0.5, this.landGoal.getY(), this.landGoal.getZ() + 0.5, 1.0)) {
+                this.bot.getMoveControl().setWantedPosition(this.landGoal.getX() + 0.5, this.landGoal.getY(), this.landGoal.getZ() + 0.5, 1.0);
+            }
+        }
         this.bot.getLookControl().setLookAt(Vec3.atCenterOf(this.landGoal));
         this.bot.getJumpControl().jump(); // (keeps the head above water)
         return true;
@@ -2342,6 +2364,17 @@ final class Gatherer {
                 candidate = this.anchor.add(pos.subtract(this.anchor).scale(-0.5));
             }
             int y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);
+            if (this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+                // Round a lake or the sea rather than across it (a player looking for trees does too).
+                for (int turn = 1; turn < 8 && !this.level().getFluidState(BlockPos.containing(candidate.x, y - 1, candidate.z)).isEmpty(); turn++) {
+                    double a = angle + (turn % 2 == 1 ? 1 : -1) * ((turn + 1) / 2) * (Math.PI / 4);
+                    candidate = pos.add(Math.cos(a) * 32.0, 0.0, Math.sin(a) * 32.0);
+                    y = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) candidate.x, (int) candidate.z);
+                    if (this.level().getFluidState(BlockPos.containing(candidate.x, y - 1, candidate.z)).isEmpty() && (this.speedrun || this.autonomous)) {
+                        this.exploreHeading = a;
+                    }
+                }
+            }
             this.exploreTarget = new Vec3(candidate.x, y, candidate.z);
         }
         boolean moving = this.bot.getNavigation().moveTo(this.exploreTarget.x, this.exploreTarget.y, this.exploreTarget.z, 1.1);
