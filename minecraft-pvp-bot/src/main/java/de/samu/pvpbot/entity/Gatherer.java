@@ -1078,7 +1078,7 @@ final class Gatherer {
             if (this.freeTicks % 60 == 0 && this.watchStreak < 2) {
                 this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
             }
-            if (this.bot.isInWater()) {
+            if (this.wet(level)) {
                 this.climbOutOfWater(level);
             } else if (this.kit().count(BRIDGE_BLOCK) == 0 && this.onPillar(level)
                     && !level.getBlockState(this.bot.blockPosition().below(2)).getCollisionShape(level, this.bot.blockPosition().below(2)).isEmpty()) {
@@ -1167,7 +1167,7 @@ final class Gatherer {
         String dim = this.inNether() ? "Nether" : this.inEnd() ? "End" : "Oberwelt";
         boolean under = !level.canSeeSky(this.bot.blockPosition().above());
         String what = this.step == null ? "planlos" : this.step.getClass().getSimpleName();
-        return dim + (under ? ", unter Tage" : ", unter freiem Himmel") + (this.bot.isInWater() ? ", im Wasser" : "") + ", " + what;
+        return dim + (under ? ", unter Tage" : ", unter freiem Himmel") + (this.wet(level) ? ", im Wasser" : "") + ", " + what;
     }
 
     private int wetTicks;
@@ -1216,7 +1216,22 @@ final class Gatherer {
         if (stepDir != null) {
             BlockPos top = feet.relative(stepDir).above();
             this.bot.getMoveControl().setWantedPosition(top.getX() + 0.5, top.getY(), top.getZ() + 0.5, 1.0);
+            return;
         }
+        // Walled in (a flooded tunnel): make room above a side block, that becomes the step.
+        BlockPos side = feet.relative(this.digDir);
+        for (BlockPos p : new BlockPos[]{side.above(), side.above(2)}) {
+            if (!level.getBlockState(p).getCollisionShape(level, p).isEmpty() && level.getBlockState(p).getDestroySpeed(level, p) >= 0.0F) {
+                this.breakBlock(level, p);
+                return;
+            }
+        }
+        this.digDir = this.digDir.getClockWise();
+    }
+
+    /** Standing in water, also shallow or flowing water the game does not count as swimming. */
+    private boolean wet(ServerLevel level) {
+        return this.bot.isInWater() || level.getFluidState(this.bot.blockPosition()).is(net.minecraft.tags.FluidTags.WATER);
     }
 
     /** Breaks the closest stone-like block it can see within reach (not the one it stands on). */
@@ -1891,7 +1906,7 @@ final class Gatherer {
                 }
             }
         }
-        if (this.speedrun && this.bot.isInWater() && this.bot.getTarget() == null) {
+        if (this.speedrun && this.wet(level) && this.bot.getTarget() == null) {
             if (this.poolPos == null || this.bot.position().distanceToSqr(this.poolPos) > 4.0 * 4.0) {
                 this.poolPos = this.bot.position();
                 this.poolTicks = 0;
@@ -2206,12 +2221,12 @@ final class Gatherer {
             this.sidewaysTicks--;
             down = false;
         }
-        if (this.bot.isInWater() && ++this.wetTicks > 60) {
+        if (this.wet(level) && ++this.wetTicks > 60) {
             // Floating in a pool (a player would not dig on from here): out of it on blocks first.
             this.climbOutOfWater(level);
             return;
         }
-        if (!this.bot.isInWater()) {
+        if (!this.wet(level)) {
             this.wetTicks = 0;
         }
         if (this.digBlocked >= 4 || this.bot.isInWater()) {
