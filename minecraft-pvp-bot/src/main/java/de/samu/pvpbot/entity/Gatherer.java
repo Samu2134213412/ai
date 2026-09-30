@@ -1745,12 +1745,19 @@ final class Gatherer {
 
     /** Puts a crafting table or furnace down next to it, like a player. */
     private void doPlaceStation(ServerLevel level, net.minecraft.world.level.block.Block block) {
-        this.bot.getNavigation().stop();
         this.step = null;
         Item item = block.asItem();
         if (this.kit().count(st -> st.is(item)) == 0) {
             return;
         }
+        if (this.wet(level) || !this.bot.onGround()) {
+            // Swimming or falling: first to land (a table needs ground to stand on).
+            if (!this.swimToLand(level)) {
+                this.doExplore();
+            }
+            return;
+        }
+        this.bot.getNavigation().stop();
         BlockPos feet = this.bot.blockPosition();
         for (Direction d : Direction.Plane.HORIZONTAL) {
             for (int dy = 0; dy <= 1; dy++) {
@@ -1773,8 +1780,13 @@ final class Gatherer {
                 }
             }
         }
-        // No room here (a 1-wide tunnel): make some.
-        this.breakBlock(level, feet.relative(this.digDir));
+        // No room here (a 1-wide tunnel): make some (not into water or lava).
+        BlockPos room = feet.relative(this.digDir);
+        if (level.getFluidState(room).isEmpty() && !this.nearLava(level, room)) {
+            this.breakBlock(level, room);
+        } else {
+            this.digDir = this.digDir.getClockWise();
+        }
     }
 
     /** Takes its crafting table or furnace along again (break it, the drop gets picked up). */

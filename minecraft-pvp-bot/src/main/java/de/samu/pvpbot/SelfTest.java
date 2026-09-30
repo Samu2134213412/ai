@@ -488,6 +488,11 @@ final class SelfTest {
             PvpBotMod.LOGGER.info(TAG + "  final kit: " + bot.getKit().items().stream()
                     .map(st -> st.getCount() + "x" + st.getItem().toString().replace("minecraft:", "")).toList());
         }
+        if (!bot.isAlive()) {
+            PvpBotMod.LOGGER.info(TAG + "  bot gone: removal " + bot.getRemovalReason() + ", last damage "
+                    + (bot.getLastDamageSource() == null ? "-" : bot.getLastDamageSource().typeHolder().getRegisteredName())
+                    + " at " + bot.blockPosition().toShortString() + " in " + bot.level().dimension());
+        }
         String line = String.format("%s %-40s kills=%d/%d time=%.1fs botAlive=%s botHp=%.1f smash=%d spear=%d other=%d maxHit=%.1f maxHeight=%d flew=%s",
                 pass ? "PASS" : "FAIL", scenario.name(), killed, targets.size(), ticks / 20.0, bot.isAlive(),
                 bot.getHealth(), smashHits, spearHits, otherHits, maxHit, maxHeight, flew);
