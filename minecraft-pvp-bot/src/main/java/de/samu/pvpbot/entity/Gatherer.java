@@ -612,8 +612,9 @@ final class Gatherer {
         // Endermen at night in the overworld (they are about 2 % of the monsters spawning in the dark).
         if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD && ++this.overworldSpawnTicks >= 200) {
             this.overworldSpawnTicks = 0;
-            long time = level.getDayTime() % 24000L;
-            if (time > 13000L && time < 23000L && !level.hasNearbyAlivePlayer(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 128.0)
+            // (Night: the sky gives little light, like the game's own dark-enough check.)
+            BlockPos top = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, this.bot.blockPosition());
+            if (level.getMaxLocalRawBrightness(top) <= 7 && !level.hasNearbyAlivePlayer(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 128.0)
                     && level.getEntities(EntityTypes.ENDERMAN, this.bot.getBoundingBox().inflate(64.0), e -> e.isAlive()).size() < 3
                     && this.bot.getRandom().nextInt(4) == 0) {
                 double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
