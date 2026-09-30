@@ -793,7 +793,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     /** Survival kits: pick up useful drops (materials, loot of kills). */
     private void pickUpItems(ServerLevel level) {
-        if (this.tickCount % 4 != 0 || !this.kit.hasRoom()) {
+        if (this.tickCount % 4 != 0) {
             return;
         }
         boolean changed = false;
@@ -804,6 +804,9 @@ public class PvpBotEntity extends PathfinderMob {
             }
             if (this.gatherer.enoughOf(item.getItem())) {
                 continue; // plenty of building blocks already: the room is for what it came for
+            }
+            if (!this.gatherer.makeRoomFor(item.getItem())) {
+                continue; // inventory full of things that matter more
             }
             ItemStack stack = item.getItem().copy();
             int before = stack.getCount();

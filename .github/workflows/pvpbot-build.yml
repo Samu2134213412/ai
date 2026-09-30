@@ -51,6 +51,14 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
       - uses: gradle/actions/setup-gradle@v4
+      - name: Restore what the bot learned in earlier runs
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            minecraft-pvp-bot/run/config/pvpbot-memory.json
+            minecraft-pvp-bot/run/config/pvpbot-tasks.json
+          key: pvpbot-brain-stage${{ matrix.stage }}-${{ github.run_id }}
+          restore-keys: pvpbot-brain-stage${{ matrix.stage }}-
       - name: Beat the game, stage ${{ matrix.stage }}, in a normal world
         run: |
           mkdir -p run
@@ -73,6 +81,14 @@ jobs:
           grep -q "\[SELFTEST\] DONE" stage.log
           # (The job shows red when the bot did not make it, so the result is visible at a glance.)
           grep -q "\[SELFTEST\] PASS" stage.log
+      - name: Keep what the bot learned (also when the stage failed)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            minecraft-pvp-bot/run/config/pvpbot-memory.json
+            minecraft-pvp-bot/run/config/pvpbot-tasks.json
+          key: pvpbot-brain-stage${{ matrix.stage }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -342,6 +342,9 @@ final class SelfTest {
                 PvpBotMod.LOGGER.info(TAG + "==================== BRAIN");
                 BotBrain.INSTANCE.summary(40).forEach(l -> PvpBotMod.LOGGER.info(TAG + l.replaceAll("§.", "")));
                 BotBrain.INSTANCE.save();
+                PvpBotMod.LOGGER.info(TAG + "==================== LEARNED STRATEGIES");
+                de.samu.pvpbot.brain.TaskLearner.INSTANCE.summary().forEach(l -> PvpBotMod.LOGGER.info(TAG + l));
+                de.samu.pvpbot.brain.TaskLearner.INSTANCE.save();
                 PvpBotMod.LOGGER.info(TAG + "DONE");
                 origin = null;
                 server.halt(false);

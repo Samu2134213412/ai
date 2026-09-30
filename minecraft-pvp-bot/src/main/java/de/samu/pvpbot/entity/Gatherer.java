@@ -34,8 +34,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Lets a bot with a survival kit get what it is missing by itself: it works out a chain of steps
  * (e.g. iron sword ← iron ingots ← raw iron ← iron ore ← stone pickaxe ← cobblestone ← wooden
- * pickaxe ← planks ← logs), really mines and hunts for the raw materials, and crafts/smelts
- * "in its head" (no table or furnace is placed, but materials and fuel are really used up).
+ * pickaxe ← planks ← logs), really mines and hunts for the raw materials, and crafts and smelts
+ * like a player: small recipes in its inventory grid, the rest at a crafting table it places,
+ * smelting in a furnace it places and fuels (with the furnace's real cooking time).
  */
 final class Gatherer {
 
@@ -148,6 +149,16 @@ final class Gatherer {
         recipe(Items.ENDER_EYE, 1, Res.BLAZE_POWDER, 1, Res.PEARL, 1);
         recipe(Items.BOW, 1, Res.STRING, 3, Res.STICK, 3);
         recipe(Items.ARROW, 4, Res.FLINT, 1, Res.STICK, 1, Res.FEATHER, 1);
+        recipe(Items.CRAFTING_TABLE, 1, Res.PLANKS, 4);
+        recipe(Items.FURNACE, 1, Res.COBBLE, 8);
+    }
+
+    /** What fits into the 2x2 grid of the inventory; everything else needs a crafting table. */
+    private static final java.util.Set<Item> SMALL_GRID = java.util.Set.of(Items.OAK_PLANKS, Items.STICK, Items.CRAFTING_TABLE,
+            Items.BLAZE_POWDER, Items.ENDER_EYE, Items.FLINT_AND_STEEL);
+
+    static boolean needsTable(Recipe recipe) {
+        return !SMALL_GRID.contains(recipe.output());
     }
 
     private static final Item[] IRON_ARMOR = {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS};
@@ -157,7 +168,7 @@ final class Gatherer {
     /** The next thing to do. */
     sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
             UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon,
-            GoHome, PlaceChest, StoreAtHome, ClimbUp {
+            GoHome, PlaceChest, StoreAtHome, ClimbUp, PlaceStation, PickUpStation {
         String describe();
     }
 
@@ -170,6 +181,18 @@ final class Gatherer {
     record Smelt(Res input, Res output) implements Step {
         public String describe() {
             return "brät/schmilzt " + this.input.label;
+        }
+    }
+
+    record PlaceStation(net.minecraft.world.level.block.Block block) implements Step {
+        public String describe() {
+            return "stellt " + this.block.getName().getString() + " auf";
+        }
+    }
+
+    record PickUpStation(BlockPos pos) implements Step {
+        public String describe() {
+            return "nimmt Werkbank/Ofen wieder mit";
         }
     }
 
@@ -357,8 +380,8 @@ final class Gatherer {
     private boolean eyeWentDown;
     /** Where the eye of ender went down: the stronghold is under here, the search stays close. */
     private @Nullable BlockPos eyeDownAt;
-    private int strongholdDigTicks = -1;
-    private static final int[] STRONGHOLD_LEVELS = {0, -20, 20, -40};
+    private int strongholdDigTicks;
+    private @Nullable String strongholdLevel;
     private int legTicks;
     private @Nullable BlockPos lastSafe;
     private double legBest;
@@ -677,6 +700,27 @@ final class Gatherer {
     // ------------------------------------------------------------------ planning
 
     private @Nullable Step plan() {
+        Step next = this.planWork();
+        if (!(next instanceof Craft) && !(next instanceof Smelt) && !(next instanceof PlaceStation) && !(next instanceof PickUpStation)) {
+            // Done at the crafting table / furnace: take them along (a furnace only once it is empty).
+            for (BlockPos st : new BlockPos[]{this.tablePos, this.furnacePos}) {
+                if (st != null && st.closerToCenterThan(this.bot.position(), 6.0) && this.kit().hasRoom()
+                        && (st != this.furnacePos || this.furnaceEmpty(st))) {
+                    return new PickUpStation(st);
+                }
+            }
+        }
+        return next;
+    }
+
+    private boolean furnaceEmpty(BlockPos pos) {
+        if (this.level().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity f) {
+            return f.getItem(0).isEmpty() && f.getItem(2).isEmpty();
+        }
+        return true;
+    }
+
+    private @Nullable Step planWork() {
         for (Need need : this.needs()) {
             if (need.item() == Items.COOKED_BEEF && this.inNether() && this.speedrun && this.portalBuilt) {
                 // No cows in the nether: back up through the portal for food, then come back.
@@ -1040,10 +1084,26 @@ final class Gatherer {
                     && !level.getBlockState(this.bot.blockPosition().below(2)).getCollisionShape(level, this.bot.blockPosition().below(2)).isEmpty()) {
                 // On a pillar with nothing to bridge with: down it block by block (and keep the blocks).
                 this.breakBlock(level, this.bot.blockPosition().below());
-            } else if (this.inPit(level) || this.walledIn(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
-                this.doDigUp(level);
             } else {
-                this.doDig(level, false);
+                // The way out the learner picked for this kind of situation.
+                switch (this.freeWay) {
+                    case "hochgraben" -> this.doDigUp(level);
+                    case "hochbauen" -> this.pillarUp(level);
+                    case "erkunden" -> this.doExplore();
+                    case "runtergraben" -> this.doDig(level, true);
+                    default -> this.doDig(level, false);
+                }
+            }
+            if (this.freeTicks == 0) {
+                // Reward: how far it got away from where it was stuck (12 blocks and more = worked).
+                double moved = this.freeFrom == null ? 0.0 : Math.sqrt(this.bot.position().distanceToSqr(this.freeFrom));
+                double reward = Math.min(1.0, moved / 12.0);
+                de.samu.pvpbot.brain.TaskLearner.INSTANCE.learn(this.freeSituation, this.freeWay, reward);
+                if (PvpBotEntity.DEBUG) {
+                    PvpBotMod.LOGGER.info("[SELFTEST]   LEARN: {} -> {} got {} blocks away, reward {} (now worth {})", this.freeSituation, this.freeWay,
+                            (int) moved, String.format("%.2f", reward),
+                            String.format("%.2f", de.samu.pvpbot.brain.TaskLearner.INSTANCE.estimate(this.freeSituation, this.freeWay)));
+                }
             }
             return true;
         }
@@ -1073,6 +1133,7 @@ final class Gatherer {
                     this.bot.getTarget() == null ? "-" : this.bot.getTarget().getName().getString(), this.bot.getNavigation().isDone() ? "done" : "moving");
             PvpBotMod.LOGGER.info("[SELFTEST]   WATCHDOG: explore target {}, streak {}", this.exploreTarget, this.watchStreak);
         }
+        String sit = this.situation(level); // (before the plan is dropped)
         this.watchTicks = 0;
         // Stuck at the same place again: get further away each time (one direction, longer).
         BlockPos here = this.bot.blockPosition();
@@ -1086,7 +1147,27 @@ final class Gatherer {
         this.freeTicks = 200 * (1 + this.watchStreak);
         this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
         this.exploreHeading = Double.NaN;
+        this.freeSituation = sit;
+        this.freeWay = de.samu.pvpbot.brain.TaskLearner.INSTANCE.choose(this.freeSituation, FREE_WAYS);
+        this.freeFrom = this.bot.position();
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   LEARN: stuck in \"{}\" -> tries \"{}\"", this.freeSituation, this.freeWay);
+        }
         return true;
+    }
+
+    /** Ways out of a stuck spot the learner chooses from. */
+    private static final List<String> FREE_WAYS = List.of("graben", "hochgraben", "hochbauen", "erkunden", "runtergraben");
+    private String freeWay = "graben";
+    private String freeSituation = "";
+    private @Nullable Vec3 freeFrom;
+
+    /** A short description of where it is, as the learner's situation key. */
+    private String situation(ServerLevel level) {
+        String dim = this.inNether() ? "Nether" : this.inEnd() ? "End" : "Oberwelt";
+        boolean under = !level.canSeeSky(this.bot.blockPosition().above());
+        String what = this.step == null ? "planlos" : this.step.getClass().getSimpleName();
+        return dim + (under ? ", unter Tage" : ", unter freiem Himmel") + (this.bot.isInWater() ? ", im Wasser" : "") + ", " + what;
     }
 
     private int wetTicks;
@@ -1441,13 +1522,26 @@ final class Gatherer {
         }
         if (this.eyeWentDown) {
             if (this.nearest(Ore.STRONGHOLD) != null) {
+                if (this.strongholdLevel != null) {
+                    // Found it at this depth: that was a good guess (the learner remembers).
+                    de.samu.pvpbot.brain.TaskLearner.INSTANCE.learn("Festung suchen: Höhe", this.strongholdLevel, 1.0);
+                    this.strongholdLevel = null;
+                }
                 return new ExploreStronghold();
             }
-            // Strongholds lie at different depths: tunnel a while at one level, then the next.
-            if (this.strongholdDigTicks < 0) {
+            // Strongholds lie at different depths: the learner picks a level to tunnel at for a while
+            // (what worked before first), no luck there -> that counts against it, the next one.
+            if (this.strongholdLevel == null || this.bot.tickCount - this.strongholdDigTicks > 6000) {
+                if (this.strongholdLevel != null) {
+                    de.samu.pvpbot.brain.TaskLearner.INSTANCE.learn("Festung suchen: Höhe", this.strongholdLevel, 0.0);
+                }
+                this.strongholdLevel = de.samu.pvpbot.brain.TaskLearner.INSTANCE.choose("Festung suchen: Höhe", List.of("20", "0", "-20", "-40"));
                 this.strongholdDigTicks = this.bot.tickCount;
+                if (PvpBotEntity.DEBUG) {
+                    PvpBotMod.LOGGER.info("[SELFTEST]   LEARN: stronghold search at y {}", this.strongholdLevel);
+                }
             }
-            int level = STRONGHOLD_LEVELS[((this.bot.tickCount - this.strongholdDigTicks) / 6000) % STRONGHOLD_LEVELS.length];
+            int level = Integer.parseInt(this.strongholdLevel);
             if (this.bot.getY() > level + 2.0) {
                 return new Descend();
             }
@@ -1594,7 +1688,92 @@ final class Gatherer {
                 return this.resolve(ing.res(), ing.count(), depth + 1);
             }
         }
+        if (needsTable(recipe) && this.station(Blocks.CRAFTING_TABLE) == null) {
+            // A 3x3 recipe: set up a crafting table first (make one if there is none in the bag).
+            if (this.kit().count(st -> st.is(Items.CRAFTING_TABLE)) > 0) {
+                return new PlaceStation(Blocks.CRAFTING_TABLE);
+            }
+            return this.resolveItem(Items.CRAFTING_TABLE, depth + 1);
+        }
         return new Craft(recipe);
+    }
+
+    // ------------------------------------------------------------------ crafting table and furnace
+
+    private @Nullable BlockPos tablePos;
+    private @Nullable BlockPos furnacePos;
+
+    /** A crafting table or furnace within reach (its own, or one it sees right here). */
+    private @Nullable BlockPos station(net.minecraft.world.level.block.Block block) {
+        ServerLevel level = this.level();
+        BlockPos own = block == Blocks.CRAFTING_TABLE ? this.tablePos : this.furnacePos;
+        if (own != null && level.getBlockState(own).is(block) && own.closerToCenterThan(this.bot.getEyePosition(), 4.5)) {
+            return own;
+        }
+        BlockPos feet = this.bot.blockPosition();
+        for (BlockPos p : BlockPos.betweenClosed(feet.offset(-3, -1, -3), feet.offset(3, 2, 3))) {
+            if (level.getBlockState(p).is(block) && p.closerToCenterThan(this.bot.getEyePosition(), 4.5) && this.seesBlock(level, p)) {
+                BlockPos found = p.immutable();
+                if (block == Blocks.CRAFTING_TABLE) {
+                    this.tablePos = found;
+                } else {
+                    this.furnacePos = found;
+                }
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** Puts a crafting table or furnace down next to it, like a player. */
+    private void doPlaceStation(ServerLevel level, net.minecraft.world.level.block.Block block) {
+        this.bot.getNavigation().stop();
+        this.step = null;
+        Item item = block.asItem();
+        if (this.kit().count(st -> st.is(item)) == 0) {
+            return;
+        }
+        BlockPos feet = this.bot.blockPosition();
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            for (int dy = 0; dy <= 1; dy++) {
+                BlockPos p = feet.relative(d).above(dy);
+                if (level.getBlockState(p).canBeReplaced() && level.getFluidState(p).isEmpty()
+                        && !level.getBlockState(p.below()).getCollisionShape(level, p.below()).isEmpty()) {
+                    this.bot.lookAtBlock(p);
+                    this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+                    level.setBlock(p, block.defaultBlockState(), 3);
+                    level.playSound(null, p, SoundEvents.WOOD_PLACE, this.bot.getSoundSource(), 1.0F, 1.0F);
+                    this.kit().remove(st -> st.is(item), 1);
+                    this.bot.onKitChanged();
+                    this.blacklist.add(p); // (its own, not something to mine for resources)
+                    if (block == Blocks.CRAFTING_TABLE) {
+                        this.tablePos = p;
+                    } else {
+                        this.furnacePos = p;
+                    }
+                    return;
+                }
+            }
+        }
+        // No room here (a 1-wide tunnel): make some.
+        this.breakBlock(level, feet.relative(this.digDir));
+    }
+
+    /** Takes its crafting table or furnace along again (break it, the drop gets picked up). */
+    private void doPickUpStation(ServerLevel level, BlockPos pos) {
+        this.bot.getNavigation().stop();
+        if (!level.getBlockState(pos).is(Blocks.CRAFTING_TABLE) && !level.getBlockState(pos).is(Blocks.FURNACE)) {
+            if (pos.equals(this.tablePos)) {
+                this.tablePos = null;
+            }
+            if (pos.equals(this.furnacePos)) {
+                this.furnacePos = null;
+            }
+            this.blacklist.remove(pos);
+            this.step = null;
+            return;
+        }
+        this.breakBlock(level, pos);
     }
 
     /** How to get {@code count} of a resource. */
@@ -1647,13 +1826,22 @@ final class Gatherer {
             Step s = this.resolve(input, Math.max(1, missing), depth + 1);
             return s != null ? s : new Explore(input.label);
         }
-        if (this.fuel <= 0 && this.kit().count(Res.COAL.match) == 0 && this.kit().count(Res.LOG.match) == 0
+        if (this.kit().count(Res.COAL.match) == 0 && this.kit().count(Res.LOG.match) == 0
                 && this.kit().count(Res.PLANKS.match) < 2) {
             // Fuel: coal if we know where it is, otherwise wood.
             if (!this.known.getOrDefault(Ore.COAL, List.of()).isEmpty() && this.needPickaxe(Items.WOODEN_PICKAXE, depth) == null) {
                 return new Mine(Ore.COAL);
             }
             return this.mine(Ore.LOG, depth);
+        }
+        if (this.station(Blocks.FURNACE) == null) {
+            if (this.kit().count(st -> st.is(Items.FURNACE)) > 0) {
+                return new PlaceStation(Blocks.FURNACE);
+            }
+            Step s = this.resolveItem(Items.FURNACE, depth + 1);
+            if (s != null) {
+                return s;
+            }
         }
         return new Smelt(input, output);
     }
@@ -1780,6 +1968,8 @@ final class Gatherer {
         switch (s) {
             case Craft craft -> this.doCraft(level, craft.recipe());
             case Smelt smelt -> this.doSmelt(level, smelt);
+            case PlaceStation ps -> this.doPlaceStation(level, ps.block());
+            case PickUpStation pu -> this.doPickUpStation(level, pu.pos());
             case Mine mine -> this.doMine(level, mine.ore());
             case Hunt hunt -> this.doHunt();
             case Explore explore -> {
@@ -1826,6 +2016,14 @@ final class Gatherer {
             return;
         }
         this.actionTicks = 0;
+        if (needsTable(recipe)) {
+            BlockPos table = this.station(Blocks.CRAFTING_TABLE);
+            if (table == null) {
+                this.step = null;
+                return;
+            }
+            this.bot.lookAtBlock(table);
+        }
         for (Ingredient ing : recipe.ingredients()) {
             if (this.kit().count(ing.res().match) < ing.count()) {
                 this.step = null;
@@ -1841,42 +2039,79 @@ final class Gatherer {
         this.step = null;
     }
 
+    /**
+     * Smelts in its furnace like a player: raw items into the top, fuel into the bottom, waits for
+     * the furnace to cook them (its real speed), takes the result out.
+     */
     private void doSmelt(ServerLevel level, Smelt smelt) {
         this.bot.getNavigation().stop();
-        if (++this.actionTicks < 40) {
-            return;
-        }
-        this.actionTicks = 0;
-        if (this.fuel <= 0) {
-            // Coal smelts 8 items, wood 1.5 (rounded to 2 per log, 1 per plank pair).
-            if (this.kit().remove(Res.COAL.match, 1) == 1) {
-                this.fuel += 8;
-            } else if (this.kit().remove(Res.LOG.match, 1) == 1) {
-                this.fuel += 2;
-            } else if (this.kit().remove(Res.PLANKS.match, 2) == 2) {
-                this.fuel += 2;
-            } else {
-                this.step = null;
-                return;
-            }
-        }
-        ItemStack raw = ItemStack.EMPTY;
-        for (ItemStack stack : this.kit().items()) {
-            if (smelt.input().match.test(stack)) {
-                raw = stack;
-                break;
-            }
-        }
-        if (raw.isEmpty()) {
+        BlockPos pos = this.station(Blocks.FURNACE);
+        if (pos == null || !(level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity furnace)) {
             this.step = null;
             return;
         }
-        Item out = cooked(raw.getItem());
-        raw.shrink(1);
-        this.fuel--;
-        this.kit().insert(new ItemStack(out));
-        level.playSound(null, this.bot.getX(), this.bot.getY(), this.bot.getZ(), SoundEvents.FURNACE_FIRE_CRACKLE, this.bot.getSoundSource(), 1.0F, 1.0F);
-        this.step = null;
+        this.bot.lookAtBlock(pos);
+        if (++this.actionTicks % 10 != 0) {
+            return;
+        }
+        ItemStack result = furnace.getItem(2);
+        if (!result.isEmpty()) {
+            ItemStack rest = this.kit().insert(result.copy());
+            furnace.setItem(2, rest);
+            this.bot.onKitChanged();
+        }
+        ItemStack in = furnace.getItem(0);
+        if (in.isEmpty()) {
+            // Everything of that kind it carries goes in (one stack at most).
+            for (ItemStack stack : this.kit().items()) {
+                if (smelt.input().match.test(stack)) {
+                    ItemStack put = stack.copy();
+                    this.kit().remove(st -> st == stack, put.getCount());
+                    furnace.setItem(0, put);
+                    in = put;
+                    this.bot.onKitChanged();
+                    break;
+                }
+            }
+        }
+        if (in.isEmpty()) {
+            if (furnace.getItem(2).isEmpty() && this.actionTicks > 20) {
+                this.actionTicks = 0;
+                this.step = null; // all done
+            }
+            return;
+        }
+        if (furnace.getItem(1).isEmpty() && !furnace.getBlockState().getValue(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT)) {
+            // Fuel for what is in there: coal cooks 8, a log or a plank 1.5 items.
+            int n = in.getCount();
+            ItemStack fuelStack = ItemStack.EMPTY;
+            for (ItemStack stack : this.kit().items()) {
+                if (Res.COAL.match.test(stack)) {
+                    fuelStack = stack.copyWithCount(Math.min(stack.getCount(), (n + 7) / 8));
+                    break;
+                }
+            }
+            if (fuelStack.isEmpty()) {
+                for (ItemStack stack : this.kit().items()) {
+                    if (Res.LOG.match.test(stack) || Res.PLANKS.match.test(stack)) {
+                        fuelStack = stack.copyWithCount(Math.min(stack.getCount(), (n * 2 + 2) / 3));
+                        break;
+                    }
+                }
+            }
+            if (fuelStack.isEmpty()) {
+                this.step = null; // no fuel: the planner fetches some
+                return;
+            }
+            Item fuelItem = fuelStack.getItem();
+            this.kit().remove(st -> st.is(fuelItem), fuelStack.getCount());
+            furnace.setItem(1, fuelStack);
+            this.bot.onKitChanged();
+        }
+        if (this.actionTicks > 20 * 60 * 3) {
+            this.actionTicks = 0;
+            this.step = null; // (not cooking for three minutes: look again what is missing)
+        }
     }
 
     private static Item cooked(Item raw) {
@@ -4006,13 +4241,13 @@ final class Gatherer {
 
     /** Walks to useful items lying around (the bot picks them up when close). Returns true while doing so. */
     private boolean collectDrops() {
-        if (!this.kit().hasRoom() || this.breaking != null) {
+        if (this.breaking != null) {
             return false;
         }
         ItemEntity closest = null;
         double best = 10.0 * 10.0;
         for (ItemEntity item : this.level().getEntitiesOfClass(ItemEntity.class, this.bot.getBoundingBox().inflate(10.0))) {
-            if (item.isAlive() && isUseful(item.getItem()) && !this.enoughOf(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)
+            if (item.isAlive() && isUseful(item.getItem()) && !this.enoughOf(item.getItem()) && this.worthRoom(item.getItem()) && this.bot.distanceToSqr(item) < best && this.bot.hasLineOfSight(item)
                     && !this.unreachableDrops.contains(item.getId())
                     // Not into a lava pool after it (obsidian drops fall into the hole it leaves).
                     && !this.level().getFluidState(item.blockPosition()).is(net.minecraft.tags.FluidTags.LAVA)
@@ -4044,6 +4279,87 @@ final class Gatherer {
     private int dropTicks;
 
     // --- saving known state that matters
+
+    // ------------------------------------------------------------------ what things are worth
+
+    /**
+     * How much an item matters right now (0-100): what it works towards counts most, rubble least.
+     * A full inventory throws the least important stack away for something that matters more.
+     */
+    int value(ItemStack st) {
+        if (st.is(Items.ENDER_EYE) || st.is(Items.BLAZE_ROD) || st.is(Items.BLAZE_POWDER) || st.is(Items.ENDER_PEARL)) {
+            return 100;
+        }
+        if (st.is(Items.OBSIDIAN)) {
+            return this.speedrun && !this.portalBuilt ? 96 : 15;
+        }
+        if (pickaxeTier(st.getItem()) > 0 || st.is(Items.FLINT_AND_STEEL) || st.is(Items.WATER_BUCKET) || st.is(Items.BUCKET)
+                || st.is(Items.BOW) || st.is(Items.POTION) || st.is(Items.SHIELD) || Kit.classify(st) != Role.OTHER) {
+            return 95;
+        }
+        if (st.is(Items.DIAMOND)) return 90;
+        if (st.is(Items.ARROW)) return 80;
+        if (st.is(Items.IRON_INGOT)) return 80;
+        if (Res.COOKED_MEAT.match.test(st)) return 75;
+        if (st.is(Items.RAW_IRON)) return 70;
+        if (st.is(Items.CRAFTING_TABLE) || st.is(Items.FURNACE)) return 60;
+        if (st.is(Items.FLINT)) return this.kit().count(x -> x.is(Items.FLINT_AND_STEEL)) == 0 ? 60 : 20;
+        if (Res.RAW_MEAT.match.test(st)) return 55;
+        if (Res.COAL.match.test(st) || Res.LOG.match.test(st)) return 50;
+        if (Res.PLANKS.match.test(st) || Res.STICK.match.test(st)) return 45;
+        if (st.is(Items.STRING) || st.is(Items.FEATHER)) return 40;
+        if (BRIDGE_BLOCK.test(st)) {
+            // The first stack to build with matters, more is rubble.
+            return this.kit().count(BRIDGE_BLOCK) <= 64 ? 35 : 6;
+        }
+        if (st.is(Items.ROTTEN_FLESH)) return 1;
+        if (JUNK.test(st)) return 3;
+        return 20;
+    }
+
+    /** Is this worth picking up with a full inventory (something clearly less important can go)? */
+    boolean worthRoom(ItemStack incoming) {
+        if (this.kit().hasRoom()) {
+            return true;
+        }
+        int least = Integer.MAX_VALUE;
+        for (ItemStack st : this.kit().items()) {
+            least = Math.min(least, this.value(st));
+        }
+        return this.value(incoming) > least + 5;
+    }
+
+    /** Throws the least important stack away to make room for {@code incoming} (if it is worth it). */
+    boolean makeRoomFor(ItemStack incoming) {
+        if (this.kit().hasRoom()) {
+            return true;
+        }
+        ItemStack least = null;
+        int leastValue = Integer.MAX_VALUE;
+        for (ItemStack st : this.kit().items()) {
+            int v = this.value(st);
+            if (v < leastValue) {
+                leastValue = v;
+                least = st;
+            }
+        }
+        if (least == null || this.value(incoming) <= leastValue + 5) {
+            return false;
+        }
+        ItemStack out = least.copy();
+        ItemStack gone = least;
+        this.kit().remove(x -> x == gone, out.getCount());
+        net.minecraft.world.entity.item.ItemEntity dropped = this.bot.spawnAtLocation(this.level(), out);
+        if (dropped != null) {
+            dropped.setPickUpDelay(20 * 60); // (not picked right back up)
+        }
+        this.bot.onKitChanged();
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   inventory full: throws away {} (worth {}) for {} (worth {})", out, leastValue,
+                    incoming, this.value(incoming));
+        }
+        return true;
+    }
 
     /** Building blocks it already has plenty of (the room is for what it came for). */
     boolean enoughOf(ItemStack stack) {
