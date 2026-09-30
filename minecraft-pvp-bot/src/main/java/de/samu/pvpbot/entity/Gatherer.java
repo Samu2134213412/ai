@@ -3116,6 +3116,7 @@ final class Gatherer {
             }
             if (hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK && level.getBlockState(hit.getBlockPos()).is(Blocks.IRON_BARS)
                     && hit.getLocation().distanceTo(this.bot.getEyePosition()) < 4.5) {
+                this.poleStall = 0; // (breaking bars is progress too)
                 this.breakBlock(level, hit.getBlockPos());
                 return;
             }
@@ -3128,6 +3129,7 @@ final class Gatherer {
                     Vec3 rel = Vec3.atCenterOf(b).subtract(crystal.position()).multiply(1.0, 0.0, 1.0);
                     if (level.getBlockState(b).is(Blocks.IRON_BARS) && rel.dot(side) > 1.0
                             && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(b)) < 4.5) {
+                        this.poleStall = 0;
                         this.breakBlock(level, b.immutable());
                         return;
                     }
@@ -3137,8 +3139,11 @@ final class Gatherer {
                 this.cageSide.put(crystal.getUUID(), this.bot.position().subtract(crystal.position()).multiply(1.0, 0.0, 1.0));
             }
             if (PvpBotEntity.DEBUG) {
-                PvpBotMod.LOGGER.info("[SELFTEST]   cage at {}: {}", crystal.blockPosition().toShortString(),
-                        this.cageOpened.contains(crystal.getUUID()) ? "opened" : "cannot open from here");
+                PvpBotMod.LOGGER.info("[SELFTEST]   cage at {}: {} (hit {} {} at {} away, bot eye {} at {})", crystal.blockPosition().toShortString(),
+                        this.cageOpened.contains(crystal.getUUID()) ? "opened" : "cannot open from here", hit.getType(),
+                        hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK ? level.getBlockState(hit.getBlockPos()).getBlock().getName().getString() : "-",
+                        String.format("%.1f", hit.getLocation().distanceTo(this.bot.getEyePosition())), String.format("%.1f", this.bot.getEyeY()),
+                        this.bot.blockPosition().toShortString());
             }
             if (!this.cageOpened.contains(crystal.getUUID())) {
                 this.giveUpCrystal(crystal);
