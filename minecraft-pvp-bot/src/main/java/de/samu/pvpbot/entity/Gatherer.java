@@ -3440,9 +3440,18 @@ final class Gatherer {
                 }
             }
         }
+        if (PvpBotEntity.DEBUG && ++this.frameLog % 200 == 0) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   frames: at {} known {} next {} dist {} eyes {}", this.bot.blockPosition().toShortString(), frames.size(),
+                    next == null ? "-" : next.toShortString(), next == null ? "-" : String.format("%.1f", this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(next))),
+                    this.kit().count(Res.EYE.match));
+        }
         if (next != null) {
             if (this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(next)) > 4.0) {
-                this.bot.getNavigation().moveTo(next.getX() + 0.5, next.getY() + 1, next.getZ() + 0.5, 1.0);
+                if ((this.bot.getNavigation().isDone() || this.noProgress())
+                        && !this.bot.getNavigation().moveTo(next.getX() + 0.5, next.getY() + 1, next.getZ() + 0.5, 1.0)) {
+                    // No path (lava pool, stairs, silverfish blocks in the way): dig straight there.
+                    this.tunnelTowards(level, next.above());
+                }
                 this.step = null;
                 return;
             }
@@ -3494,6 +3503,7 @@ final class Gatherer {
     }
 
     private int frameVisit;
+    private int frameLog;
     private int portalLog;
     private int frameTicks;
 
