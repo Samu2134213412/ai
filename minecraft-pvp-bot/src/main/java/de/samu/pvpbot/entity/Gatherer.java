@@ -674,6 +674,11 @@ final class Gatherer {
 
     private @Nullable Step plan() {
         for (Need need : this.needs()) {
+            if (need.item() == Items.COOKED_BEEF && this.inNether() && this.speedrun && this.portalBuilt) {
+                // No cows in the nether: back up through the portal for food, then come back.
+                this.goalLabel = "Essen (zurück in die Oberwelt)";
+                return new UsePortal(false);
+            }
             Step s = need.item() == Items.COOKED_BEEF ? this.resolve(Res.COOKED_MEAT, 4, 0) : this.resolveItem(need.item(), 0);
             if (s != null) {
                 this.goalLabel = need.label();
@@ -997,7 +1002,11 @@ final class Gatherer {
             if (this.freeTicks % 60 == 0) {
                 this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
             }
-            if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
+            if (this.bot.isInWater()) {
+                // Stuck in a water hole: swim up and out, digging a way up if needed.
+                this.bot.getJumpControl().jump();
+                this.doDigUp(level);
+            } else if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
                 this.doDigUp(level);
             } else {
                 this.doDig(level, false);
@@ -3283,8 +3292,15 @@ final class Gatherer {
             this.towerGroundY = feet.getY();
         }
         if (this.bot.onGround() && this.pillarFrom == null) {
-            if (!level.getBlockState(feet.above(2)).getCollisionShape(level, feet.above(2)).isEmpty()) {
-                return; // no room above
+            BlockPos over = feet.above(2);
+            if (!level.getBlockState(over).getCollisionShape(level, over).isEmpty()) {
+                // No room above: clear it (not the towers' obsidian or bedrock - move away from those).
+                if (!level.getBlockState(over).is(Blocks.OBSIDIAN) && level.getBlockState(over).getDestroySpeed(level, over) >= 0.0F) {
+                    this.breakBlock(level, over);
+                } else {
+                    this.poleSpot = null;
+                }
+                return;
             }
             this.pillarFrom = feet;
             this.bot.getJumpControl().jump();
