@@ -2646,6 +2646,34 @@ final class Gatherer {
                 bestDist = d;
             }
         }
+        for (BlockPos p : this.known.getOrDefault(Ore.STRONGHOLD, List.of())) {
+            this.strongholdSeen.add(cellKey(p));
+        }
+        if (best == null) {
+            // Every part it has seen is done: on to the places right next to them (a corridor goes on
+            // there, a room above or below) - the stronghold is a maze, not one hall.
+            for (long cell : this.strongholdSeen) {
+                BlockPos c = BlockPos.of(cell);
+                for (Direction d : Direction.values()) {
+                    BlockPos n = c.relative(d);
+                    long key = BlockPos.asLong(n.getX(), n.getY(), n.getZ());
+                    if (this.visitedCells.contains(key) || this.strongholdSeen.contains(key)) {
+                        continue;
+                    }
+                    BlockPos center = new BlockPos(n.getX() * 8 + 4, n.getY() * 8 + 2, n.getZ() * 8 + 4);
+                    double dd = here.distSqr(center);
+                    if (dd < bestDist && !this.blacklist.contains(center)) {
+                        best = center;
+                        bestDist = dd;
+                    }
+                }
+            }
+            if (best != null && here.distSqr(best) <= 5 * 5) {
+                this.visitedCells.add(cellKey(best));
+                this.step = null;
+                return;
+            }
+        }
         if (best == null) {
             this.doDig(level, false);
             this.step = null;
@@ -2679,6 +2707,8 @@ final class Gatherer {
         }
         this.step = null;
     }
+
+    private final java.util.Set<Long> strongholdSeen = new java.util.HashSet<>();
 
     /** Where to stand to be at this block: on top of it (a floor) or in the free space next to it (a wall). */
     private static BlockPos standBeside(ServerLevel level, BlockPos block) {
