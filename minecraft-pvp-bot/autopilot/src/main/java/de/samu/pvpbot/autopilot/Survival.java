@@ -1089,12 +1089,18 @@ final class Survival {
             feet = this.pillarBase;
         }
         // Room for the jump: the two blocks above the head.
-        for (BlockPos above : new BlockPos[]{feet.above(2), feet.above(3)}) {
-            if (!level.getFluidState(above).isEmpty() || PathFinder.nearLava(level, above)) {
-                // Water or lava overhead: go sideways first.
-                return this.explore(mc, p, level, "sucht einen Weg nach oben");
-            }
-            if (!PathFinder.body(level, above) && p.onGround()) {
+        BlockPos head = feet.above(2);
+        if (level.getFluidState(head).is(net.minecraft.tags.FluidTags.LAVA) || PathFinder.nearLava(level, head)) {
+            // Lava overhead: go sideways first.
+            return this.explore(mc, p, level, "sucht einen Weg nach oben");
+        }
+        if (!level.getFluidState(head).isEmpty() || p.isInWater()) {
+            // Water: just swim up.
+            this.ap.kJump = true;
+            return true;
+        }
+        for (BlockPos above : new BlockPos[]{head, feet.above(3)}) {
+            if (!PathFinder.body(level, above) && level.getFluidState(above).isEmpty() && p.onGround()) {
                 this.pillarBase = null;
                 return this.mine(mc, p, level, above);
             }
