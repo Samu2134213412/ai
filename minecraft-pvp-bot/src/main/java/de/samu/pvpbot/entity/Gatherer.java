@@ -1581,7 +1581,7 @@ final class Gatherer {
                 }
                 return new UsePortal(true);
             }
-            if (rodsNeeded <= 0 && this.nearest(Ore.WARPED) == null && ++this.pearlSearchTicks > 24000) {
+            if (rodsNeeded <= 0 && this.nearest(Ore.WARPED) == null && ++this.pearlSearchTicks > 6000) {
                 // No warped forest in sight after a good while: back to the overworld for them.
                 return new UsePortal(false);
             }
