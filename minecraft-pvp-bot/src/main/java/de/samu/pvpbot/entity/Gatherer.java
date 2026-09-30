@@ -550,8 +550,25 @@ final class Gatherer {
         // A spawner within 16 blocks (like vanilla): 4 mobs every 10 to 40 seconds, at most 6 around.
         if (--this.spawnerDelay <= 0) {
             this.spawnerDelay = 200 + this.bot.getRandom().nextInt(601);
-            BlockPos spawner = this.nearest(Ore.SPAWNER);
-            if (spawner != null && spawner.closerToCenterThan(this.bot.position(), 16.0) && level.getBlockState(spawner).is(Blocks.SPAWNER)
+            // (Every spawner within reach counts, seen or not - like with a player standing here.)
+            BlockPos spawner = null;
+            int cx = this.bot.getBlockX() >> 4;
+            int cz = this.bot.getBlockZ() >> 4;
+            for (int dx = -1; dx <= 1 && spawner == null; dx++) {
+                for (int dz = -1; dz <= 1 && spawner == null; dz++) {
+                    var chunk = level.getChunkSource().getChunkNow(cx + dx, cz + dz);
+                    if (chunk == null) {
+                        continue;
+                    }
+                    for (BlockPos p : chunk.getBlockEntities().keySet()) {
+                        if (p.closerToCenterThan(this.bot.position(), 16.0) && level.getBlockState(p).is(Blocks.SPAWNER)) {
+                            spawner = p;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (spawner != null && level.getBlockState(spawner).is(Blocks.SPAWNER)
                     && !level.hasNearbyAlivePlayer(spawner.getX() + 0.5, spawner.getY() + 0.5, spawner.getZ() + 0.5, 16.0)
                     && level.dimension() == net.minecraft.world.level.Level.NETHER) {
                 // (Fortress spawners are blaze spawners.)
