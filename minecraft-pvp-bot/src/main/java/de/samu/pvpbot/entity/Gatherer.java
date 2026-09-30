@@ -1135,7 +1135,7 @@ final class Gatherer {
     private @Nullable BlockPos landGoal;
     private @Nullable BlockPos lastLand;
     /** 24x24 areas of the overworld it has walked through (for exploring: new country first). */
-    private final java.util.Set<Long> visitedCells = new java.util.HashSet<>();
+    private final java.util.Set<Long> seenCountry = new java.util.HashSet<>();
 
     private static long cellOf(Vec3 p) {
         return net.minecraft.world.level.ChunkPos.asLong(Mth.floor(p.x / 24.0), Mth.floor(p.z / 24.0));
@@ -2178,8 +2178,8 @@ final class Gatherer {
         if (this.bot.onGround() && !this.bot.isInWater() && this.bot.tickCount % 20 == 0 && level.canSeeSky(this.bot.blockPosition().above())) {
             this.lastLand = this.bot.blockPosition();
         }
-        if (this.bot.tickCount % 20 == 0 && this.visitedCells.add(cellOf(this.bot.position())) && this.visitedCells.size() > 20000) {
-            this.visitedCells.clear();
+        if (this.bot.tickCount % 20 == 0 && this.seenCountry.add(cellOf(this.bot.position())) && this.seenCountry.size() > 20000) {
+            this.seenCountry.clear();
         }
         if ((this.speedrun || this.autonomous) && this.swimToLand(level)) {
             return;
@@ -2489,7 +2489,7 @@ final class Gatherer {
                     Vec3 c = pos.add(Math.cos(a) * 40.0, 0.0, Math.sin(a) * 40.0);
                     int cy = this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, (int) c.x, (int) c.z);
                     boolean dry = this.level().getFluidState(BlockPos.containing(c.x, cy - 1, c.z)).isEmpty();
-                    double score = (this.visitedCells.contains(cellOf(c)) ? 0.0 : 3.0) + (dry ? 1.5 : 0.0)
+                    double score = (this.seenCountry.contains(cellOf(c)) ? 0.0 : 3.0) + (dry ? 1.5 : 0.0)
                             + Math.cos(a - angle) + this.bot.getRandom().nextDouble() * 0.3;
                     if (score > bestScore) {
                         bestScore = score;
