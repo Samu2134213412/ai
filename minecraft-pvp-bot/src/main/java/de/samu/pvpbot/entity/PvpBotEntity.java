@@ -1529,7 +1529,7 @@ public class PvpBotEntity extends PathfinderMob {
         }
         if (!this.isUsingItem()) {
             this.startUsingItem(InteractionHand.MAIN_HAND);
-        } else if (this.getTicksUsingItem() >= 20 && sees) {
+        } else if (this.getTicksUsingItem() >= 20 && sees && !this.bystanderInLine(level, target)) {
             this.shootArrow(level, target, bow);
             this.stopUsingItem();
             if (++this.bowShots >= 3) {
@@ -1537,6 +1537,36 @@ public class PvpBotEntity extends PathfinderMob {
                 this.finishAttempt();
             }
         }
+    }
+
+    /**
+     * A neutral mob (zombified piglin, piglin, enderman) in the line of fire or right behind the
+     * target: a miss would turn the whole group against it - hold the shot, like a careful player.
+     */
+    private boolean bystanderInLine(ServerLevel level, LivingEntity target) {
+        Vec3 from = this.getEyePosition();
+        Vec3 to = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+        Vec3 dir = to.subtract(from);
+        double len = dir.length();
+        if (len < 1.0E-3) {
+            return false;
+        }
+        Vec3 unit = dir.scale(1.0 / len);
+        Vec3 end = to.add(unit.scale(12.0)); // (a miss flies on)
+        AABB box = new AABB(from, end).inflate(2.0);
+        for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, box, e -> e != this && e != target && e.isAlive())) {
+            boolean neutral = e.getType() == EntityTypes.ZOMBIFIED_PIGLIN || e.getType() == EntityTypes.PIGLIN
+                    || e.getType() == EntityTypes.ENDERMAN || e.getType() == EntityTypes.PIGLIN_BRUTE;
+            if (!neutral || e instanceof Mob m && m.getTarget() == this) {
+                continue;
+            }
+            Vec3 c = e.position().add(0.0, e.getBbHeight() * 0.5, 0.0);
+            double t = Math.max(0.0, Math.min(len + 12.0, c.subtract(from).dot(unit)));
+            if (from.add(unit.scale(t)).distanceTo(c) < 1.3) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void shootArrow(ServerLevel level, LivingEntity target, ItemStack bow) {
