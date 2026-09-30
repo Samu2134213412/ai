@@ -150,6 +150,51 @@ jobs:
           name: full-run-logs
           path: minecraft-pvp-bot/full-*.log
 
+  parcours:
+    # Training course: the traps from the full runs, each a hard test the bot has to pass.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: minecraft-pvp-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore what the bot learned in earlier runs
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            minecraft-pvp-bot/run/config/pvpbot-memory.json
+            minecraft-pvp-bot/run/config/pvpbot-tasks.json
+          key: pvpbot-brain-parcours-${{ github.run_id }}
+          restore-keys: pvpbot-brain-parcours-
+      - name: Training course (flat test world)
+        run: |
+          mkdir -p run
+          echo "eula=true" > run/eula.txt
+          printf 'online-mode=false\nlevel-type=minecraft\\:flat\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=false\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
+          timeout 5400 ./gradlew --no-daemon runServer -Pselftest -Pstagetest=parcours > parcours.log 2>&1 || true
+          grep -E "SELFTEST|Exception|FATAL|at de\.samu" parcours.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" | grep -E "=====|parcours:|WATCHDOG|HARD UNSTUCK|bot took|bot gone|gather: |LEARN|PASS|FAIL|Exception|at de\.samu" | tail -900 || true
+          echo "===== RESULT ====="
+          grep -E "\[SELFTEST\] (PASS|FAIL)" parcours.log || true
+          grep -q "\[SELFTEST\] DONE" parcours.log
+          ! grep -q "\[SELFTEST\] FAIL" parcours.log
+      - name: Keep what the bot learned
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            minecraft-pvp-bot/run/config/pvpbot-memory.json
+            minecraft-pvp-bot/run/config/pvpbot-tasks.json
+          key: pvpbot-brain-parcours-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: parcours-log
+          path: minecraft-pvp-bot/parcours.log
+
   autopilot:
     runs-on: ubuntu-latest
     defaults:

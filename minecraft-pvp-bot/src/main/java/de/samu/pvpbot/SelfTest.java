@@ -161,9 +161,25 @@ final class SelfTest {
         } else {
             SCENARIOS.removeIf(sc -> sc.name().startsWith("Etappe"));
         }
+        if ("parcours".equals(stages)) {
+            // Training course: the traps from the full runs, one hard test each (flat test world).
+            SCENARIOS.clear();
+            for (Parcours.Course c : Parcours.COURSES.values()) {
+                SCENARIOS.add(new Scenario(c.name(), PvpBotEntity.Style.AUTO, c.timeout(), 0, level -> List.of(), c.kit(), c.goal()));
+            }
+        }
         ServerLifecycleEvents.SERVER_STARTED.register(SelfTest::setup);
         ServerTickEvents.END_SERVER_TICK.register(SelfTest::tick);
         ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamage, damageTaken, blocked) -> {
+            if (bot != null && entity == bot && damageTaken > 0.0F) {
+                String t = source.typeHolder().getRegisteredName();
+                if (t.contains("lava") || t.contains("fire")) {
+                    Parcours.lavaHits++;
+                }
+                if (t.contains("fall")) {
+                    Parcours.fallHits++;
+                }
+            }
             if (bot != null && entity == bot && damageTaken >= 2.0F) {
                 PvpBotMod.LOGGER.info(TAG + String.format("  bot took %.1f from %s (%s) at %s, hp now %.1f, %s",
                         damageTaken, source.typeHolder().getRegisteredName(),
@@ -190,6 +206,11 @@ final class SelfTest {
         ServerLevel level = server.overworld();
         int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, 0, 0);
         origin = new BlockPos(0, y, 0);
+        if ("parcours".equals(System.getProperty("pvpbot.stagetest"))) {
+            Parcours.buildAll(level, origin);
+            PvpBotMod.LOGGER.info(TAG + "origin " + origin + ", training course built");
+            return;
+        }
         if (System.getProperty("pvpbot.stagetest") != null) {
             // "Beat the game" runs in an untouched world: nothing built, nothing forced.
             PvpBotMod.LOGGER.info(TAG + "origin " + origin);
@@ -554,6 +575,14 @@ final class SelfTest {
         if (stage) {
             TestWatcher.follow(bot); // right away, so its chunks stay loaded
         }
+        Parcours.Course course = Parcours.COURSES.get(scenario.name());
+        if (course != null) {
+            BlockPos at = Parcours.start(course);
+            bot.teleportTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5);
+            bot.setSpeedrun(true);
+            Parcours.lavaHits = 0;
+            Parcours.fallHits = 0;
+        }
         if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
             bot.startAtStage3();
         } else if (stage) {
@@ -593,6 +622,12 @@ final class SelfTest {
         Scenario scenario = SCENARIOS.get(index);
         long killed = targets.stream().filter(t -> !t.isAlive()).count();
         boolean pass = scenario.goal() != null ? scenario.goal().test(bot) && bot.isAlive() : killed == targets.size() && bot.isAlive();
+        if (scenario.name().startsWith("Parcours")) {
+            // No burns anywhere; in the cave tower not one fall either.
+            pass &= Parcours.lavaHits == 0 && (!scenario.name().startsWith("Parcours 7") || Parcours.fallHits == 0);
+            PvpBotMod.LOGGER.info(TAG + "  parcours: lava/fire hits " + Parcours.lavaHits + ", fall hits " + Parcours.fallHits
+                    + ", at " + bot.blockPosition().toShortString());
+        }
         if (scenario.goal() != null) {
             PvpBotMod.LOGGER.info(TAG + "  final kit: " + bot.getKit().items().stream()
                     .map(st -> st.getCount() + "x" + st.getItem().toString().replace("minecraft:", "")).toList());
