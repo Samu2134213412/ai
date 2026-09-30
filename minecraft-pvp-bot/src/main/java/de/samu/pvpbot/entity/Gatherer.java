@@ -677,7 +677,7 @@ final class Gatherer {
             needs.add(new Need(Items.SHIELD, "einen Schild"));
         }
         // (Not in the End: there are no animals there, the dragon comes first.)
-        if (!kit.has(Role.GAPPLE) && kit.count(Res.COOKED_MEAT.match) < 4 && !this.inEnd()) {
+        if (!kit.has(Role.GAPPLE) && kit.count(Res.COOKED_MEAT.match) < this.foodWanted() && !this.inEnd()) {
             needs.add(new Need(Items.COOKED_BEEF, "Essen"));
         }
         if ((diamondsNearby || this.autonomous) && !this.speedrun) {
@@ -754,6 +754,11 @@ final class Gatherer {
         return true;
     }
 
+    /** Cooked meat to carry: enough for a while - playing through it eats on the way, like a speedrunner. */
+    private int foodWanted() {
+        return this.speedrun ? 2 : 4;
+    }
+
     private @Nullable Step planWork() {
         for (Need need : this.needs()) {
             if (need.item() == Items.COOKED_BEEF && this.inNether() && this.speedrun && this.portalBuilt) {
@@ -761,7 +766,7 @@ final class Gatherer {
                 this.goalLabel = "Essen (zurück in die Oberwelt)";
                 return new UsePortal(false);
             }
-            Step s = need.item() == Items.COOKED_BEEF ? this.resolve(Res.COOKED_MEAT, 4, 0) : this.resolveItem(need.item(), 0);
+            Step s = need.item() == Items.COOKED_BEEF ? this.resolve(Res.COOKED_MEAT, this.foodWanted(), 0) : this.resolveItem(need.item(), 0);
             if (s != null) {
                 this.goalLabel = need.label();
                 return s;
