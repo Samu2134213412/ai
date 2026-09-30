@@ -521,11 +521,28 @@ final class Survival {
             return this.place(mc, p, level, Items.CRAFTING_TABLE, "stellt eine Werkbank auf");
         }
         if (!this.reach(p, table)) {
+            if (this.inHole(level, p) && table.getY() > p.getBlockY() + 1) {
+                // Down its own hole: build back up first (the path finder does not climb shafts).
+                return this.digUp(mc, p, level);
+            }
             this.say(p, "geht zur Werkbank");
             return this.walkNear(mc, p, level, table);
         }
         this.startCraftJob(mc, p, r, table);
         return true;
+    }
+
+    /** Down a shaft or pit: the ground is higher than its head on (almost) every side. */
+    private boolean inHole(Level level, LocalPlayer p) {
+        BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+        int walls = 0;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos n = feet.relative(d);
+            if (level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, n.getX(), n.getZ()) > feet.getY() + 2) {
+                walls++;
+            }
+        }
+        return walls >= 3;
     }
 
     /** Places a block from the inventory on free ground next to the player. */
