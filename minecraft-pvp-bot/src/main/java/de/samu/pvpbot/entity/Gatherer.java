@@ -1973,10 +1973,7 @@ final class Gatherer {
         return switch (res) {
             case PLANKS -> this.resolveItem(Items.OAK_PLANKS, depth);
             case STICK -> this.resolveItem(Items.STICK, depth);
-            case LOG -> this.nearest(Ore.LOG) == null && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
-                    && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                    this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0
-                    ? new ClimbUp("Holz gibt es oben") : this.mine(Ore.LOG, depth);
+            case LOG -> this.mine(Ore.LOG, depth);
             case COBBLE -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.STONE, depth);
             case COAL -> this.needPickaxe(Items.WOODEN_PICKAXE, depth) != null ? this.needPickaxe(Items.WOODEN_PICKAXE, depth) : this.mine(Ore.COAL, depth);
             case RAW_IRON -> this.needPickaxe(Items.STONE_PICKAXE, depth) != null ? this.needPickaxe(Items.STONE_PICKAXE, depth) : this.mine(Ore.IRON, depth);
@@ -2040,8 +2037,7 @@ final class Gatherer {
 
     private Step mine(Ore ore, int depth) {
         if (ore == Ore.LOG && this.nearest(ore) == null && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
-                && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                this.bot.getBlockX(), this.bot.getBlockZ()) > this.bot.getY() + 6.0) {
+                && this.underground()) {
             return new ClimbUp("Holz gibt es oben"); // (no trees in caves)
         }
         if (this.nearest(ore) == null && !this.bot.isInWater() && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
@@ -2382,7 +2378,20 @@ final class Gatherer {
         this.step = null;
     }
 
+    /** Rock overhead (in a cave, its own staircase): the sky is not in sight. */
+    private boolean underground() {
+        BlockPos head = BlockPos.containing(this.bot.getEyePosition());
+        return !this.level().canSeeSky(head) && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                head.getX(), head.getZ()) > head.getY() + 1;
+    }
+
     private void doExplore() {
+        if ((this.speedrun || this.autonomous) && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
+                && this.underground() && !this.bot.isInWater()) {
+            // Looking for something that is up top (trees, animals) from down here: up first.
+            this.doDigUp(this.level());
+            return;
+        }
         Vec3 pos = this.bot.position();
         if (this.anchor == null) {
             Player owner = this.bot.getOwner();
@@ -2561,6 +2570,31 @@ final class Gatherer {
                 return;
             }
             if (bad) {
+                this.stopBreaking();
+                this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+                this.digBlocked++;
+                this.step = null;
+                return;
+            }
+        }
+        if (down) {
+            // The next stair is one lower: no cave drop and no lava under it either.
+            BlockPos stair = front.below();
+            int depth = 0;
+            boolean lava = false;
+            while (depth < 4 && level.getBlockState(stair.below(depth + 1)).getCollisionShape(level, stair.below(depth + 1)).isEmpty()) {
+                depth++;
+                lava |= level.getFluidState(stair.below(depth)).is(net.minecraft.tags.FluidTags.LAVA);
+            }
+            lava |= level.getFluidState(stair.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA);
+            if (lava || depth >= 3) {
+                if (PvpBotEntity.DEBUG && ++this.digLogTicks % 20 == 1) {
+                    PvpBotMod.LOGGER.info("[SELFTEST]   dig: drop under the next stair at {} depth {} lava {}", stair.toShortString(), depth, lava);
+                }
+                if (!lava && this.bridge(level, stair.below())) {
+                    this.step = null;
+                    return;
+                }
                 this.stopBreaking();
                 this.digDir = this.bot.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
                 this.digBlocked++;
