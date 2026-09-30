@@ -3199,6 +3199,23 @@ final class Gatherer {
                 this.breakBlock(level, hit.getBlockPos());
                 return;
             }
+            if (hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK && level.getBlockState(hit.getBlockPos()).is(Blocks.IRON_BARS)
+                    && this.bot.onGround()) {
+                // A wide tower: the bars are out of reach. Step over onto its top towards the cage (a
+                // block down where there is no floor), and come back to the pole afterwards.
+                if (this.cageStepFrom == null) {
+                    this.cageStepFrom = this.bot.blockPosition();
+                }
+                Vec3 toward = crystal.position().subtract(this.bot.position()).multiply(1.0, 0.0, 1.0).normalize();
+                Vec3 next = this.bot.position().add(toward);
+                BlockPos under = BlockPos.containing(next.x, this.bot.getY() - 0.5, next.z);
+                if (level.getBlockState(under).getCollisionShape(level, under).isEmpty()) {
+                    this.bridge(level, under, false);
+                }
+                this.poleStall = 0;
+                this.bot.getMoveControl().setWantedPosition(next.x, this.bot.getY(), next.z, 0.5);
+                return;
+            }
             if (hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
                 // A bigger hole: every bar on this side within reach (the shot from further out comes
                 // in at a slightly different angle).
@@ -3223,6 +3240,15 @@ final class Gatherer {
                         hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK ? level.getBlockState(hit.getBlockPos()).getBlock().getName().getString() : "-",
                         String.format("%.1f", hit.getLocation().distanceTo(this.bot.getEyePosition())), String.format("%.1f", this.bot.getEyeY()),
                         this.bot.blockPosition().toShortString());
+            }
+            if (this.cageStepFrom != null) {
+                // Back onto the pole before climbing down it.
+                if (this.bot.blockPosition().getX() != this.cageStepFrom.getX() || this.bot.blockPosition().getZ() != this.cageStepFrom.getZ()) {
+                    this.poleStall = 0;
+                    this.bot.getMoveControl().setWantedPosition(this.cageStepFrom.getX() + 0.5, this.cageStepFrom.getY(), this.cageStepFrom.getZ() + 0.5, 0.5);
+                    return;
+                }
+                this.cageStepFrom = null;
             }
             if (!this.cageOpened.contains(crystal.getUUID())) {
                 this.giveUpCrystal(crystal, "cage not opened");
@@ -3347,6 +3373,7 @@ final class Gatherer {
     private boolean poleDone;
     private final java.util.Set<java.util.UUID> cageOpened = new java.util.HashSet<>();
     private final java.util.Map<java.util.UUID, Vec3> cageSide = new java.util.HashMap<>();
+    private @Nullable BlockPos cageStepFrom;
 
     private int towerGroundY = Integer.MIN_VALUE;
     private java.util.@Nullable UUID towerCrystal;
