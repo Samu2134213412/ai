@@ -666,6 +666,9 @@ final class Gatherer {
             needs.add(new Need(Items.IRON_SWORD, "ein Eisenschwert"));
         }
         for (int i = 0; i < 4; i++) {
+            if (this.speedrun && ARMOR_SLOTS[i] != EquipmentSlot.CHEST) {
+                continue; // (playing through like a speedrunner: the chestplate is enough armor)
+            }
             if (Kit.armorValue(kit.bestArmor(ARMOR_SLOTS[i]), ARMOR_SLOTS[i]) < Kit.armorValue(new ItemStack(IRON_ARMOR[i]), ARMOR_SLOTS[i])) {
                 needs.add(new Need(IRON_ARMOR[i], "Eisenrüstung"));
             }
