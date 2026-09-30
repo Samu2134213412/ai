@@ -515,13 +515,18 @@ final class Gatherer {
                 level.setChunkForced((int) (key >> 32), (int) key, false);
             }
         }
+        java.util.Set<Long> ours = new java.util.HashSet<>();
         for (long key : wanted) {
-            if (!this.forcedChunks.contains(key)) {
+            if (this.forcedChunks.contains(key)) {
+                ours.add(key);
+            } else if (!level.getForceLoadedChunks().contains((key >> 32 & 0xFFFFFFFFL) | (key & 0xFFFFFFFFL) << 32)) {
+                // Only the ones it loads itself are its to release again (never someone else's /forceload).
                 level.setChunkForced((int) (key >> 32), (int) key, true);
+                ours.add(key);
             }
         }
         this.forcedChunks.clear();
-        this.forcedChunks.addAll(wanted);
+        this.forcedChunks.addAll(ours);
     }
 
     private static long chunkKey(int x, int z) {
