@@ -2828,20 +2828,24 @@ final class Gatherer {
             }
         }
         for (BlockPos p : this.known.getOrDefault(Ore.STRONGHOLD, List.of())) {
-            this.strongholdSeen.add(cellKey(p));
+            // Floors it has seen (bricks with room above): that is where the corridors and rooms are -
+            // behind the walls is only rock.
+            if (level.getBlockState(p.above()).getCollisionShape(level, p.above()).isEmpty()) {
+                this.strongholdSeen.add(cellKey(p.above()));
+            }
         }
         if (best == null) {
             // Every part it has seen is done: on to the places right next to them (a corridor goes on
             // there, a room above or below) - the stronghold is a maze, not one hall.
             for (long cell : this.strongholdSeen) {
                 BlockPos c = BlockPos.of(cell);
-                for (Direction d : Direction.values()) {
+                for (Direction d : Direction.Plane.HORIZONTAL) {
                     BlockPos n = c.relative(d);
                     long key = BlockPos.asLong(n.getX(), n.getY(), n.getZ());
                     if (this.visitedCells.contains(key) || this.strongholdSeen.contains(key)) {
                         continue;
                     }
-                    BlockPos center = new BlockPos(n.getX() * 8 + 4, n.getY() * 8 + 2, n.getZ() * 8 + 4);
+                    BlockPos center = new BlockPos(n.getX() * 8 + 4, c.getY() * 8 + 2, n.getZ() * 8 + 4);
                     double dd = here.distSqr(center);
                     if (dd < bestDist && !this.blacklist.contains(center)) {
                         best = center;
