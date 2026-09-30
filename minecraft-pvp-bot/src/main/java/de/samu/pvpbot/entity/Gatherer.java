@@ -84,6 +84,9 @@ final class Gatherer {
         FORTRESS("Netherfestung", Res.BLAZE_ROD, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_BRICKS)
                 || s.is(net.minecraft.world.level.block.Blocks.NETHER_BRICK_FENCE)),
         SPAWNER("Spawner", Res.BLAZE_ROD, s -> s.is(net.minecraft.world.level.block.Blocks.SPAWNER)),
+        // The blue warped forest: where endermen are in the nether.
+        WARPED("Wirrwald", Res.PEARL, s -> s.is(net.minecraft.world.level.block.Blocks.WARPED_NYLIUM)
+                || s.is(net.minecraft.world.level.block.Blocks.WARPED_STEM) || s.is(net.minecraft.world.level.block.Blocks.WARPED_WART_BLOCK)),
         PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)),
         STRONGHOLD("Festungsmauern", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.MOSSY_STONE_BRICKS)
                 || s.is(net.minecraft.world.level.block.Blocks.CRACKED_STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.INFESTED_STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.INFESTED_MOSSY_STONE_BRICKS)
@@ -2084,6 +2087,18 @@ final class Gatherer {
         for (BlockPos p : this.known.getOrDefault(Ore.FORTRESS, List.of())) {
             if (p.getY() >= 45) {
                 this.fortressCells.add(cellKey(p));
+            }
+        }
+        if (goal == null && !wantRods) {
+            // Endermen: the warped forest is where they are (seen from afar, it is bright blue).
+            BlockPos warped = this.nearest(Ore.WARPED);
+            if (warped != null && this.bot.blockPosition().distSqr(warped) > 12 * 12) {
+                goal = warped;
+            } else if (warped != null) {
+                // In the forest: wait for them (hunting starts as soon as one is in sight).
+                this.bot.getNavigation().stop();
+                this.step = null;
+                return;
             }
         }
         if (goal == null && wantRods && !this.fortressCells.isEmpty()) {
