@@ -2024,6 +2024,10 @@ final class Gatherer {
                 if (to.y > 3.0) {
                     // The fortress is up there (its bridges stand high): stairs up to it.
                     this.doDigUp(level);
+                } else if (to.y < -2.5 && goal.getY() >= 45 && Math.abs(to.x) + Math.abs(to.z) < 12.0) {
+                    // Standing on its roof, the halls are right below: stairs down into them (never
+                    // below the fortress, the lava sea is down there).
+                    this.doDig(level, true);
                 } else {
                     this.doDig(level, false); // (never down towards the lava sea)
                 }
