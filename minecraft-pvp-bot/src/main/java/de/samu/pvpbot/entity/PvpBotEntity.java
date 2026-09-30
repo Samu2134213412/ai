@@ -491,6 +491,10 @@ public class PvpBotEntity extends PathfinderMob {
         return Gatherer.orderOptions();
     }
 
+    private @Nullable Vec3 hardPos;
+    private int hardKit;
+    private int hardSeconds;
+
     public boolean isTalking() {
         return this.talk;
     }
@@ -696,6 +700,21 @@ public class PvpBotEntity extends PathfinderMob {
 
         this.gatherer.keepChunksLoaded();
         this.gatherer.reflexActive = this.gatherer.reflexes();
+        if ((this.gatherer.isSpeedrun() || this.gatherer.isAutonomousMode()) && this.tickCount % 20 == 0) {
+            int kitCount = 0;
+            for (ItemStack st : this.getKit().items()) {
+                kitCount += st.getCount() * 31 + net.minecraft.core.registries.BuiltInRegistries.ITEM.getId(st.getItem());
+            }
+            if (this.hardPos == null || this.position().distanceTo(this.hardPos) > 6.0 || kitCount != this.hardKit
+                    || this.getTarget() != null || this.gatherer.gameBeaten() || this.inEnd()) {
+                this.hardPos = this.position();
+                this.hardKit = kitCount;
+                this.hardSeconds = 0;
+            } else if (++this.hardSeconds >= 180) {
+                this.hardSeconds = 0;
+                this.gatherer.forceFree();
+            }
+        }
         if (this.getTarget() == null && this.getOwner() instanceof ServerPlayer talker && talker.level() == this.level()
                 && this.distanceToSqr(talker) < 16.0 * 16.0 && de.samu.pvpbot.voice.BotVoice.isSpeaking(talker.getUUID())) {
             // Its owner talks (Simple Voice Chat): it turns round and listens.

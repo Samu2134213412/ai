@@ -1269,6 +1269,29 @@ final class Gatherer {
         return true;
     }
 
+    /**
+     * The last safety net (called by the entity, whatever goal runs): three minutes without moving
+     * on or anything new in the bag. Drops the plan and explores away for half a minute.
+     */
+    void forceFree() {
+        ServerLevel level = this.level();
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   HARD UNSTUCK: 3 min without progress with {} ({}) at {} -> explores away",
+                    this.step, this.goalLabel, this.bot.blockPosition().toShortString());
+        }
+        this.freeSituation = this.situation(level);
+        this.step = null;
+        this.mineTarget = null;
+        this.poleSpot = null;
+        this.stopBreaking();
+        this.freeWay = "erkunden";
+        this.freeFrom = this.bot.position();
+        this.freeTicks = 600;
+        this.exploreHeading = Double.NaN;
+        this.exploreTarget = null;
+        this.watchTicks = 0;
+    }
+
     /** Ways out of a stuck spot the learner chooses from. */
     private static final List<String> FREE_WAYS = List.of("graben", "hochgraben", "hochbauen", "erkunden", "runtergraben");
     private String freeWay = "graben";
