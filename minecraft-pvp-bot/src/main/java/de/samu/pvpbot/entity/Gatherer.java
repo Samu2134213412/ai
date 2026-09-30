@@ -1093,14 +1093,15 @@ final class Gatherer {
         for (ItemStack st : this.kit().items()) {
             kit += st.getCount();
         }
-        boolean busy = this.step != null || this.bot.getTarget() != null;
+        // (Playing through, there is always work - except in the End, where waiting for the dragon is fine.)
+        boolean busy = this.speedrun && !this.gameBeaten && !this.inEnd() || this.autonomous && this.step != null;
         if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 3.0 * 3.0 || kit != this.watchKit) {
             this.watchPos = this.bot.position();
             this.watchKit = kit;
             this.watchTicks = 0;
             return false;
         }
-        if (++this.watchTicks < 1200 || this.step instanceof FightDragon) {
+        if (++this.watchTicks < 1200) {
             return false;
         }
         if (PvpBotEntity.DEBUG) {
