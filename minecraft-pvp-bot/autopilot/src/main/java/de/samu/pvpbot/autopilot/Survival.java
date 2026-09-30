@@ -915,6 +915,29 @@ final class Survival {
             return this.explore(mc, p, level, "sucht trockenen Boden zum Graben");
         }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
+        if (down && this.stairStep == null && feet.getY() >= 54) {
+            // Starting a way down: not next to the sea or a lake (the stairs would flood and digging in
+            // water is slow). Walk away from the water first, like a player looking for dry land.
+            double wx = 0.0;
+            double wz = 0.0;
+            int water = 0;
+            for (BlockPos b : BlockPos.betweenClosed(feet.offset(-7, -3, -7), feet.offset(7, 1, 7))) {
+                if (level.getFluidState(b).is(net.minecraft.tags.FluidTags.WATER)) {
+                    wx += b.getX();
+                    wz += b.getZ();
+                    water++;
+                }
+            }
+            if (water > 3) {
+                float away = (float) (Math.atan2(feet.getZ() - wz / water, feet.getX() - wx / water) * 180.0 / Math.PI) - 90.0F;
+                if (Float.isNaN(this.exploreYaw) || Math.abs(net.minecraft.util.Mth.wrapDegrees(away - this.exploreYaw)) > 60.0F) {
+                    this.exploreYaw = away;
+                    this.exploreTicks = 200;
+                    this.path = null;
+                }
+                return this.explore(mc, p, level, "geht vom Wasser weg, um zu graben");
+            }
+        }
         // The step must be right in front (and one lower going down); after a fall or a push it is
         // not any more - then work out a new one from where it stands.
         boolean stale = this.stairStep != null && (Math.abs(this.stairStep.getX() - feet.getX()) + Math.abs(this.stairStep.getZ() - feet.getZ()) != 1
