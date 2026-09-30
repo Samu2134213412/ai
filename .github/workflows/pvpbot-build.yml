@@ -61,6 +61,7 @@ jobs:
             printf 'online-mode=false\nlevel-type=minecraft\\:normal\nlevel-seed=pvpbot-${{ github.run_number }}-'"$try"'\npause-when-empty-seconds=100000\ndifficulty=normal\nspawn-protection=0\ngenerate-structures=true\nview-distance=4\nsimulation-distance=6\n' > run/server.properties
             timeout 5400 ./gradlew --no-daemon runServer -Pselftest -Pstagetest=${{ matrix.stage }} > stage.log 2>&1 || true
             echo "===== try $try (seed pvpbot-${{ github.run_number }}-$try): $(grep -oE '\[SELFTEST\] (PASS|FAIL).*' stage.log | head -1)"
+            grep -E "bot took|bot is now|WATCHDOG" stage.log | tail -12 || true
             grep -qE '\[SELFTEST\] FAIL.*botAlive=false' stage.log || break
           done
           grep -E "SELFTEST|Exception|FATAL|at de\.samu" stage.log | grep -v "  hit " | grep -vE "\] t= *[0-9]+s bot hp" > events.log || true

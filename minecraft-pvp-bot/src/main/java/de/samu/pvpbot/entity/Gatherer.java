@@ -993,7 +993,7 @@ final class Gatherer {
             if (this.freeTicks % 60 == 0) {
                 this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
             }
-            if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0) {
+            if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0 || this.inEnd() && this.bot.getY() < 60.0) {
                 this.doDigUp(level);
             } else {
                 this.doDig(level, false);
@@ -1004,8 +1004,9 @@ final class Gatherer {
         for (ItemStack st : this.kit().items()) {
             kit += st.getCount();
         }
-        // (Playing through, there is always work - except in the End, where waiting for the dragon is fine.)
-        boolean busy = this.speedrun && !this.gameBeaten && !this.inEnd() || this.autonomous && this.step != null;
+        // (Playing through, there is always work - in the End only while crystals are left: waiting
+        // for the dragon to come down is fine.)
+        boolean busy = this.speedrun && !this.gameBeaten && (!this.inEnd() || this.anyCrystal()) || this.autonomous && this.step != null;
         if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 3.0 * 3.0 || kit != this.watchKit) {
             this.watchPos = this.bot.position();
             this.watchKit = kit;
