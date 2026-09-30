@@ -1691,6 +1691,18 @@ final class Gatherer {
         if (this.reflexActive) {
             return;
         }
+        if (this.bot.tickCount % 40 == 0 && !this.kit().hasRoom() && this.kit().count(JUNK) > 192) {
+            // Inventory full of rubble: throw a stack away, like a player makes room.
+            for (ItemStack st : this.kit().items()) {
+                if (JUNK.test(st)) {
+                    ItemStack out = st.copy();
+                    this.kit().remove(x -> x == st, st.getCount());
+                    this.bot.spawnAtLocation(level, out);
+                    this.bot.onKitChanged();
+                    break;
+                }
+            }
+        }
         if (this.speedrun && this.bot.isInWater() && this.bot.getTarget() == null) {
             if (this.poolPos == null || this.bot.position().distanceToSqr(this.poolPos) > 4.0 * 4.0) {
                 this.poolPos = this.bot.position();
@@ -4034,8 +4046,12 @@ final class Gatherer {
     // --- saving known state that matters
 
     /** Building blocks it already has plenty of (the room is for what it came for). */
-    private boolean enoughOf(ItemStack stack) {
-        return (stack.is(Items.NETHERRACK) || stack.is(Items.END_STONE)) && this.kit().count(st -> st.is(stack.getItem())) >= 128;
+    boolean enoughOf(ItemStack stack) {
+        if (stack.is(Items.NETHERRACK) || stack.is(Items.END_STONE)) {
+            return this.kit().count(st -> st.is(stack.getItem())) >= 128;
+        }
+        // Cobblestone, deepslate, dirt and the like: three stacks together are plenty.
+        return JUNK.test(stack) && this.kit().count(JUNK) >= 192;
     }
 
     static boolean isUseful(ItemStack stack) {
