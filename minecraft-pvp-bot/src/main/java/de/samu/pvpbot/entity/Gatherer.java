@@ -1067,6 +1067,57 @@ final class Gatherer {
         return walls >= 3;
     }
 
+    private @Nullable Vec3 watchPos;
+    private int watchKit;
+    private int watchTicks;
+    private int freeTicks;
+
+    /**
+     * Not moved and nothing new in the kit for a minute while there is work: whatever it is doing
+     * loops. Drop it, dig/build its way out in some direction for 10 s, then plan afresh.
+     */
+    private boolean watchdog(ServerLevel level) {
+        if (this.freeTicks > 0) {
+            this.freeTicks--;
+            if (this.freeTicks % 60 == 0) {
+                this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
+            }
+            if (this.inPit(level) || this.inNether() && this.bot.getY() < 40.0) {
+                this.doDigUp(level);
+            } else {
+                this.doDig(level, false);
+            }
+            return true;
+        }
+        int kit = 0;
+        for (ItemStack st : this.kit().items()) {
+            kit += st.getCount();
+        }
+        boolean busy = this.step != null || this.bot.getTarget() != null;
+        if (!busy || this.watchPos == null || this.bot.position().distanceToSqr(this.watchPos) > 3.0 * 3.0 || kit != this.watchKit) {
+            this.watchPos = this.bot.position();
+            this.watchKit = kit;
+            this.watchTicks = 0;
+            return false;
+        }
+        if (++this.watchTicks < 1200 || this.step instanceof FightDragon) {
+            return false;
+        }
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   WATCHDOG: no progress for 60 s with {} at {} -> frees itself", this.step,
+                    this.bot.blockPosition().toShortString());
+        }
+        this.watchTicks = 0;
+        this.step = null;
+        this.bot.setTarget(null);
+        this.netherGoal = null;
+        this.mineTarget = null;
+        this.poleSpot = null;
+        this.freeTicks = 200;
+        this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
+        return true;
+    }
+
     private int digUpBestY = Integer.MIN_VALUE;
     private int digUpTicks;
 
@@ -1545,6 +1596,9 @@ final class Gatherer {
                     return;
                 }
             }
+        }
+        if ((this.speedrun || this.autonomous) && this.watchdog(level)) {
+            return;
         }
         this.findHomeChests(level);
         if (!this.kit().hasRoom() && this.bot.tickCount % 20 == 0) {
