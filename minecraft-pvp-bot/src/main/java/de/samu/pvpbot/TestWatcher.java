@@ -37,10 +37,13 @@ final class TestWatcher {
             };
             p.setGameMode(GameType.CREATIVE);
             p.setInvisible(true);
+            p.setNoGravity(true);
+            p.getAbilities().flying = true;
             p.snapTo(bot.getX(), bot.getY(), bot.getZ(), 0.0F, 0.0F);
             level.addNewPlayer(p);
             watcher = p;
             bot.setOwner(p);
+            bot.setFollowing(false); // the owner only watches: the bot plays on its own
             PvpBotMod.LOGGER.info("[SELFTEST]   (test) watcher (creative, invisible) now with the bot in " + level.dimension());
         }
         watcher.snapTo(bot.getX(), bot.getY(), bot.getZ(), bot.getYRot(), 0.0F);

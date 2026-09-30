@@ -423,6 +423,9 @@ final class SelfTest {
         }
         level.addFreshEntity(bot);
         spawned.add(bot);
+        if (stage) {
+            TestWatcher.follow(bot); // right away, so its chunks stay loaded
+        }
         if (stage && (scenario.name().startsWith("Etappe 3") || end)) {
             bot.startAtStage3();
         } else if (stage) {
