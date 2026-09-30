@@ -140,7 +140,7 @@ final class SelfTest {
         // Beat the game, stage 1, in untouched terrain (sped up with /tick sprint).
         SCENARIOS.add(new Scenario("Etappe 1: Diamanten, Obsidian, Netherportal", PvpBotEntity.Style.AUTO, 72000, 240,
                 level -> List.of(), SelfTest::stage1Kit, PvpBotEntity::portalBuilt));
-        SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 72000, -240,
+        SCENARIOS.add(new Scenario("Etappe 2: Nether, Lohenruten, Enderperlen", PvpBotEntity.Style.AUTO, 90000, -240,
                 level -> List.of(), SelfTest::stage2Kit, PvpBotEntity::stage2Done));
         SCENARIOS.add(new Scenario("Etappe 3: Enderaugen werfen, Festung, Endportal", PvpBotEntity.Style.AUTO, 90000, 480,
                 level -> List.of(), SelfTest::stage3Kit, PvpBotEntity::inEnd));

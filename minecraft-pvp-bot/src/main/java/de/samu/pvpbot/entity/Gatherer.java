@@ -607,7 +607,7 @@ final class Gatherer {
         if (level.dimension() == net.minecraft.world.level.Level.NETHER && ++this.naturalSpawnTicks >= 200) {
             this.naturalSpawnTicks = 0;
             if (level.hasNearbyAlivePlayer(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 128.0)
-                    || level.getEntities(EntityTypes.ENDERMAN, this.bot.getBoundingBox().inflate(64.0), e -> e.isAlive()).size() >= 3) {
+                    || level.getEntities(EntityTypes.ENDERMAN, this.bot.getBoundingBox().inflate(64.0), e -> e.isAlive()).size() >= 6) {
                 return;
             }
             double angle = this.bot.getRandom().nextDouble() * Math.PI * 2.0;
@@ -621,8 +621,9 @@ final class Gatherer {
                     continue;
                 }
                 var biome = level.getBiome(feet);
-                int chance = biome.is(net.minecraft.world.level.biome.Biomes.WARPED_FOREST) ? 3
-                        : biome.is(net.minecraft.world.level.biome.Biomes.SOUL_SAND_VALLEY) || biome.is(net.minecraft.world.level.biome.Biomes.NETHER_WASTES) ? 12 : 0;
+                // (In a warped forest endermen are nearly all that spawns; elsewhere they are rare.)
+                int chance = biome.is(net.minecraft.world.level.biome.Biomes.WARPED_FOREST) ? 1
+                        : biome.is(net.minecraft.world.level.biome.Biomes.SOUL_SAND_VALLEY) || biome.is(net.minecraft.world.level.biome.Biomes.NETHER_WASTES) ? 10 : 0;
                 if (chance > 0 && this.bot.getRandom().nextInt(chance) == 0) {
                     var enderman = EntityTypes.ENDERMAN.create(level, net.minecraft.world.entity.EntitySpawnReason.NATURAL);
                     if (enderman != null) {
