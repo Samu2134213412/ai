@@ -328,7 +328,7 @@ final class Survival {
                 return true;
             }
             if (hunger <= 8) {
-                if (!level.canSeeSky(p.blockPosition().above()) && p.getBlockY() < level.getHeight(
+                if (this.inHole(level, p) || !level.canSeeSky(p.blockPosition().above()) && p.getBlockY() < level.getHeight(
                         net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ()) - 3) {
                     // Underground (animals live up top).
                     this.say(p, "hat Hunger – geht nach oben, Tiere suchen");
@@ -492,8 +492,8 @@ final class Survival {
         }
         this.say(p, "fällt Bäume für " + label);
         BlockPos log = this.nearest(level, p, Kind.LOG);
-        if (log == null && p.getY() < 50 && !level.canSeeSky(p.blockPosition())) {
-            // Underground and no wood: climb back up (a staircase to the surface).
+        if (log == null && p.getY() < 50 && !level.canSeeSky(p.blockPosition()) || this.inHole(level, p)) {
+            // Underground (or down its own shaft) and trees are up top: build back up first.
             return this.digUp(mc, p, level);
         }
         if (log == null) {
