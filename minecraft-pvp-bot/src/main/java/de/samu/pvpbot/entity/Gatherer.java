@@ -1936,13 +1936,28 @@ final class Gatherer {
             }
         }
         this.goalLabel = "ein Speed-Portal (Lava + Wasser)";
-        if (this.speedPortal || this.nearest(Ore.LAVA) != null) {
+        if (this.nearest(Ore.LAVA) != null || this.speedPortal && (kit.count(st -> st.is(Items.LAVA_BUCKET)) > 0 || this.speedFrameDone())) {
             return new SpeedPortal();
         }
+        // No lava (left) in sight: dig on until there is some - the frame so far stays.
         return this.lavaStep();
     }
 
     private boolean speedPortal;
+
+    private boolean speedFrameDone() {
+        if (this.portalBase == null) {
+            return false;
+        }
+        List<BlockPos> frame = new ArrayList<>();
+        this.portalShape(frame, new ArrayList<>(), new ArrayList<>());
+        for (BlockPos p : frame) {
+            if (!this.level().getBlockState(p).is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     /** The frame of a 4x5 portal (corners left out) and its inside, from {@link #portalBase} along {@link #portalAlong}. */
     private void portalShape(List<BlockPos> frame, List<BlockPos> inside, List<BlockPos> corners) {
@@ -1968,6 +1983,15 @@ final class Gatherer {
      */
     private void doSpeedPortal(ServerLevel level) {
         this.speedPortal = true;
+        BlockPos newPool = this.nearest(Ore.LAVA);
+        if (this.portalBase != null && newPool != null && newPool.distSqr(this.portalBase) > 32 * 32
+                && this.kit().count(st -> st.is(Items.LAVA_BUCKET)) == 0 && !this.speedFrameDone()) {
+            // The lava here ran out and the next pool is far: a new frame there (shorter ways with the bucket).
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal moves to the lava at {}", newPool.toShortString());
+            }
+            this.portalBase = null;
+        }
         if (this.portalBase == null) {
             // Next to the lava pool (short ways with the bucket), on dry ground.
             BlockPos pool = this.nearest(Ore.LAVA);
@@ -2157,7 +2181,11 @@ final class Gatherer {
     private void fetchLava(ServerLevel level, List<BlockPos> frame, List<BlockPos> inside) {
         BlockPos lava = this.nearest(Ore.LAVA);
         if (lava == null) {
-            this.giveUpSpeedPortal("keine Lava mehr in Sicht");
+            // Pool used up: the planner digs on for more lava (the frame stays and is finished later).
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal needs more lava - digs on");
+            }
+            this.step = null;
             return;
         }
         double dist = this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(lava));
