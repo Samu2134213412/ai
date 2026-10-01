@@ -201,6 +201,14 @@ public final class Autopilot {
         }
         this.ticks++;
         this.checkPendingKill();
+        if (!p.isAlive() || p.getHealth() <= 0.0F) {
+            if (!this.deathHandled) {
+                this.deathHandled = true;
+                this.onDeath(mc);
+            }
+        } else {
+            this.deathHandled = false;
+        }
         boolean survivalScreen = this.survival.ownsScreen()
                 && mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>;
         if (!p.isAlive() && this.targetMode == TargetMode.FULL && mc.gui.screen() instanceof net.minecraft.client.gui.screens.DeathScreen
@@ -583,7 +591,10 @@ public final class Autopilot {
         if (options.isEmpty()) {
             return;
         }
-        Pattern chosen = BotBrain.INSTANCE.choose(ctx, options, p.getRandom());
+        // The first attack against this foe: what worked best against exactly them so far.
+        boolean opening = !t.getUUID().equals(this.openedAgainst);
+        this.openedAgainst = t.getUUID();
+        Pattern chosen = opening ? BotBrain.INSTANCE.chooseOpening(ctx, options, p.getRandom()) : BotBrain.INSTANCE.choose(ctx, options, p.getRandom());
         if (this.forcedPattern != null) {
             if (options.contains(this.forcedPattern)) {
                 chosen = this.forcedPattern;
@@ -657,10 +668,17 @@ public final class Autopilot {
         double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
         double seconds = this.attemptTicks / 20.0;
         double score = (dealt + (killed ? BotBrain.KILL_BONUS : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
-        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score, killed);
+        if (selfDead) {
+            score -= BotBrain.DEATH_PENALTY; // (dying is the worst outcome: staying alive comes first)
+        }
+        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score, killed, selfDead);
+        this.lastAttempt = new LastAttempt(ctx, done, this.ticks);
         this.pendingKill = null;
+        if (killed || selfDead) {
+            LOGGER.info("[AUTOPILOT] learned {}: {} against {}", killed ? "kill" : "DEATH", done.label, ctx.foeLabel());
+        }
         if (killed) {
-            this.say(mc, String.format("§a%s erledigt mit %s §7– gemerkt gegen %s.", t.getName().getString(), done.label, ctx.foeLabel()));
+            // (kept to itself - no chat message)
         } else if (t != null && dealt > 0.0) {
             // Hit but alive: if it dies within 3 s (arrow in flight, fire, a fall), this attack gets the kill.
             this.pendingKill = new PendingKill(ctx, done, t, this.ticks);
@@ -670,9 +688,26 @@ public final class Autopilot {
         }
         LOGGER.info(String.format("[AUTOPILOT] learned %s: dealt=%.1f taken=%.1f time=%.1fs -> score=%.1f value=%.1f%s",
                 done.label, dealt, this.attemptTaken, seconds, score, lesson.value(), lesson.newFavourite() ? " NEW FAVOURITE" : ""));
-        if (lesson.newFavourite()) {
-            this.say(mc, String.format("§bGelernt: §f%s§7 → §a%s§7 (Wert %.1f)", ctx.describe(), done.label, lesson.value()));
+        // (What it learned it keeps to itself - "/autopilot brain" shows it.)
+    }
+
+    private record LastAttempt(BotBrain.Context ctx, Pattern pattern, long tick) {
+    }
+
+    private @Nullable LastAttempt lastAttempt;
+    private java.util.@Nullable UUID openedAgainst;
+    private boolean deathHandled;
+
+    /** Died: the attack it was using (or had just used) takes the blame - heavily. */
+    private void onDeath(Minecraft mc) {
+        if (this.pattern != null) {
+            this.finishAttempt(mc); // (sees itself dead: the death penalty goes with it)
+        } else if (this.lastAttempt != null && this.ticks - this.lastAttempt.tick() < 100) {
+            BotBrain.INSTANCE.blameDeath(this.lastAttempt.ctx(), this.lastAttempt.pattern());
+            LOGGER.info("[AUTOPILOT] learned DEATH: {} against {}", this.lastAttempt.pattern().label, this.lastAttempt.ctx().foeLabel());
         }
+        this.lastAttempt = null;
+        this.openedAgainst = null;
     }
 
     // ------------------------------------------------------------------ patterns

@@ -33,7 +33,8 @@ Welches er nimmt, entscheidet er selbst:
 
 1. **Er erkennt die Situation**: im Freien, in einer Höhle (Decke niedriger als 10 Blöcke) oder
    im Wasser, dazu die Entfernung (nah/mittel/fern), ob das Ziel am Boden ist oder fliegt,
-   **gegen welche Mob-Art er kämpft** (Zombie, Skelett, Lohe, Spieler …) **und welches Kit er gerade hat**.
+   **gegen welche Mob-Art er kämpft** (Zombie, Skelett, Lohe …) – **Spieler lernt er jeden einzeln** (was gegen genau
+   diesen Spieler klappt) – **und welches Kit er gerade hat**.
    Gegen eine neue Mob-Art nimmt er erst, was allgemein gut lief, und lernt dann für genau diese Art dazu.
 2. **Er probiert nur, was mit seinem Kit geht.** Ohne Windladungen kein Mace-Sprung, ohne
    Elytra und Raketen kein Flug, mit Schwert und Bogen eben Schwert und Bogen.
@@ -47,6 +48,12 @@ Welches er nimmt, entscheidet er selbst:
 5. **Etwas Zufall**: Ab und zu probiert er absichtlich etwas anderes aus, am Anfang öfter und
    mit mehr Erfahrung seltener.
 
+
+**Nicht sterben ist das Wichtigste:** Stirbt er, während (oder kurz nachdem) er eine Attacke benutzt, bekommt genau
+diese Attacke gegen diesen Gegner einen dicken Minuspunkt (mehr als jeder Kill bringt) und wird sofort deutlich
+schlechter bewertet – beim nächsten Mal probiert er eine andere. Klappt die besser, **eröffnet er den nächsten Kampf
+gegen diesen Gegner direkt mit ihr**. Was er lernt, behält er für sich (kein Chat) – nachsehen kannst du es mit
+`/pvpbot brain` bzw. `/autopilot brain` (Kills und Tode je Attacke).
 ## Ressourcen selbst beschaffen (Survival-Bot)
 
 Mit `/pvpbot survival [Name]` erschaffst du einen Bot mit **leerem Inventar**. Fehlt ihm etwas

@@ -1550,7 +1550,10 @@ public class PvpBotEntity extends PathfinderMob {
                 return;
             }
             BotBrain.Context ctx = this.currentContext(target);
-            Pattern chosen = BotBrain.INSTANCE.choose(ctx, options, this.random);
+            // The first attack against this foe: what worked best against exactly them so far.
+            boolean opening = !target.getUUID().equals(this.openedAgainst);
+            this.openedAgainst = target.getUUID();
+            Pattern chosen = opening ? BotBrain.INSTANCE.chooseOpening(ctx, options, this.random) : BotBrain.INSTANCE.choose(ctx, options, this.random);
             if (this.forcedPattern != null) {
                 if (options.contains(this.forcedPattern)) {
                     chosen = this.forcedPattern;
@@ -2321,9 +2324,16 @@ public class PvpBotEntity extends PathfinderMob {
         double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
         double seconds = this.attemptTicks / 20.0;
         double score = (dealt + (killed ? BotBrain.KILL_BONUS : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
-        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score, killed);
+        boolean died = this.dying;
+        if (died) {
+            score -= BotBrain.DEATH_PENALTY; // (staying alive comes first)
+        }
+        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score, killed && !died, died);
+        this.lastAttempt = new LastAttempt(ctx, done, this.tickCount);
+        if (DEBUG && (killed || died)) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   learned {}: {} against {}", killed ? "kill" : "DEATH", done.label, ctx.foeLabel());
+        }
         if (killed) {
-            this.tellOwner(String.format("§a%s erledigt mit %s §7– das merke ich mir gegen %s.", target.getName().getString(), done.label, ctx.foeLabel()), false);
             this.pendingKill = null;
         } else if (target != null && dealt > 0.0) {
             // Still alive, but hit: if it dies in the next 3 s (arrow in flight, fire, a fall), this attack gets the kill.
@@ -2338,14 +2348,32 @@ public class PvpBotEntity extends PathfinderMob {
                     done.label, dealt, this.attemptTaken, seconds, score, lesson.value(),
                     lesson.newFavourite() ? " NEW FAVOURITE" : "", lesson.flop() ? " FLOP" : ""));
         }
-        if (this.talk && (lesson.newFavourite() || lesson.flop()) && now - this.lastMessageTime > 300L
-                && this.getOwner() instanceof ServerPlayer owner) {
-            this.lastMessageTime = now;
-            String name = this.getName().getString();
-            owner.sendSystemMessage(Component.literal(lesson.newFavourite()
-                    ? String.format("§b[%s] §7Gelernt: §f%s§7 → §a%s§7 klappt am besten (Wert %.1f)", name, ctx.describe(), done.label, lesson.value())
-                    : String.format("§b[%s] §c%s§7 hat nicht funktioniert (%s) – ich probiere was anderes.", name, done.label, ctx.describe())));
+        // (What it learned it keeps to itself - "/pvpbot brain" shows it; no chat messages.)
+    }
+
+    private record LastAttempt(BotBrain.Context ctx, Pattern pattern, int tick) {
+    }
+
+    private @Nullable LastAttempt lastAttempt;
+    private java.util.@Nullable UUID openedAgainst;
+    private boolean dying;
+
+    @Override
+    public void die(DamageSource source) {
+        // Died in a fight: the attack it was using (or had just used) takes the blame - heavily.
+        if (this.pattern != null) {
+            this.dying = true;
+            this.finishAttempt();
+            this.dying = false;
+        } else if (this.lastAttempt != null && this.tickCount - this.lastAttempt.tick() < 100) {
+            BotBrain.INSTANCE.blameDeath(this.lastAttempt.ctx(), this.lastAttempt.pattern());
+            if (DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   learned DEATH: {} against {}", this.lastAttempt.pattern().label, this.lastAttempt.ctx().foeLabel());
+            }
         }
+        this.lastAttempt = null;
+        this.openedAgainst = null;
+        super.die(source);
     }
 
     // ------------------------------------------------------------------ goals

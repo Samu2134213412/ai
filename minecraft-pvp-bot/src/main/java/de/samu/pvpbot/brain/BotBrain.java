@@ -102,10 +102,13 @@ public final class BotBrain {
             this(env, range, targetInAir, targetIsPlayer, kit, ANY);
         }
 
-        /** The foe key of an entity: "player" or the mob type ("zombie", "blaze", ...). */
+        /**
+         * The foe key of an entity: "p_" + the name for a player (it learns every player on their
+         * own: how they fight, what works against exactly them), else the mob type ("zombie", ...).
+         */
         public static String foeOf(net.minecraft.world.entity.Entity e) {
-            if (e instanceof net.minecraft.world.entity.player.Player) {
-                return "player";
+            if (e instanceof net.minecraft.world.entity.player.Player player) {
+                return "p_" + player.getName().getString().toLowerCase(java.util.Locale.ROOT).replace('|', '_');
             }
             return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
         }
@@ -126,6 +129,9 @@ public final class BotBrain {
             }
             if (foe.equals("player")) {
                 return "Spieler";
+            }
+            if (foe.startsWith("p_")) {
+                return "Spieler " + foe.substring(2);
             }
             var type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(net.minecraft.resources.Identifier.withDefaultNamespace(foe));
             return type == null ? foe : type.getDescription().getString();
@@ -156,10 +162,17 @@ public final class BotBrain {
         public double best = Double.NEGATIVE_INFINITY;
         /** Fights this pattern finished off (the target died from it). */
         public int kills;
+        /** Times it died while using this pattern. */
+        public int deaths;
     }
 
     /** How much a kill counts on top of the damage (the attack that kills is the one to remember). */
     public static final double KILL_BONUS = 12.0;
+    /**
+     * Dying is the worst outcome of all: the attack it used when it died gets this much taken off
+     * (more than any kill brings), so staying alive always comes first.
+     */
+    public static final double DEATH_PENALTY = 40.0;
 
     /** What happened when a result was learned; used for chat feedback. */
     public record Lesson(boolean newFavourite, boolean flop, double score, double value) {
@@ -296,19 +309,31 @@ public final class BotBrain {
      * against that mob type in particular. Also updates what it knows against any foe.
      */
     public synchronized Lesson learn(Context ctx, Pattern p, double score, boolean killed) {
+        return this.learn(ctx, p, score, killed, false);
+    }
+
+    /**
+     * {@code died}: it died during (or right after) this attack - the score already carries the
+     * death penalty, and it is learned fast (one death is reason enough to try something else).
+     */
+    public synchronized Lesson learn(Context ctx, Pattern p, double score, boolean killed, boolean died) {
         Pattern before = favourite(ctx);
-        Stat s = this.update(ctx, p, score, killed);
+        Stat s = this.update(ctx, p, score, killed, died);
         if (!ctx.foe().equals(Context.ANY)) {
-            this.update(ctx.general(), p, score, killed);
+            this.update(ctx.general(), p, score, killed, died);
         }
         this.dirty = true;
         Pattern after = favourite(ctx);
         return new Lesson(after == p && before != p && score > 0.0, score <= 0.0, score, value(ctx, p));
     }
 
-    private Stat update(Context ctx, Pattern p, double score, boolean killed) {
+    private Stat update(Context ctx, Pattern p, double score, boolean killed, boolean died) {
         Stat s = stat(ctx, p);
         double alpha = s.uses == 0 ? 0.4 : Math.max(0.15, 1.0 / (s.uses + 1));
+        if (died) {
+            alpha = Math.max(alpha, 0.6);
+            s.deaths++;
+        }
         s.value += alpha * (score - s.value);
         s.uses++;
         s.best = Math.max(s.best, score);
@@ -324,6 +349,32 @@ public final class BotBrain {
      */
     public synchronized void creditKill(Context ctx, Pattern p) {
         this.learn(ctx, p, KILL_BONUS, true);
+    }
+
+    /** It died shortly after this attack ended (the counter-attack got it): that attack takes the blame. */
+    public synchronized void blameDeath(Context ctx, Pattern p) {
+        this.learn(ctx, p, -DEATH_PENALTY, false, true);
+    }
+
+    /**
+     * The first attack against a foe: what has worked best against exactly this one so far
+     * (learned, not a guess), else the usual choice. So after a death and a better try, it opens
+     * with the better attack right away.
+     */
+    public synchronized Pattern chooseOpening(Context ctx, List<Pattern> options, RandomSource random) {
+        Pattern best = null;
+        double bestValue = 0.0;
+        EnumMap<Pattern, Stat> row = this.table.get(ctx.key());
+        if (row != null) {
+            for (Pattern p : options) {
+                Stat s = row.get(p);
+                if (s != null && s.uses > 0 && value(ctx, p) > bestValue) {
+                    best = p;
+                    bestValue = value(ctx, p);
+                }
+            }
+        }
+        return best != null ? best : this.choose(ctx, options, random);
     }
 
     // ------------------------------------------------------------------ display
@@ -344,7 +395,8 @@ public final class BotBrain {
                     .sorted(Comparator.comparingDouble((Map.Entry<Pattern, Stat> e) -> e.getValue().value).reversed())
                     .forEach(e -> sb.append(String.format(" §f%s §%s%.1f§8(%d%s)", e.getKey().label,
                             e.getValue().value > 0 ? "a" : "c", e.getValue().value, e.getValue().uses,
-                            e.getValue().kills > 0 ? ", " + e.getValue().kills + " Kills" : "")));
+                            (e.getValue().kills > 0 ? ", " + e.getValue().kills + " Kills" : "")
+                                    + (e.getValue().deaths > 0 ? ", §c" + e.getValue().deaths + "† §8" : ""))));
             lines.add(sb.toString());
             if (lines.size() >= maxLines) {
                 break;
@@ -381,6 +433,7 @@ public final class BotBrain {
                         s.uses = o.get("uses").getAsInt();
                         s.best = o.has("best") ? o.get("best").getAsDouble() : s.value;
                         s.kills = o.has("kills") ? o.get("kills").getAsInt() : 0;
+                        s.deaths = o.has("deaths") ? o.get("deaths").getAsInt() : 0;
                         row.put(Pattern.valueOf(name), s);
                     } catch (RuntimeException ignored) {
                         // unknown pattern from another version
@@ -419,6 +472,9 @@ public final class BotBrain {
                 o.addProperty("best", Math.round(e.getValue().best * 100.0) / 100.0);
                 if (e.getValue().kills > 0) {
                     o.addProperty("kills", e.getValue().kills);
+                }
+                if (e.getValue().deaths > 0) {
+                    o.addProperty("deaths", e.getValue().deaths);
                 }
                 patterns.add(e.getKey().name(), o);
             }
