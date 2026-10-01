@@ -110,7 +110,9 @@ public final class BotBrain {
             if (e instanceof net.minecraft.world.entity.player.Player player) {
                 return "p_" + player.getName().getString().toLowerCase(java.util.Locale.ROOT).replace('|', '_');
             }
-            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+            var key = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
+            // (Mobs from other mods keep their mod name: "pvpbot.pvp_bot".)
+            return key.getNamespace().equals("minecraft") ? key.getPath() : key.getNamespace() + "." + key.getPath();
         }
 
         /** The same situation against any foe (what it learned in general). */
@@ -133,8 +135,12 @@ public final class BotBrain {
             if (foe.startsWith("p_")) {
                 return "Spieler " + foe.substring(2);
             }
-            var type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(net.minecraft.resources.Identifier.withDefaultNamespace(foe));
-            return type == null ? foe : type.getDescription().getString();
+            int dot = foe.indexOf('.');
+            var id = dot < 0 ? net.minecraft.resources.Identifier.withDefaultNamespace(foe)
+                    : net.minecraft.resources.Identifier.fromNamespaceAndPath(foe.substring(0, dot), foe.substring(dot + 1));
+            // (getOptional: an unknown id would otherwise come back as the default, the pig)
+            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(id)
+                    .map(t -> t.getDescription().getString()).orElse(foe);
         }
 
         public String describe() {
