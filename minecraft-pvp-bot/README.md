@@ -120,6 +120,11 @@ Beide sehen nur, was ein Spieler auch sehen würde:
 graben → Diamantspitzhacke → Wasser auf Lava gießen und 10 Obsidian abbauen → Feuerstein aus Kies → Feuerzeug →
 Netherportal bauen und anzünden. Die nächsten Etappen (Nether, Stronghold, Drache) folgen.
 
+
+**Speed-Portal (wie Speedrunner):** Der Bot braucht für das Netherportal keine Diamantspitzhacke. Sobald er einen
+Wassereimer, einen zweiten Eimer und ein Feuerzeug hat und einen Lavasee sieht, gießt er den Rahmen direkt dort: erst
+Blöcke in die vier Ecken als Form, dann für jeden Rahmenblock einen Eimer Lava hinein und Wasser drüber – Obsidian an
+Ort und Stelle. Danach anzünden und ab in den Nether. Klappt es dort nicht, baut er wie bisher mit abgebautem Obsidian.
 ## Befehle – PvP-Bot
 
 | Befehl | Wirkung |

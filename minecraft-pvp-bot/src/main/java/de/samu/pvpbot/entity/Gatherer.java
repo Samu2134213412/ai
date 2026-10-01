@@ -166,7 +166,7 @@ final class Gatherer {
     private static final EquipmentSlot[] ARMOR_SLOTS = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
 
     /** The next thing to do. */
-    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal,
+    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal, SpeedPortal,
             UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon,
             GoHome, PlaceChest, StoreAtHome, ClimbUp, PlaceStation, PickUpStation {
         String describe();
@@ -325,6 +325,12 @@ final class Gatherer {
     record BuildPortal() implements Step {
         public String describe() {
             return "baut das Netherportal";
+        }
+    }
+
+    record SpeedPortal() implements Step {
+        public String describe() {
+            return "gießt ein Speed-Portal (Lava mit dem Eimer in die Form, Wasser drauf)";
         }
     }
 
@@ -1596,6 +1602,14 @@ final class Gatherer {
             }
             return new Explore("Wasser");
         }
+        // Speed portal, like speedrunners: no diamond pickaxe and no mining obsidian - the frame is
+        // cast in place at a lava pool (lava from a bucket into the frame, water over it).
+        if (this.speedPortal || this.portalBase == null && kit.count(Res.OBSIDIAN.match) < 10) {
+            Step s = this.speedPortalStep();
+            if (s != null) {
+                return s;
+            }
+        }
         int wood = kit.count(Res.STICK.match) + kit.count(Res.PLANKS.match) * 2 + kit.count(Res.LOG.match) * 8;
         if (wood < 16 && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
                 && this.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
@@ -1895,6 +1909,200 @@ final class Gatherer {
     }
 
     /** Lava for obsidian: the caves below y -55 are full of it - tunnel at that level. */
+    /** What the speed portal still needs (flint and steel, a second bucket, blocks for the corners, lava), or null if it cannot be done. */
+    private @Nullable Step speedPortalStep() {
+        BotKit kit = this.kit();
+        if (kit.count(st -> st.is(Items.FLINT_AND_STEEL)) == 0) {
+            this.goalLabel = "ein Feuerzeug (Speed-Portal)";
+            Step s = this.resolveItem(Items.FLINT_AND_STEEL, 0);
+            return s != null ? s : this.speedPortal ? null : new Explore("Kies");
+        }
+        if (kit.count(st -> st.is(Items.BUCKET)) == 0 && kit.count(st -> st.is(Items.LAVA_BUCKET)) == 0) {
+            this.goalLabel = "einen zweiten Eimer (für Lava)";
+            return this.resolveItem(Items.BUCKET, 0);
+        }
+        if (kit.count(BRIDGE_BLOCK) < 8) {
+            this.goalLabel = "Blöcke für die Portal-Ecken";
+            Step s = this.resolve(Res.COBBLE, 8, 0);
+            if (s != null) {
+                return s;
+            }
+        }
+        this.goalLabel = "ein Speed-Portal (Lava + Wasser)";
+        if (this.speedPortal || this.nearest(Ore.LAVA) != null) {
+            return new SpeedPortal();
+        }
+        return this.lavaStep();
+    }
+
+    private boolean speedPortal;
+
+    /** The frame of a 4x5 portal (corners left out) and its inside, from {@link #portalBase} along {@link #portalAlong}. */
+    private void portalShape(List<BlockPos> frame, List<BlockPos> inside, List<BlockPos> corners) {
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 5; j++) {
+                BlockPos p = this.portalBase.relative(this.portalAlong, i).above(j);
+                boolean side = (i == 0 || i == 3) && j >= 1 && j <= 3;
+                boolean capOrFloor = (j == 0 || j == 4) && (i == 1 || i == 2);
+                if (side || capOrFloor) {
+                    frame.add(p);
+                } else if (i >= 1 && i <= 2 && j >= 1 && j <= 3) {
+                    inside.add(p);
+                } else {
+                    corners.add(p);
+                }
+            }
+        }
+    }
+
+    /**
+     * Speed portal: blocks in the four corners as a mould, then for each frame block a bucket of
+     * lava from the pool and water over it - obsidian right where it belongs. Then light it.
+     */
+    private void doSpeedPortal(ServerLevel level) {
+        this.speedPortal = true;
+        if (this.portalBase == null) {
+            // Next to the lava pool (short ways with the bucket), on dry ground.
+            BlockPos pool = this.nearest(Ore.LAVA);
+            if (pool != null && (this.bot.blockPosition().distSqr(pool) > 7 * 7 || this.bot.isInWater() || !this.bot.onGround())) {
+                this.bot.getNavigation().moveTo(pool.getX() + 0.5, pool.getY() + 1, pool.getZ() + 0.5, 1.0);
+                if (++this.speedPortalWalk > 400) {
+                    this.blacklist.add(pool);
+                    this.speedPortalWalk = 0;
+                }
+                this.step = null;
+                return;
+            }
+            this.speedPortalWalk = 0;
+            Direction facing = this.bot.getDirection();
+            this.portalBase = this.bot.blockPosition().relative(facing, 2).relative(facing.getClockWise(), -1);
+            this.portalAlong = facing.getClockWise();
+            this.portalProgress = 0;
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal at {} along {}", this.portalBase.toShortString(), this.portalAlong);
+            }
+        }
+        List<BlockPos> frame = new ArrayList<>();
+        List<BlockPos> inside = new ArrayList<>();
+        List<BlockPos> corners = new ArrayList<>();
+        this.portalShape(frame, inside, corners);
+        BlockPos middle = this.portalBase.relative(this.portalAlong, 1).above(2);
+        boolean cornersDone = true;
+        for (BlockPos c : corners) {
+            cornersDone &= !level.getBlockState(c).canBeReplaced() && level.getFluidState(c).isEmpty();
+        }
+        // (Away fetching lava is fine; with lava in the bucket, or for the corners, back to the frame.)
+        boolean atFrameWork = !cornersDone || this.kit().count(st -> st.is(Items.LAVA_BUCKET)) > 0;
+        if (atFrameWork && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(middle)) > 4.5) {
+            // (Back to the frame, after fetching lava.)
+            this.bot.getNavigation().moveTo(middle.getX() + 0.5, this.portalBase.getY(), middle.getZ() + 0.5, 1.0);
+            if (++this.speedPortalWalk > 400) {
+                this.giveUpSpeedPortal("kommt nicht zurück zum Rahmen");
+            }
+            this.step = null;
+            return;
+        }
+        if (++this.actionTicks < 5) {
+            return;
+        }
+        this.actionTicks = 0;
+        BotKit kit = this.kit();
+        // 1. The mould: a block in each corner (then every frame block has something to hold on to).
+        for (BlockPos c : corners) {
+            if (level.getBlockState(c).canBeReplaced() || !level.getFluidState(c).isEmpty()) {
+                if (!this.bridge(level, c, false)) {
+                    this.giveUpSpeedPortal("keine Blöcke für die Ecken");
+                }
+                return;
+            }
+        }
+        // 2. The frame: lava from the bucket into the mould, water over it.
+        for (BlockPos p : frame) {
+            this.blacklist.add(p.immutable()); // (its own frame is not obsidian to mine, not lava to fetch)
+            if (level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+                continue;
+            }
+            if (!level.getBlockState(p).canBeReplaced() && level.getFluidState(p).isEmpty()) {
+                if (this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(p)) > 4.5) {
+                    this.bot.getNavigation().moveTo(middle.getX() + 0.5, this.portalBase.getY(), middle.getZ() + 0.5, 1.0);
+                    return;
+                }
+                this.bot.lookAtBlock(p);
+                this.breakBlock(level, p);
+                return;
+            }
+            boolean lavaThere = level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA) && level.getFluidState(p).isSource();
+            if (!lavaThere && kit.count(st -> st.is(Items.LAVA_BUCKET)) == 0) {
+                this.fetchLava(level, frame, inside);
+                return;
+            }
+            this.bot.lookAtBlock(p);
+            this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+            if (!lavaThere) {
+                level.playSound(null, p, SoundEvents.BUCKET_EMPTY_LAVA, this.bot.getSoundSource(), 1.0F, 1.0F);
+                if (!kit.isInfinite()) {
+                    kit.remove(st -> st.is(Items.LAVA_BUCKET), 1);
+                    kit.insert(new ItemStack(Items.BUCKET));
+                    this.bot.onKitChanged();
+                }
+            }
+            // Water over it (and scooped up again): the lava source turns into obsidian.
+            level.setBlock(p, net.minecraft.world.level.block.Blocks.OBSIDIAN.defaultBlockState(), 3);
+            level.playSound(null, p, SoundEvents.BUCKET_EMPTY, this.bot.getSoundSource(), 1.0F, 1.0F);
+            level.playSound(null, p, SoundEvents.LAVA_EXTINGUISH, this.bot.getSoundSource(), 1.0F, 1.0F);
+            return;
+        }
+        // 3. Frame done: clear the inside and light it (like a normal portal).
+        this.doBuildPortal(level);
+        if (this.portalBuilt) {
+            this.speedPortal = false;
+            this.bot.tellOwner("§5Speed-Portal gegossen – ohne eine Spitzhacke an Obsidian!", true);
+        }
+    }
+
+    private int speedPortalWalk;
+
+    /** Fills the empty bucket at the nearest lava source (not one in the frame). */
+    private void fetchLava(ServerLevel level, List<BlockPos> frame, List<BlockPos> inside) {
+        BlockPos lava = this.nearest(Ore.LAVA);
+        if (lava == null) {
+            this.giveUpSpeedPortal("keine Lava mehr in Sicht");
+            return;
+        }
+        double dist = this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(lava));
+        if (dist > 4.0) {
+            this.bot.getNavigation().moveTo(lava.getX() + 0.5, lava.getY() + 1, lava.getZ() + 0.5, 1.0);
+            if (++this.speedPortalWalk > 300) {
+                this.blacklist.add(lava);
+                this.speedPortalWalk = 0;
+            }
+            this.step = null;
+            return;
+        }
+        this.speedPortalWalk = 0;
+        this.bot.getNavigation().stop();
+        this.bot.lookAtBlock(lava);
+        level.setBlock(lava, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+        level.playSound(null, lava, SoundEvents.BUCKET_FILL_LAVA, this.bot.getSoundSource(), 1.0F, 1.0F);
+        if (!this.kit().isInfinite()) {
+            this.kit().remove(st -> st.is(Items.BUCKET), 1);
+            this.kit().insert(new ItemStack(Items.LAVA_BUCKET));
+            this.bot.onKitChanged();
+        }
+        this.step = null;
+    }
+
+    /** The speed portal does not work out here: the normal way (diamond pickaxe, obsidian) instead. */
+    private void giveUpSpeedPortal(String why) {
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal given up: {}", why);
+        }
+        this.speedPortal = false;
+        this.speedPortalWalk = 0;
+        // (Keeps the frame: whatever obsidian is in it stays, the normal build finishes it.)
+        this.step = null;
+    }
+
     private Step lavaStep() {
         return this.bot.getY() > -55.0 ? new Descend() : new StripMine();
     }
@@ -2331,6 +2539,7 @@ final class Gatherer {
             case FillWater fw -> this.doFillWater(level);
             case MakeObsidian mo -> this.doMakeObsidian(level);
             case BuildPortal bp -> this.doBuildPortal(level);
+            case SpeedPortal sp -> this.doSpeedPortal(level);
             case UsePortal up -> this.doUsePortal(level, up.toNether());
             case HuntMob hm -> this.doHuntMob(hm.type());
             case ExploreNether en -> this.doExploreNether(level);
