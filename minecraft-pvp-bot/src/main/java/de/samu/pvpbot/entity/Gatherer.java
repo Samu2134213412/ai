@@ -2331,7 +2331,7 @@ final class Gatherer {
 
     private static final Recipe GOLD_FROM_BLOCK = new Recipe(Items.GOLD_INGOT, 9, List.of(new Ingredient(Res.GOLD_BLOCK, 1)));
     private int barterTossTick = -1000;
-    private @Nullable java.util.UUID barterPiglin;
+    private java.util.@Nullable UUID barterPiglin;
 
     private void doBarter(ServerLevel level) {
         LivingEntity piglin = this.visibleMob(EntityTypes.PIGLIN);
