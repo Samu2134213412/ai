@@ -3592,6 +3592,25 @@ final class Gatherer {
             this.step = null;
             return;
         }
+        double hDist = this.bot.position().subtract(center).horizontalDistance();
+        if (hDist < 3.0 && center.y > this.bot.getY() + 1.2) {
+            // The portal stands higher up (built on a hill): right under its frame first a step to
+            // the side, then build up next to it and step in, like a player.
+            BlockPos head = this.bot.blockPosition().above(2);
+            if (!level.getBlockState(head).getCollisionShape(level, head).isEmpty() && hDist < 1.5) {
+                Vec3 away = this.bot.position().subtract(center).multiply(1.0, 0.0, 1.0);
+                if (away.lengthSqr() < 0.01) {
+                    away = new Vec3(this.portalAlong.getClockWise().getStepX(), 0.0, this.portalAlong.getClockWise().getStepZ());
+                }
+                Vec3 to = this.bot.position().add(away.normalize().scale(2.0));
+                this.bot.getNavigation().stop();
+                this.bot.getMoveControl().setWantedPosition(to.x, this.bot.getY(), to.z, 0.8);
+            } else if (this.bot.onGround()) {
+                this.pillarUp(level);
+            }
+            this.step = null;
+            return;
+        }
         if (this.bot.position().distanceToSqr(center) > 9.0 && (this.bot.getNavigation().isDone() || this.noProgress())
                 && !this.bot.getNavigation().moveTo(center.x, center.y, center.z, 1.1)) {
             // Close, but no way there (walls, a drop, lava): dig or build straight towards it.
