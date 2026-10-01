@@ -1990,7 +1990,8 @@ final class Gatherer {
             for (BlockPos b : BlockPos.betweenClosed(feet.offset(-7, -2, -7), feet.offset(7, 2, 7))) {
                 for (Direction a : new Direction[]{Direction.NORTH, Direction.EAST}) {
                     if (this.portalSiteOk(level, b, a)) {
-                        double d = b.distSqr(feet) + (pool == null ? 0.0 : Math.max(0.0, b.distSqr(pool) - 16.0));
+                        // (Close by, close to the lava, and as little rock to dig out as possible.)
+                        double d = b.distSqr(feet) + (pool == null ? 0.0 : Math.max(0.0, b.distSqr(pool) - 16.0)) + 2.0 * this.rockIn(level, b, a);
                         if (d < bestSite) {
                             bestSite = d;
                             site = b.immutable();
@@ -2038,8 +2039,8 @@ final class Gatherer {
             this.step = null;
             return;
         }
-        if (++this.actionTicks < 5) {
-            return;
+        if (!this.busyBreaking() && ++this.actionTicks < 5) {
+            return; // (one step every quarter second - but digging the room out goes on without a pause)
         }
         this.actionTicks = 0;
         BotKit kit = this.kit();
@@ -2105,7 +2106,19 @@ final class Gatherer {
 
     private int speedPortalWalk;
 
-    /** A 4x5 portal fits here: solid dry floor under the frame, nothing but air in it, a dry place to stand in front. */
+    private int rockIn(ServerLevel level, BlockPos base, Direction along) {
+        int n = 0;
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 5; j++) {
+                if (!level.getBlockState(base.relative(along, i).above(j)).isAir()) {
+                    n++;
+                }
+            }
+        }
+        return n;
+    }
+
+    /** A 4x5 portal fits here: solid dry floor under the frame, no fluid in it (rock is dug out), a dry place to stand in front. */
     private boolean portalSiteOk(ServerLevel level, BlockPos base, Direction along) {
         Direction front = along.getClockWise();
         for (int i = 0; i < 4; i++) {
@@ -2117,7 +2130,11 @@ final class Gatherer {
             }
             for (int j = 0; j < 5; j++) {
                 BlockPos p = col.above(j);
-                if (!level.getBlockState(p).isAir() || this.nearLava(level, p)) {
+                // (Rock in the way is fine - it digs the room out, like a player; corners of rock are
+                // even the mould already. Just no water, lava or bedrock.)
+                BlockState st = level.getBlockState(p);
+                if (!level.getFluidState(p).isEmpty() || this.nearLava(level, p) || st.getDestroySpeed(level, p) < 0.0F
+                        || st.getDestroySpeed(level, p) > 20.0F) {
                     return false;
                 }
             }
