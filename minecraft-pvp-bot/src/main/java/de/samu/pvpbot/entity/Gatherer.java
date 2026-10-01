@@ -5293,7 +5293,7 @@ final class Gatherer {
         }
         Vec3 eye = this.bot.getEyePosition();
         // (Finer near the horizon: far away, a tree behind a lake's rim is only a few degrees below the eyes.)
-        for (int pitch = -45; pitch <= 45; pitch += pitch >= -9 && pitch < 21 ? 3 : 15) {
+        for (int pitch = -45; pitch <= 45; pitch += pitch >= -15 && pitch < 21 ? 3 : 15) {
             for (int yaw = 0; yaw < 360; yaw += 8) {
                 Vec3 dir = Vec3.directionFromRotation(pitch, yaw + (this.bot.tickCount / 40 % 2) * 4);
                 var hit = level.clip(new net.minecraft.world.level.ClipContext(eye, eye.add(dir.scale(96.0)),
