@@ -578,6 +578,9 @@ public class PvpBotEntity extends PathfinderMob {
 
     void huntTarget(LivingEntity prey) {
         this.addTarget(prey, true);
+        // Its own hunt (blazes, endermen): started even against the odds, but when it goes badly
+        // it backs off, heals and comes back - unlike a target its owner ordered.
+        this.orderedTargets.remove(prey.getUUID());
     }
 
     public BotKit getKit() {
