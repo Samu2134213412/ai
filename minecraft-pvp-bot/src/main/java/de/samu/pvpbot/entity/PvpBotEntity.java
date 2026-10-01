@@ -799,6 +799,7 @@ public class PvpBotEntity extends PathfinderMob {
             this.getLookControl().setLookAt(talker, 30.0F, 30.0F);
         }
         this.guardLedge(level);
+        this.checkPendingKill();
         this.tickRetreat(level);
         if (this.windCooldown > 0) this.windCooldown--;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
@@ -2170,7 +2171,8 @@ public class PvpBotEntity extends PathfinderMob {
                 : this.ceilingHeight(12) <= 10 ? BotBrain.Env.CAVE : BotBrain.Env.OPEN;
         double hDist = this.position().subtract(target.position()).horizontalDistance();
         boolean inAir = target.isFallFlying() || !target.onGround() && target.getY() - this.getY() > 4.0;
-        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player, this.kit.signature());
+        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player, this.kit.signature(),
+                BotBrain.Context.foeOf(target));
     }
 
     /** Height of the first solid block above the head, up to {@code max}. */
@@ -2279,6 +2281,28 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     /** Scores the finished attempt (damage dealt vs. taken, per time) and teaches the brain. */
+    private record PendingKill(BotBrain.Context ctx, Pattern pattern, LivingEntity target, int tick) {
+    }
+
+    private @Nullable PendingKill pendingKill;
+
+    /** The last hit target died shortly after the attempt: credit that attack with the kill. */
+    private void checkPendingKill() {
+        PendingKill pk = this.pendingKill;
+        if (pk == null) {
+            return;
+        }
+        if (this.tickCount - pk.tick() > 60) {
+            this.pendingKill = null;
+        } else if (!pk.target().isAlive()) {
+            this.pendingKill = null;
+            BotBrain.INSTANCE.creditKill(pk.ctx(), pk.pattern());
+            if (DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   learned kill: {} finished off {}", pk.pattern().label, pk.ctx().foeLabel());
+            }
+        }
+    }
+
     private void finishAttempt() {
         Pattern done = this.pattern;
         BotBrain.Context ctx = this.attemptContext;
@@ -2292,8 +2316,15 @@ public class PvpBotEntity extends PathfinderMob {
         float hpNow = target == null ? this.attemptTargetHp : killed ? 0.0F : target.getHealth() + target.getAbsorptionAmount();
         double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
         double seconds = this.attemptTicks / 20.0;
-        double score = (dealt + (killed ? 8.0 : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
-        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score);
+        double score = (dealt + (killed ? BotBrain.KILL_BONUS : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
+        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score, killed);
+        if (killed) {
+            this.tellOwner(String.format("§a%s erledigt mit %s §7– das merke ich mir gegen %s.", target.getName().getString(), done.label, ctx.foeLabel()), false);
+            this.pendingKill = null;
+        } else if (target != null && dealt > 0.0) {
+            // Still alive, but hit: if it dies in the next 3 s (arrow in flight, fire, a fall), this attack gets the kill.
+            this.pendingKill = new PendingKill(ctx, done, target, this.tickCount);
+        }
         long now = this.level().getGameTime();
         if (lesson.flop()) {
             this.tabuUntil.put(done, now + 200L);

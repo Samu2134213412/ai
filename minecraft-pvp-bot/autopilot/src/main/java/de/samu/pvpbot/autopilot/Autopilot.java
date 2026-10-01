@@ -200,6 +200,7 @@ public final class Autopilot {
             return;
         }
         this.ticks++;
+        this.checkPendingKill();
         boolean survivalScreen = this.survival.ownsScreen()
                 && mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>;
         if (!p.isAlive() && this.targetMode == TargetMode.FULL && mc.gui.screen() instanceof net.minecraft.client.gui.screens.DeathScreen
@@ -506,7 +507,7 @@ public final class Autopilot {
         BotBrain.Env env = p.isInWater() ? BotBrain.Env.WATER : this.ceiling(p, 12) <= 10 ? BotBrain.Env.CAVE : BotBrain.Env.OPEN;
         double hDist = p.position().subtract(t.position()).horizontalDistance();
         boolean inAir = t.isFallFlying() || !t.onGround() && t.getY() - p.getY() > 4.0;
-        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, t instanceof Player, this.kitSignature(p));
+        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, t instanceof Player, this.kitSignature(p), BotBrain.Context.foeOf(t));
     }
 
     private int ceiling(LocalPlayer p, int max) {
@@ -613,6 +614,25 @@ public final class Autopilot {
         LOGGER.info("[AUTOPILOT] try {} ({})", chosen.label, ctx.describe());
     }
 
+    private record PendingKill(BotBrain.Context ctx, Pattern pattern, LivingEntity target, long tick) {
+    }
+
+    private @Nullable PendingKill pendingKill;
+
+    private void checkPendingKill() {
+        PendingKill pk = this.pendingKill;
+        if (pk == null) {
+            return;
+        }
+        if (this.ticks - pk.tick() > 60) {
+            this.pendingKill = null;
+        } else if (!pk.target().isAlive() || pk.target().getHealth() <= 0.0F) {
+            this.pendingKill = null;
+            BotBrain.INSTANCE.creditKill(pk.ctx(), pk.pattern());
+            LOGGER.info("[AUTOPILOT] learned kill: {} finished off {}", pk.pattern().label, pk.ctx().foeLabel());
+        }
+    }
+
     private void finishAttempt(Minecraft mc) {
         Pattern done = this.pattern;
         BotBrain.Context ctx = this.attemptContext;
@@ -636,8 +656,15 @@ public final class Autopilot {
         float hpNow = t == null ? this.attemptTargetHp : killed ? 0.0F : t.getHealth() + t.getAbsorptionAmount();
         double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
         double seconds = this.attemptTicks / 20.0;
-        double score = (dealt + (killed ? 8.0 : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
-        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score);
+        double score = (dealt + (killed ? BotBrain.KILL_BONUS : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
+        BotBrain.Lesson lesson = BotBrain.INSTANCE.learn(ctx, done, score, killed);
+        this.pendingKill = null;
+        if (killed) {
+            this.say(mc, String.format("§a%s erledigt mit %s §7– gemerkt gegen %s.", t.getName().getString(), done.label, ctx.foeLabel()));
+        } else if (t != null && dealt > 0.0) {
+            // Hit but alive: if it dies within 3 s (arrow in flight, fire, a fall), this attack gets the kill.
+            this.pendingKill = new PendingKill(ctx, done, t, this.ticks);
+        }
         if (lesson.flop()) {
             this.tabuUntil.put(done, this.ticks + 200L);
         }

@@ -33,10 +33,13 @@ Welches er nimmt, entscheidet er selbst:
 
 1. **Er erkennt die Situation**: im Freien, in einer Höhle (Decke niedriger als 10 Blöcke) oder
    im Wasser, dazu die Entfernung (nah/mittel/fern), ob das Ziel am Boden ist oder fliegt,
-   ob es ein Spieler oder ein Mob ist, **und welches Kit er gerade hat**.
+   **gegen welche Mob-Art er kämpft** (Zombie, Skelett, Lohe, Spieler …) **und welches Kit er gerade hat**.
+   Gegen eine neue Mob-Art nimmt er erst, was allgemein gut lief, und lernt dann für genau diese Art dazu.
 2. **Er probiert nur, was mit seinem Kit geht.** Ohne Windladungen kein Mace-Sprung, ohne
    Elytra und Raketen kein Flug, mit Schwert und Bogen eben Schwert und Bogen.
-3. **Er bewertet jeden Versuch**: Schaden am Gegner (plus Bonus fürs Töten) minus eigener
+3. **Er bewertet jeden Versuch**: Schaden am Gegner (plus großer Bonus fürs Töten – die Attacke, die das Ziel
+   erledigt, gilt als gut gegen genau diese Mob-Art, auch wenn es erst kurz danach stirbt, z. B. durch einen Pfeil
+   im Flug oder Feuer; `/pvpbot brain` zeigt die Kills je Attacke) minus eigener
    Schaden, geteilt durch die Zeit. Feststecken zählt als schlechtes Ergebnis.
 4. **Er merkt sich das pro Situation und Kit.** Was gut lief, nimmt er öfter. Was schlecht lief,
    lässt er erst einmal 10 Sekunden ganz weg und danach nur noch selten. Mit einem neuen Kit

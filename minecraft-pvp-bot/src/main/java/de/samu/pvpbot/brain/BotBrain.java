@@ -88,28 +88,62 @@ public final class BotBrain {
         }
     }
 
-    /** One combat situation: surroundings, distance, target, and the kit the bot is fighting with. */
-    public record Context(Env env, Range range, boolean targetInAir, boolean targetIsPlayer, String kit) {
+    /**
+     * One combat situation: surroundings, distance, target, the kit the bot is fighting with, and
+     * what it fights ({@code foe}: the mob type like "zombie", "player", or "*" for any - what it
+     * learned against all of them together, the fallback for a mob type it has not fought yet).
+     */
+    public record Context(Env env, Range range, boolean targetInAir, boolean targetIsPlayer, String kit, String foe) {
         /** The kit of the original mace/spear/elytra loadout, used for memories saved before kits existed. */
         public static final String DEFAULT_KIT = "MSEC";
+        public static final String ANY = "*";
+
+        public Context(Env env, Range range, boolean targetInAir, boolean targetIsPlayer, String kit) {
+            this(env, range, targetInAir, targetIsPlayer, kit, ANY);
+        }
+
+        /** The foe key of an entity: "player" or the mob type ("zombie", "blaze", ...). */
+        public static String foeOf(net.minecraft.world.entity.Entity e) {
+            if (e instanceof net.minecraft.world.entity.player.Player) {
+                return "player";
+            }
+            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+        }
+
+        /** The same situation against any foe (what it learned in general). */
+        public Context general() {
+            return this.foe.equals(ANY) ? this : new Context(env, range, targetInAir, targetIsPlayer, kit, ANY);
+        }
 
         public String key() {
-            return env.name() + "|" + range.name() + "|" + (targetInAir ? "AIR" : "GROUND") + "|" + (targetIsPlayer ? "PLAYER" : "MOB") + "|" + kit;
+            return env.name() + "|" + range.name() + "|" + (targetInAir ? "AIR" : "GROUND") + "|" + (targetIsPlayer ? "PLAYER" : "MOB") + "|" + kit
+                    + (foe.equals(ANY) ? "" : "|" + foe);
+        }
+
+        public String foeLabel() {
+            if (foe.equals(ANY)) {
+                return targetIsPlayer ? "Spieler" : "Mobs";
+            }
+            if (foe.equals("player")) {
+                return "Spieler";
+            }
+            var type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(net.minecraft.resources.Identifier.withDefaultNamespace(foe));
+            return type == null ? foe : type.getDescription().getString();
         }
 
         public String describe() {
             return env.label + ", " + range.label + ", Ziel " + (targetInAir ? "in der Luft" : "am Boden")
-                    + ", gegen " + (targetIsPlayer ? "Spieler" : "Mobs") + ", Kit " + Kit.describeSignature(kit);
+                    + ", gegen " + foeLabel() + ", Kit " + Kit.describeSignature(kit);
         }
 
         static @Nullable Context parse(String key) {
             String[] p = key.split("\\|");
-            if (p.length != 4 && p.length != 5) {
+            if (p.length < 4 || p.length > 6) {
                 return null;
             }
             try {
                 return new Context(Env.valueOf(p[0]), Range.valueOf(p[1]), p[2].equals("AIR"), p[3].equals("PLAYER"),
-                        p.length == 5 ? p[4] : DEFAULT_KIT);
+                        p.length >= 5 ? p[4] : DEFAULT_KIT, p.length == 6 ? p[5] : ANY);
             } catch (IllegalArgumentException e) {
                 return null;
             }
@@ -120,7 +154,12 @@ public final class BotBrain {
         public double value;
         public int uses;
         public double best = Double.NEGATIVE_INFINITY;
+        /** Fights this pattern finished off (the target died from it). */
+        public int kills;
     }
+
+    /** How much a kill counts on top of the damage (the attack that kills is the one to remember). */
+    public static final double KILL_BONUS = 12.0;
 
     /** What happened when a result was learned; used for chat feedback. */
     public record Lesson(boolean newFavourite, boolean flop, double score, double value) {
@@ -189,6 +228,20 @@ public final class BotBrain {
         });
     }
 
+    /**
+     * What a pattern is worth against this foe: what it learned against exactly this mob type,
+     * blended with what it learned against all of them (until it has fought this type a few times).
+     */
+    public synchronized double value(Context ctx, Pattern p) {
+        Stat specific = this.stat(ctx, p);
+        if (ctx.foe().equals(Context.ANY)) {
+            return specific.value;
+        }
+        double general = this.stat(ctx.general(), p).value;
+        int n = specific.uses;
+        return (n * specific.value + 2.0 * general) / (n + 2.0);
+    }
+
     private synchronized int experience(Context ctx) {
         EnumMap<Pattern, Stat> row = this.table.get(ctx.key());
         return row == null ? 0 : row.values().stream().mapToInt(s -> s.uses).sum();
@@ -207,11 +260,11 @@ public final class BotBrain {
             return options.get(random.nextInt(options.size()));
         }
         double temperature = 2.5;
-        double max = options.stream().mapToDouble(p -> stat(ctx, p).value).max().orElse(0.0);
+        double max = options.stream().mapToDouble(p -> value(ctx, p)).max().orElse(0.0);
         double[] weights = new double[options.size()];
         double sum = 0.0;
         for (int i = 0; i < options.size(); i++) {
-            weights[i] = Math.exp((stat(ctx, options.get(i)).value - max) / temperature);
+            weights[i] = Math.exp((value(ctx, options.get(i)) - max) / temperature);
             sum += weights[i];
         }
         double roll = random.nextDouble() * sum;
@@ -230,20 +283,47 @@ public final class BotBrain {
             return null;
         }
         return row.entrySet().stream().filter(e -> e.getValue().uses > 0)
-                .max(Comparator.comparingDouble(e -> e.getValue().value)).map(Map.Entry::getKey).orElse(null);
+                .max(Comparator.comparingDouble(e -> value(ctx, e.getKey()))).map(Map.Entry::getKey).orElse(null);
     }
 
     /** Feeds back how well an attempt went (higher = better). */
     public synchronized Lesson learn(Context ctx, Pattern p, double score) {
+        return this.learn(ctx, p, score, false);
+    }
+
+    /**
+     * Feeds back an attempt; {@code killed}: the target died from it - then it counts as good
+     * against that mob type in particular. Also updates what it knows against any foe.
+     */
+    public synchronized Lesson learn(Context ctx, Pattern p, double score, boolean killed) {
         Pattern before = favourite(ctx);
+        Stat s = this.update(ctx, p, score, killed);
+        if (!ctx.foe().equals(Context.ANY)) {
+            this.update(ctx.general(), p, score, killed);
+        }
+        this.dirty = true;
+        Pattern after = favourite(ctx);
+        return new Lesson(after == p && before != p && score > 0.0, score <= 0.0, score, value(ctx, p));
+    }
+
+    private Stat update(Context ctx, Pattern p, double score, boolean killed) {
         Stat s = stat(ctx, p);
         double alpha = s.uses == 0 ? 0.4 : Math.max(0.15, 1.0 / (s.uses + 1));
         s.value += alpha * (score - s.value);
         s.uses++;
         s.best = Math.max(s.best, score);
-        this.dirty = true;
-        Pattern after = favourite(ctx);
-        return new Lesson(after == p && before != p && score > 0.0, score <= 0.0, score, s.value);
+        if (killed) {
+            s.kills++;
+        }
+        return s;
+    }
+
+    /**
+     * The target died shortly after the attempt ended (an arrow still in the air, burning, a fall
+     * after the hit): that attack still gets the credit for the kill.
+     */
+    public synchronized void creditKill(Context ctx, Pattern p) {
+        this.learn(ctx, p, KILL_BONUS, true);
     }
 
     // ------------------------------------------------------------------ display
@@ -262,8 +342,9 @@ public final class BotBrain {
             StringBuilder sb = new StringBuilder("§e" + ctx.describe() + " §7(" + uses + "x):");
             row.getValue().entrySet().stream().filter(e -> e.getValue().uses > 0)
                     .sorted(Comparator.comparingDouble((Map.Entry<Pattern, Stat> e) -> e.getValue().value).reversed())
-                    .forEach(e -> sb.append(String.format(" §f%s §%s%.1f§8(%d)", e.getKey().label,
-                            e.getValue().value > 0 ? "a" : "c", e.getValue().value, e.getValue().uses)));
+                    .forEach(e -> sb.append(String.format(" §f%s §%s%.1f§8(%d%s)", e.getKey().label,
+                            e.getValue().value > 0 ? "a" : "c", e.getValue().value, e.getValue().uses,
+                            e.getValue().kills > 0 ? ", " + e.getValue().kills + " Kills" : "")));
             lines.add(sb.toString());
             if (lines.size() >= maxLines) {
                 break;
@@ -299,6 +380,7 @@ public final class BotBrain {
                         s.value = o.get("value").getAsDouble();
                         s.uses = o.get("uses").getAsInt();
                         s.best = o.has("best") ? o.get("best").getAsDouble() : s.value;
+                        s.kills = o.has("kills") ? o.get("kills").getAsInt() : 0;
                         row.put(Pattern.valueOf(name), s);
                     } catch (RuntimeException ignored) {
                         // unknown pattern from another version
@@ -335,6 +417,9 @@ public final class BotBrain {
                 o.addProperty("value", Math.round(e.getValue().value * 100.0) / 100.0);
                 o.addProperty("uses", e.getValue().uses);
                 o.addProperty("best", Math.round(e.getValue().best * 100.0) / 100.0);
+                if (e.getValue().kills > 0) {
+                    o.addProperty("kills", e.getValue().kills);
+                }
                 patterns.add(e.getKey().name(), o);
             }
             if (!patterns.isEmpty()) {
