@@ -1946,7 +1946,8 @@ final class Gatherer {
             this.goalLabel = "einen Lavasee (Speed-Portal)";
             return this.lavaStep();
         }
-        if (pool != null || this.speedPortal && (kit.count(st -> st.is(Items.LAVA_BUCKET)) > 0 || this.speedFrameDone())) {
+        if (pool != null || this.speedPortal && (kit.count(st -> st.is(Items.LAVA_BUCKET)) > 0 || this.speedFrameDone()
+                || this.portalBase != null && this.speedLavaSource() != null)) {
             return new SpeedPortal();
         }
         // No lava (left) in sight: dig on until there is some - the frame so far stays.
@@ -1956,6 +1957,22 @@ final class Gatherer {
     private boolean speedPortal;
 
     private int speedSearchStart = -1;
+    private final List<BlockPos> speedLava = new ArrayList<>();
+
+    /** The nearest lava source of the lake it builds at (or anything it sees), not in its frame. */
+    private @Nullable BlockPos speedLavaSource() {
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+        this.speedLava.removeIf(p -> !Ore.LAVA.match.test(this.level().getBlockState(p)) || this.blacklist.contains(p));
+        for (BlockPos p : this.speedLava) {
+            double d = p.distSqr(this.bot.blockPosition());
+            if (d < bestDist) {
+                best = p;
+                bestDist = d;
+            }
+        }
+        return best != null ? best : this.nearest(Ore.LAVA);
+    }
 
     /** Lava sources it knows of within 12 blocks of this one. */
     private int lavaAround(BlockPos pool) {
@@ -2058,6 +2075,15 @@ final class Gatherer {
             this.portalBase = site;
             this.portalAlong = along;
             this.portalProgress = 0;
+            // The lake's lava, kept in mind for the whole build (what it sees changes as it walks).
+            this.speedLava.clear();
+            if (pool != null) {
+                for (BlockPos p : this.known.getOrDefault(Ore.LAVA, List.of())) {
+                    if (p.distSqr(pool) <= 16 * 16) {
+                        this.speedLava.add(p.immutable());
+                    }
+                }
+            }
             if (PvpBotEntity.DEBUG) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal at {} along {} (bot at {})", this.portalBase.toShortString(),
                         this.portalAlong, feet.toShortString());
@@ -2202,7 +2228,7 @@ final class Gatherer {
 
     /** Fills the empty bucket at the nearest lava source (not one in the frame). */
     private void fetchLava(ServerLevel level, List<BlockPos> frame, List<BlockPos> inside) {
-        BlockPos lava = this.nearest(Ore.LAVA);
+        BlockPos lava = this.speedLavaSource();
         if (lava == null) {
             // Pool used up: the planner digs on for more lava (the frame stays and is finished later).
             if (PvpBotEntity.DEBUG) {
