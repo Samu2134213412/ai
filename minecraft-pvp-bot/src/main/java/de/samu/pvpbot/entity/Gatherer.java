@@ -2026,7 +2026,11 @@ final class Gatherer {
             cornersDone &= !level.getBlockState(c).canBeReplaced() && level.getFluidState(c).isEmpty();
         }
         // (Away fetching lava is fine; with lava in the bucket, or for the corners, back to the frame.)
-        boolean atFrameWork = !cornersDone || this.kit().count(st -> st.is(Items.LAVA_BUCKET)) > 0;
+        boolean frameDone = true;
+        for (BlockPos p : frame) {
+            frameDone &= level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.OBSIDIAN);
+        }
+        boolean atFrameWork = !cornersDone || frameDone || this.kit().count(st -> st.is(Items.LAVA_BUCKET)) > 0;
         if (atFrameWork && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(middle)) <= 4.5) {
             this.speedPortalWalk = 0;
         }
@@ -2096,7 +2100,9 @@ final class Gatherer {
             level.playSound(null, p, SoundEvents.LAVA_EXTINGUISH, this.bot.getSoundSource(), 1.0F, 1.0F);
             return;
         }
-        // 3. Frame done: clear the inside and light it (like a normal portal).
+        // 3. Frame done: clear the inside and light it (like a normal portal). (Its own pace counter
+        // was just used here: without this it would reset the build's every time and never light it.)
+        this.actionTicks = 4;
         this.doBuildPortal(level);
         if (this.portalBuilt) {
             this.speedPortal = false;
