@@ -5030,6 +5030,11 @@ final class Gatherer {
                         break;
                     }
                 }
+                if (Ore.LOG.match.test(state) && p.distSqr(this.bot.blockPosition()) < 48 * 48) {
+                    // Trees it sees across a lake or a valley (the close-up scan only covers what is near).
+                    remember(this.known.computeIfAbsent(Ore.LOG, k -> new ArrayList<>()), Ore.LOG, p.immutable());
+                    remember(this.scanning.computeIfAbsent(Ore.LOG, k -> new ArrayList<>()), Ore.LOG, p.immutable());
+                }
             }
         }
     }
