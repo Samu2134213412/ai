@@ -5015,6 +5015,9 @@ final class Gatherer {
             if (ore != Ore.WATER && ore != Ore.LAVA && this.level().getFluidState(p.above()).is(net.minecraft.tags.FluidTags.WATER)) {
                 continue; // (under water - the bottom of a lake or the sea: nobody mines there)
             }
+            if ((ore == Ore.NETHER_GOLD || ore == Ore.GOLD_BLOCK) && Math.abs(p.getY() - this.bot.getBlockY()) > 3) {
+                continue; // (gold high up a nether cliff: climbing after it ends in a fall - there is more)
+            }
             if (ore != Ore.LAVA && ore != Ore.OBSIDIAN && ore != Ore.WATER && this.lavaNear(p, ore == Ore.DIAMOND ? 1 : 2)) {
                 continue; // (next to lava: one wrong step and everything is gone)
             }
