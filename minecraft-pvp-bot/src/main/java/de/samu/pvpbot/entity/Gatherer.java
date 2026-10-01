@@ -1172,18 +1172,23 @@ final class Gatherer {
             this.landGoal = null;
             BlockPos here = this.bot.blockPosition();
             boolean ahead = !Double.isNaN(this.exploreHeading);
-            for (int pass = ahead ? 0 : 1; pass < 2 && this.landGoal == null; pass++)
+            // Passes: 0/1 a low shore (one block above the water: it can climb out there), ahead
+            // first; 2/3 any shore (a cliff - better than nothing).
+            for (int pass = ahead ? 0 : 1; pass < 4 && this.landGoal == null; pass++)
             for (int r = 4; r <= 64 && this.landGoal == null; r += 4) {
                 for (int k = 0; k < 16; k++) {
                     double a = Math.PI * 2.0 * k / 16.0;
-                    if (pass == 0 && Math.cos(a - this.exploreHeading) < 0.2) {
+                    if (pass == 2 && !ahead) {
+                        continue;
+                    }
+                    if ((pass == 0 || pass == 2) && Math.cos(a - this.exploreHeading) < 0.2) {
                         continue; // (first: land on the way it is going, not back where it came from)
                     }
                     int x = here.getX() + (int) Math.round(Math.cos(a) * r);
                     int z = here.getZ() + (int) Math.round(Math.sin(a) * r);
                     int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
                     BlockPos top = new BlockPos(x, y - 1, z);
-                    if (level.getFluidState(top).isEmpty() && y >= level.getSeaLevel()) {
+                    if (level.getFluidState(top).isEmpty() && y >= level.getSeaLevel() && (pass >= 2 || y <= here.getY() + 2)) {
                         this.landGoal = top.above();
                         break;
                     }
