@@ -2542,6 +2542,9 @@ final class Gatherer {
             case RAW_MEAT -> new Hunt();
             case STRING -> this.visibleMob(EntityTypes.SPIDER) != null ? new HuntMob("Spinnen (Faden)", EntityTypes.SPIDER) : new Explore("Spinnen (Faden)");
             case FEATHER -> this.visibleMob(EntityTypes.CHICKEN) != null ? new HuntMob("Hühner (Federn)", EntityTypes.CHICKEN) : new Explore("Hühner (Federn)");
+            case GOLD_INGOT -> this.kit().count(Res.GOLD_BLOCK.match) > 0 ? new Craft(GOLD_FROM_BLOCK) : this.resolveItem(Items.GOLD_INGOT, depth);
+            case GOLD_NUGGET -> this.nearest(Ore.NETHER_GOLD) != null ? new Mine(Ore.NETHER_GOLD) : null;
+            case GOLD_BLOCK -> this.nearest(Ore.GOLD_BLOCK) != null ? new Mine(Ore.GOLD_BLOCK) : null;
             case BLAZE_ROD, BLAZE_POWDER, PEARL, EYE -> null;
         };
     }
