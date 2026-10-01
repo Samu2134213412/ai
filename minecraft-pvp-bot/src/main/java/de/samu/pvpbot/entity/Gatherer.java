@@ -3577,6 +3577,8 @@ final class Gatherer {
         if (this.bot.position().distanceToSqr(center) > 40.0 * 40.0) {
             // Far away: towards it in legs (a path only reaches so far), tunnelling where there is no way.
             Vec3 to = center.subtract(this.bot.position());
+            // (Swimming across water on the way: the shore towards the portal, not any shore.)
+            this.exploreHeading = Math.atan2(to.z, to.x);
             Vec3 leg = this.bot.position().add(to.normalize().scale(32.0));
             if ((this.bot.getNavigation().isDone() || this.noProgress())
                     && !this.bot.getNavigation().moveTo(leg.x, leg.y, leg.z, 1.1)) {
