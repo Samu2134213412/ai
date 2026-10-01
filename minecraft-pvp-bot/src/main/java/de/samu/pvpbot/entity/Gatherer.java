@@ -3030,9 +3030,11 @@ final class Gatherer {
         }
         Vec3 center = Vec3.atBottomCenterOf(portal);
         if (PvpBotEntity.DEBUG && ++this.portalLog % 200 == 0) {
-            PvpBotMod.LOGGER.info("[SELFTEST]   portal: at {} portal {} ({}) dist {} ground {} nav {}", this.bot.blockPosition().toShortString(),
-                    portal.toShortString(), bn(level, portal), String.format("%.1f", Math.sqrt(this.bot.position().distanceToSqr(center))),
-                    this.bot.onGround(), this.bot.getNavigation().isDone() ? "done" : "moving");
+            PvpBotMod.LOGGER.info("[SELFTEST]   portal: at {} portal {} ({}) dist {} ground {} nav {} | feet {} below {} water {} y {}",
+                    this.bot.blockPosition().toShortString(), portal.toShortString(), bn(level, portal),
+                    String.format("%.1f", Math.sqrt(this.bot.position().distanceToSqr(center))),
+                    this.bot.onGround(), this.bot.getNavigation().isDone() ? "done" : "moving", bn(level, this.bot.blockPosition()),
+                    bn(level, this.bot.blockPosition().below()), this.bot.isInWater(), String.format("%.2f", this.bot.getY()));
         }
         if (this.bot.position().distanceToSqr(center) > 40.0 * 40.0) {
             // Far away: towards it in legs (a path only reaches so far), tunnelling where there is no way.
@@ -3077,8 +3079,12 @@ final class Gatherer {
         } else {
             this.bot.getNavigation().stop();
             this.bot.getMoveControl().setWantedPosition(center.x, center.y, center.z, 0.6);
-            if (center.y > this.bot.getY() + 0.5 && this.bot.onGround()) {
+            // (Also when not standing: in water, or hanging at the frame's edge it would never jump.)
+            if (center.y > this.bot.getY() + 0.5 && (this.bot.onGround() || this.bot.isInWater() || this.bot.tickCount % 10 == 0)) {
                 this.bot.getJumpControl().jump();
+            }
+            if (center.y > this.bot.getY() + 1.2 && this.bot.horizontalCollision && this.bot.tickCount % 40 == 0) {
+                this.pillarUp(level); // two blocks under it: a block up first
             }
         }
         this.step = null;
