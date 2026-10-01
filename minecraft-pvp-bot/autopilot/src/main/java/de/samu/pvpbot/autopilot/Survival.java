@@ -73,12 +73,13 @@ final class Survival {
 
     /** Looks around: rays from the eyes, the first block each ray hits is what it sees. */
     private void lookAround(Level level, LocalPlayer p, int tick) {
-        if (tick % 20 != 0) {
+        if (tick % 20 != 0 && tick != 1) {
             return;
         }
         Vec3 eye = p.getEyePosition();
         int offset = (tick / 20) % 2 * 5;
-        for (int pitch = -70; pitch <= 40; pitch += 10) {
+        // Finer near the horizon: far away a block at foot height is only a few degrees below the eyes.
+        for (int pitch = -70; pitch <= 40; pitch += pitch >= -10 && pitch < 20 ? 3 : 10) {
             for (int yaw = 0; yaw < 360; yaw += 10) {
                 Vec3 dir = Vec3.directionFromRotation(pitch, yaw + offset);
                 BlockHitResult hit = level.clip(new ClipContext(eye, eye.add(dir.scale(48.0)), ClipContext.Block.OUTLINE, ClipContext.Fluid.ANY, p));
@@ -1366,6 +1367,17 @@ final class Survival {
      * block (cobblestone or dirt) under the feet at the top of the jump. Repeat.
      */
     private boolean digUp(Minecraft mc, LocalPlayer p, Level level) {
+        if (pickaxeTier(p) == 0 && this.indexOf(p, st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE)
+                || st.is(Items.DIRT) || st.is(Items.NETHERRACK)) < 0 && !this.climbing) {
+            // Nothing to build with and no pickaxe (stone dug by hand gives nothing): no way up -
+            // sideways out instead, digging through by hand.
+            this.climbing = true;
+            try {
+                return this.explore(mc, p, level, "gräbt sich seitlich raus (kein Werkzeug)");
+            } finally {
+                this.climbing = false;
+            }
+        }
         this.say(p, "baut sich nach oben (y " + p.getBlockY() + ")");
         // Not getting higher by building straight up (something above it cannot get through)? Then
         // a staircase up to the side for a while, like a player digging out.

@@ -71,7 +71,8 @@ final class PathFinder {
                     push(open, best, n, up, 2.0, target);
                 }
                 // Dig through (feet and head), only on solid ground, never next to lava.
-                if (dig && !standable(level, side) && solidGround(level, side.below()) && diggable(level, side) && diggable(level, side.above())
+                // (Not while swimming: digging in water takes ages - swim round or climb out.)
+                if (dig && !standable(level, side) && solidGround(level, side.below()) && !level.getFluidState(n.pos).is(FluidTags.WATER) && diggable(level, side) && diggable(level, side.above())
                         && !nearLava(level, side) && !nearLava(level, side.above())) {
                     int blocks = (passable(level, side) ? 0 : 1) + (passable(level, side.above()) ? 0 : 1);
                     push(open, best, n, side, 1.0 + 4.0 * blocks, target);
