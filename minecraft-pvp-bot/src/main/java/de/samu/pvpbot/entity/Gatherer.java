@@ -1936,7 +1936,17 @@ final class Gatherer {
             }
         }
         this.goalLabel = "ein Speed-Portal (Lava + Wasser)";
-        if (this.nearest(Ore.LAVA) != null || this.speedPortal && (kit.count(st -> st.is(Items.LAVA_BUCKET)) > 0 || this.speedFrameDone())) {
+        if (this.speedSearchStart < 0) {
+            this.speedSearchStart = this.bot.tickCount;
+        }
+        BlockPos pool = this.nearest(Ore.LAVA);
+        if (pool != null && this.portalBase == null && this.lavaAround(pool) < 10 && this.bot.tickCount - this.speedSearchStart < 12000) {
+            // A pocket of one or two lava blocks is not enough for ten frame blocks: look on for a
+            // real lava lake (after 10 minutes any lava will do).
+            this.goalLabel = "einen Lavasee (Speed-Portal)";
+            return this.lavaStep();
+        }
+        if (pool != null || this.speedPortal && (kit.count(st -> st.is(Items.LAVA_BUCKET)) > 0 || this.speedFrameDone())) {
             return new SpeedPortal();
         }
         // No lava (left) in sight: dig on until there is some - the frame so far stays.
@@ -1944,6 +1954,19 @@ final class Gatherer {
     }
 
     private boolean speedPortal;
+
+    private int speedSearchStart = -1;
+
+    /** Lava sources it knows of within 12 blocks of this one. */
+    private int lavaAround(BlockPos pool) {
+        int n = 0;
+        for (BlockPos p : this.known.getOrDefault(Ore.LAVA, List.of())) {
+            if (p.distSqr(pool) <= 12 * 12 && !this.blacklist.contains(p) && Ore.LAVA.match.test(this.level().getBlockState(p))) {
+                n++;
+            }
+        }
+        return n;
+    }
 
     private boolean speedFrameDone() {
         if (this.portalBase == null) {
