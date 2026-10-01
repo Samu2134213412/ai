@@ -53,14 +53,14 @@ final class PathFinder {
                 if (standable(level, side)) {
                     push(open, best, n, side, 1.0 + (level.getFluidState(side).is(FluidTags.WATER) ? 2.0 : 0.0), target);
                 } else if (passable(level, side) && passable(level, side.above())) {
-                    // Drop down (up to three blocks).
-                    for (int k = 1; k <= 3; k++) {
+                    // Drop down (up to four blocks: four costs half a heart, like a player jumping off a wall).
+                    for (int k = 1; k <= 4; k++) {
                         BlockPos low = side.below(k);
                         if (!passable(level, low)) {
                             break;
                         }
                         if (standable(level, low)) {
-                            push(open, best, n, low, 1.0 + 0.5 * k, target);
+                            push(open, best, n, low, 1.0 + 0.5 * k + (k == 4 ? 6.0 : 0.0), target);
                             break;
                         }
                     }
