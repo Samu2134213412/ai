@@ -154,9 +154,20 @@ public final class BotKit {
     }
 
     /** Puts on the best armor and fills the off hand with a totem (or a shield). */
+    /** In the nether: golden boots on (piglins leave someone wearing gold alone and trade with them). */
+    public boolean goldFeet;
+
     public void equipBest(LivingEntity bot, boolean wearElytra) {
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
             ItemStack wanted = slot == EquipmentSlot.CHEST && wearElytra ? this.find(Role.ELYTRA) : this.bestArmor(slot);
+            if (slot == EquipmentSlot.FEET && this.goldFeet) {
+                for (ItemStack st : this.items()) {
+                    if (st.is(net.minecraft.world.item.Items.GOLDEN_BOOTS)) {
+                        wanted = st;
+                        break;
+                    }
+                }
+            }
             if (slot == EquipmentSlot.CHEST && wanted.isEmpty() && !wearElytra) {
                 wanted = ItemStack.EMPTY;
             }

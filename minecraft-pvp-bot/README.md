@@ -128,6 +128,11 @@ Netherportal bauen und anzünden. Die nächsten Etappen (Nether, Stronghold, Dra
 Wassereimer, einen zweiten Eimer und ein Feuerzeug hat und einen Lavasee sieht, gießt er den Rahmen direkt dort: erst
 Blöcke in die vier Ecken als Form, dann für jeden Rahmenblock einen Eimer Lava hinein und Wasser drüber – Obsidian an
 Ort und Stelle. Danach anzünden und ab in den Nether. Klappt es dort nicht, baut er wie bisher mit abgebautem Obsidian.
+
+**Piglin-Tausch (wie Speedrunner):** Für Enderperlen jagt der Bot nicht nur Endermen, er tauscht auch mit Piglins.
+Im Nether trägt er Goldstiefel (dann lassen ihn Piglins in Ruhe), baut Nethergolderz und Goldblöcke aus Bastionen ab,
+macht daraus Goldbarren und wirft einem Piglin, den er sieht, einen Barren hin. Was der Piglin zurückwirft
+(darunter manchmal Enderperlen), sammelt er auf.
 ## Befehle – PvP-Bot
 
 | Befehl | Wirkung |

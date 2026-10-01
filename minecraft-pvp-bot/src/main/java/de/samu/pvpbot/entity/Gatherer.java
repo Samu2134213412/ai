@@ -55,6 +55,9 @@ final class Gatherer {
         BLAZE_ROD("Lohenruten", s -> s.is(Items.BLAZE_ROD)),
         BLAZE_POWDER("Lohenstaub", s -> s.is(Items.BLAZE_POWDER)),
         PEARL("Enderperlen", s -> s.is(Items.ENDER_PEARL)),
+        GOLD_NUGGET("Goldnuggets", s -> s.is(Items.GOLD_NUGGET)),
+        GOLD_INGOT("Goldbarren", s -> s.is(Items.GOLD_INGOT)),
+        GOLD_BLOCK("Goldblöcke", s -> s.is(Items.GOLD_BLOCK)),
         EYE("Enderaugen", s -> s.is(Items.ENDER_EYE)),
         STRING("Faden", s -> s.is(Items.STRING)),
         FEATHER("Federn", s -> s.is(Items.FEATHER)),
@@ -89,6 +92,9 @@ final class Gatherer {
         WARPED("Wirrwald", Res.PEARL, s -> s.is(net.minecraft.world.level.block.Blocks.WARPED_NYLIUM)
                 || s.is(net.minecraft.world.level.block.Blocks.WARPED_STEM) || s.is(net.minecraft.world.level.block.Blocks.WARPED_WART_BLOCK)),
         PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)),
+        // Gold for bartering with piglins: nether gold ore (nuggets) and the gold blocks of bastions.
+        NETHER_GOLD("Nethergolderz", Res.GOLD_NUGGET, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_GOLD_ORE)),
+        GOLD_BLOCK("Goldblock", Res.GOLD_BLOCK, s -> s.is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)),
         STRONGHOLD("Festungsmauern", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.MOSSY_STONE_BRICKS)
                 || s.is(net.minecraft.world.level.block.Blocks.CRACKED_STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.INFESTED_STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.INFESTED_MOSSY_STONE_BRICKS)
                 || s.is(net.minecraft.world.level.block.Blocks.INFESTED_CRACKED_STONE_BRICKS)),
@@ -124,6 +130,8 @@ final class Gatherer {
 
     static {
         recipe(Items.OAK_PLANKS, 4, Res.LOG, 1);
+        recipe(Items.GOLD_INGOT, 1, Res.GOLD_NUGGET, 9);
+        recipe(Items.GOLDEN_BOOTS, 1, Res.GOLD_INGOT, 4);
         recipe(Items.STICK, 4, Res.PLANKS, 2);
         recipe(Items.WOODEN_PICKAXE, 1, Res.PLANKS, 3, Res.STICK, 2);
         recipe(Items.WOODEN_SWORD, 1, Res.PLANKS, 2, Res.STICK, 1);
@@ -166,7 +174,7 @@ final class Gatherer {
     private static final EquipmentSlot[] ARMOR_SLOTS = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
 
     /** The next thing to do. */
-    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal, SpeedPortal,
+    sealed interface Step permits Craft, Smelt, Mine, Hunt, Explore, Descend, StripMine, FillWater, MakeObsidian, BuildPortal, SpeedPortal, Barter,
             UsePortal, HuntMob, ExploreNether, ThrowEye, FollowEye, ExploreStronghold, FillEndPortal, UseEndPortal, ShootCrystal, FightDragon,
             GoHome, PlaceChest, StoreAtHome, ClimbUp, PlaceStation, PickUpStation {
         String describe();
@@ -325,6 +333,12 @@ final class Gatherer {
     record BuildPortal() implements Step {
         public String describe() {
             return "baut das Netherportal";
+        }
+    }
+
+    record Barter() implements Step {
+        public String describe() {
+            return "tauscht Gold bei einem Piglin (Enderperlen)";
         }
     }
 
@@ -1712,6 +1726,12 @@ final class Gatherer {
                 }
                 return new UsePortal(true);
             }
+            if (pearlsNeeded > 0) {
+                Step barter = this.barterStep();
+                if (barter != null && (rodsNeeded <= 0 || barter instanceof Barter)) {
+                    return barter;
+                }
+            }
             if (rodsNeeded <= 0 && this.nearest(Ore.WARPED) == null && ++this.pearlSearchTicks > 6000) {
                 // No warped forest in sight after a good while: back to the overworld for them.
                 return new UsePortal(false);
@@ -2271,6 +2291,95 @@ final class Gatherer {
         this.step = null;
     }
 
+    // ------------------------------------------------------------------ bartering with piglins
+
+    /**
+     * Ender pearls the speedrunner way: gold for piglins. Gold from nether gold ore (nuggets) and
+     * bastion gold blocks, golden boots on (piglins leave it alone then), and when a piglin is in
+     * sight, gold thrown to it. Null when there is nothing to do towards it right now.
+     */
+    private @Nullable Step barterStep() {
+        BotKit kit = this.kit();
+        if (kit.count(Res.GOLD_BLOCK.match) > 0 && kit.count(Res.GOLD_INGOT.match) < 32) {
+            return new Craft(GOLD_FROM_BLOCK);
+        }
+        if (kit.count(Res.GOLD_NUGGET.match) >= 9) {
+            return new Craft(RECIPES.get(Items.GOLD_INGOT));
+        }
+        int ingots = kit.count(Res.GOLD_INGOT.match);
+        boolean boots = kit.count(st -> st.is(Items.GOLDEN_BOOTS)) > 0;
+        if (!boots && ingots >= 4) {
+            this.goalLabel = "Goldstiefel (Piglins)";
+            return this.resolveItem(Items.GOLDEN_BOOTS, 0);
+        }
+        if (boots && ingots > 0 && this.visibleMob(EntityTypes.PIGLIN) != null) {
+            this.goalLabel = "Enderperlen von Piglins";
+            return new Barter();
+        }
+        if (ingots < 8 || !boots) {
+            if (this.nearest(Ore.GOLD_BLOCK) != null) {
+                this.goalLabel = "Gold (Bastion) für Piglins";
+                return new Mine(Ore.GOLD_BLOCK);
+            }
+            if (this.nearest(Ore.NETHER_GOLD) != null) {
+                this.goalLabel = "Gold für Piglins";
+                return new Mine(Ore.NETHER_GOLD);
+            }
+        }
+        return null;
+    }
+
+    private static final Recipe GOLD_FROM_BLOCK = new Recipe(Items.GOLD_INGOT, 9, List.of(new Ingredient(Res.GOLD_BLOCK, 1)));
+    private int barterTossTick = -1000;
+    private @Nullable java.util.UUID barterPiglin;
+
+    private void doBarter(ServerLevel level) {
+        LivingEntity piglin = this.visibleMob(EntityTypes.PIGLIN);
+        if (piglin == null || piglin.isBaby() || this.kit().count(Res.GOLD_INGOT.match) == 0) {
+            this.step = null;
+            return;
+        }
+        this.bot.getLookControl().setLookAt(piglin);
+        // Busy looking at gold it was given (gold in its off hand): wait, the trade comes in a few seconds.
+        boolean admiring = piglin.getOffhandItem().is(Items.GOLD_INGOT);
+        if (admiring || this.bot.tickCount - this.barterTossTick < 140) {
+            if (this.bot.distanceTo(piglin) > 6.0F) {
+                this.bot.getNavigation().moveTo(piglin, 1.0);
+            } else {
+                this.bot.getNavigation().stop();
+            }
+            this.step = null;
+            return;
+        }
+        if (this.bot.distanceTo(piglin) > 3.0F) {
+            this.bot.getNavigation().moveTo(piglin, 1.0);
+            this.step = null;
+            return;
+        }
+        // Throw one gold ingot to it, like a player dropping it in front of the piglin.
+        this.bot.getNavigation().stop();
+        ItemStack gold = new ItemStack(Items.GOLD_INGOT);
+        if (!this.kit().isInfinite()) {
+            this.kit().remove(Res.GOLD_INGOT.match, 1);
+            this.bot.onKitChanged();
+        }
+        Vec3 from = this.bot.getEyePosition().subtract(0.0, 0.3, 0.0);
+        ItemEntity thrown = new ItemEntity(level, from.x, from.y, from.z, gold);
+        Vec3 dir = piglin.position().subtract(from).normalize().scale(0.25);
+        thrown.setDeltaMovement(dir.x, 0.15, dir.z);
+        thrown.setPickUpDelay(60);
+        level.addFreshEntity(thrown);
+        this.unreachableDrops.add(thrown.getId()); // (not to be picked up again by itself)
+        this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
+        this.barterTossTick = this.bot.tickCount;
+        this.barterPiglin = piglin.getUUID();
+        if (PvpBotEntity.DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   barter: gold to piglin at {} ({} left, {} pearls)", piglin.blockPosition().toShortString(),
+                    this.kit().count(Res.GOLD_INGOT.match), this.kit().count(Res.PEARL.match));
+        }
+        this.step = null;
+    }
+
     private Step lavaStep() {
         return this.bot.getY() > -55.0 ? new Descend() : new StripMine();
     }
@@ -2552,6 +2661,10 @@ final class Gatherer {
 
     void tick() {
         ServerLevel level = this.level();
+        if (this.kit().goldFeet != this.inNether()) {
+            this.kit().goldFeet = this.inNether();
+            this.bot.onKitChanged(); // (golden boots on in the nether, the better ones back on up top)
+        }
         if (this.reflexActive) {
             return;
         }
@@ -2711,6 +2824,7 @@ final class Gatherer {
             case MakeObsidian mo -> this.doMakeObsidian(level);
             case BuildPortal bp -> this.doBuildPortal(level);
             case SpeedPortal sp -> this.doSpeedPortal(level);
+            case Barter b -> this.doBarter(level);
             case UsePortal up -> this.doUsePortal(level, up.toNether());
             case HuntMob hm -> this.doHuntMob(hm.type());
             case ExploreNether en -> this.doExploreNether(level);
