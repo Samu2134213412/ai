@@ -38,6 +38,10 @@ public class AutopilotClient implements ClientModInitializer {
                 new KeyMapping("key.pvpbot_autopilot.menu", KEY_N, category));
         AutopilotSettings.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-autopilot.properties"));
 
+        AutopilotAi.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-autopilot-ai.json"));
+        // "@auto ..." in the chat is for the autopilot's AI: answered here, not sent to the server.
+        net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents.ALLOW_CHAT.register(
+                message -> !AutopilotAi.INSTANCE.onChat(Minecraft.getInstance(), message));
         BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-autopilot-memory.json"));
         ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> BotBrain.INSTANCE.save());
 
@@ -148,6 +152,52 @@ public class AutopilotClient implements ClientModInitializer {
                                             ctx.getSource().sendFeedback(Component.literal("§aNächster Angriff: §f" + pattern.label));
                                             return 1;
                                         })))
+                        .then(ClientCommands.literal("auftrag")
+                                .then(ClientCommands.literal("stop").executes(ctx -> {
+                                    Autopilot.INSTANCE.order(null, 0);
+                                    ctx.getSource().sendFeedback(Component.literal("§eAuftrag abgebrochen."));
+                                    return 1;
+                                }))
+                                .then(ClientCommands.argument("was", StringArgumentType.word())
+                                        .suggests((c, sb) -> {
+                                            Survival.ORDERS.forEach(sb::suggest);
+                                            return sb.buildFuture();
+                                        })
+                                        .executes(ctx -> order(ctx.getSource(), StringArgumentType.getString(ctx, "was"), 1))
+                                        .then(ClientCommands.argument("anzahl", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 256))
+                                                .executes(ctx -> order(ctx.getSource(), StringArgumentType.getString(ctx, "was"),
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "anzahl"))))))
+                        .then(ClientCommands.literal("ki")
+                                .executes(ctx -> {
+                                    AutopilotAi ai = AutopilotAi.INSTANCE;
+                                    ctx.getSource().sendFeedback(Component.literal("§6KI-Chat §7– " + (ai.hasKey() ? "§aAPI-Key gesetzt" : "§ckein API-Key")
+                                            + " §7Modell: §f" + ai.model()));
+                                    ctx.getSource().sendFeedback(Component.literal("§7Schreib im Chat §f@auto <text>§7 – die KI antwortet und setzt die Ziele des Autopiloten."));
+                                    ctx.getSource().sendFeedback(Component.literal("§f/autopilot ki key <key> §7· §f/autopilot ki aus §7· §f/autopilot ki frag <text>"));
+                                    return 1;
+                                })
+                                .then(ClientCommands.literal("key")
+                                        .then(ClientCommands.argument("key", StringArgumentType.greedyString()).executes(ctx -> {
+                                            String key = StringArgumentType.getString(ctx, "key").strip();
+                                            if (!key.startsWith("sk-")) {
+                                                ctx.getSource().sendError(Component.literal("Das sieht nicht wie ein Anthropic-API-Key aus (fängt mit sk- an)."));
+                                                return 0;
+                                            }
+                                            AutopilotAi.INSTANCE.setKey(key);
+                                            // (the key itself is never shown again)
+                                            ctx.getSource().sendFeedback(Component.literal("§aAPI-Key gespeichert §7(nur auf diesem Computer). Schreib jetzt §f@auto hallo"));
+                                            return 1;
+                                        })))
+                                .then(ClientCommands.literal("aus").executes(ctx -> {
+                                    AutopilotAi.INSTANCE.setKey(null);
+                                    ctx.getSource().sendFeedback(Component.literal("§eAPI-Key gelöscht, KI-Chat aus."));
+                                    return 1;
+                                }))
+                                .then(ClientCommands.literal("frag")
+                                        .then(ClientCommands.argument("text", StringArgumentType.greedyString()).executes(ctx -> {
+                                            AutopilotAi.INSTANCE.ask(ctx.getSource().getClient(), StringArgumentType.getString(ctx, "text"));
+                                            return 1;
+                                        }))))
                         .then(ClientCommands.literal("brain")
                                 .executes(ctx -> {
                                     var lines = BotBrain.INSTANCE.summary(12);
@@ -169,6 +219,20 @@ public class AutopilotClient implements ClientModInitializer {
         source.sendFeedback(Component.literal("§6PvP-Autopilot §7– " + (ap.isEnabled() ? "§aAN" : "§cAUS") + " §7Ziel: §f" + ap.describeTarget()));
         source.sendFeedback(Component.literal("§7Taste §fK§7: an/aus · Taste §fJ§7: Ziel = was du anschaust"));
         source.sendFeedback(Component.literal("§f/autopilot on|off|full|stop · target <Spieler>|nearest|mobs|look · brain [reset]"));
+        source.sendFeedback(Component.literal("§f/autopilot auftrag <holz|stein|kohle|eisen|diamanten|essen|heim> [anzahl] · ki §7(Chat: §f@auto …§7)"));
+        return 1;
+    }
+
+    private static int order(FabricClientCommandSource source, String what, int count) {
+        String err = Autopilot.INSTANCE.order(what, count);
+        if (err != null) {
+            source.sendError(Component.literal("Auftrag " + what + ": " + err));
+            return 0;
+        }
+        if (!Autopilot.INSTANCE.isFullControl()) {
+            Autopilot.INSTANCE.setFullControl(source.getClient(), true);
+        }
+        source.sendFeedback(Component.literal("§aAuftrag: §f" + Autopilot.INSTANCE.currentOrder()));
         return 1;
     }
 

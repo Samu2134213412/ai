@@ -90,7 +90,7 @@ public final class Autopilot {
     boolean kForward, kBack, kLeft, kRight, kJump, kSprint, kSneak, kUse, kAttack;
     private boolean wasJump;
     private boolean keysHeld;
-    private final Survival survival = new Survival(this);
+    private Survival survival = new Survival(this);
     private float strafe = 1.0F;
     private String lastStatus = "";
 
@@ -167,6 +167,25 @@ public final class Autopilot {
 
     public String status() {
         return this.lastStatus;
+    }
+
+    /** Forgets everything the survival part has seen and planned (a new world, a new test course). */
+    public void resetSurvival() {
+        this.survival = new Survival(this);
+    }
+
+    /** How often the survival safety net had to free it (3 minutes without progress). */
+    public int survivalStucks() {
+        return this.survival.stuckEvents;
+    }
+
+    /** An order for full control ("holz", "eisen", ...); null cancels. Returns an error or null. */
+    public @Nullable String order(@Nullable String what, int count) {
+        return this.survival.order(what, count);
+    }
+
+    public @Nullable String currentOrder() {
+        return this.survival.currentOrder();
     }
 
     // ------------------------------------------------------------------ main loop
@@ -285,11 +304,17 @@ public final class Autopilot {
                     this.applyKeys(mc);
                     return;
                 }
+                if (this.lookAtSpeaker(mc, p)) {
+                    this.status(p, "§6volle Kontrolle §7– hört zu");
+                    this.applyKeys(mc);
+                    return;
+                }
                 this.roam(p);
                 this.status(p, "§6volle Kontrolle §7– zieht umher");
                 this.applyKeys(mc);
                 return;
             }
+            this.lookAtSpeaker(mc, p);
             this.status(p, "§7wartet auf ein Ziel");
             this.applyKeys(mc);
             return;
@@ -1312,6 +1337,20 @@ public final class Autopilot {
         if (p.onGround()) {
             this.wearChest(mc, p, Role.ARMOR);
         }
+    }
+
+    /**
+     * Someone close by talks in Simple Voice Chat: turn to them, like a player listening. Only
+     * players it can see (the voice chat tells who talks, the eyes where they are).
+     */
+    private boolean lookAtSpeaker(Minecraft mc, LocalPlayer p) {
+        for (Player other : mc.level.players()) {
+            if (other != p && other.distanceTo(p) < 16.0F && AutopilotVoice.isSpeaking(other.getUUID()) && p.hasLineOfSight(other)) {
+                this.face(p, other.getEyePosition().subtract(p.getEyePosition()), 20.0F);
+                return true;
+            }
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------ getting unstuck

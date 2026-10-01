@@ -46,6 +46,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext ctx) {
+        if (Boolean.getBoolean("pvpbot.parcours")) {
+            AutopilotParcours.run(ctx);
+            return;
+        }
         if (Boolean.getBoolean("pvpbot.survivaltest")) {
             survivalTest(ctx);
             return;

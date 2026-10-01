@@ -3,17 +3,27 @@
   "id": "pvpbot_autopilot",
   "version": "${version}",
   "name": "PvP-Bot Autopilot",
-  "description": "Macht deinen eigenen Spieler zum PvP-Bot: kämpft selbstständig mit deinem Inventar (Mace, Speer, Schwert, Bogen, Elytra) und lernt dazu. Nur Client – funktioniert auf jedem Server.",
-  "authors": ["Samu"],
+  "description": "Macht deinen eigenen Spieler zum PvP-Bot: kämpft selbstständig mit deinem Inventar (Mace, Speer, Schwert, Bogen, Elytra) und lernt dazu. Mit KI-Chat (@auto …, eigener API-Key) und Simple Voice Chat. Nur Client – funktioniert auf jedem Server.",
+  "authors": [
+    "Samu"
+  ],
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
-    "client": ["de.samu.pvpbot.autopilot.AutopilotClient"]
+    "client": [
+      "de.samu.pvpbot.autopilot.AutopilotClient"
+    ],
+    "voicechat": [
+      "de.samu.pvpbot.autopilot.AutopilotVoicePlugin"
+    ]
   },
-  "mixins": ["pvpbot_autopilot.mixins.json"],
+  "mixins": [
+    "pvpbot_autopilot.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.19.0",
     "minecraft": "~26.3",
-    "fabric-api": "*"
+    "fabric-api": "*",
+    "voicechat": "*"
   }
 }

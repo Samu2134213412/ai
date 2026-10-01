@@ -106,12 +106,36 @@ final class Survival {
         double bestDist = Double.MAX_VALUE;
         for (BlockPos pos : set) {
             double d = pos.distSqr(p.blockPosition());
-            if (d < bestDist && d < 96 * 96 && !this.unreachable.contains(pos.asLong())) {
+            if (d < bestDist && d < 96 * 96 && !this.unreachable.contains(pos.asLong()) && !risky(level, pos, kind)) {
                 best = pos;
                 bestDist = d;
             }
         }
         return best;
+    }
+
+    /** Under water (digging there is slow and drowns) or right next to lava: leave it, take another one. */
+    private static boolean risky(Level level, BlockPos pos, Kind kind) {
+        if (!level.isLoaded(pos) || kind == Kind.TABLE || kind == Kind.FURNACE) {
+            return false;
+        }
+        if (level.getFluidState(pos.above()).is(FluidTags.WATER)) {
+            return true;
+        }
+        int r = kind == Kind.DIAMOND ? 1 : 2;
+        for (BlockPos b : BlockPos.betweenClosed(pos.offset(-r, -1, -r), pos.offset(r, r, r))) {
+            if (level.getFluidState(b).is(FluidTags.LAVA)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Under the ground: no sky over the head and the surface well above it (an overhang is not "underground"). */
+    static boolean underground(Level level, LocalPlayer p) {
+        BlockPos head = BlockPos.containing(p.getEyePosition());
+        return !level.canSeeSky(head)
+                && level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, head.getX(), head.getZ()) > head.getY() + 6;
     }
 
     // ------------------------------------------------------------------ inventory
@@ -152,6 +176,21 @@ final class Survival {
         if (has(p, Items.STONE_PICKAXE) || has(p, Items.COPPER_PICKAXE)) return 2;
         if (has(p, Items.WOODEN_PICKAXE) || has(p, Items.GOLDEN_PICKAXE)) return 1;
         return 0;
+    }
+
+    private static int pickaxes(LocalPlayer p) {
+        return count(p, st -> st.is(ItemTags.PICKAXES));
+    }
+
+    /** How worn the most used pickaxe is (0 = new, 1 = about to break). */
+    private static float worstPickWear(LocalPlayer p) {
+        float worst = 0.0F;
+        for (ItemStack st : p.getInventory().getNonEquipmentItems()) {
+            if (st.is(ItemTags.PICKAXES) && st.isDamageableItem()) {
+                worst = Math.max(worst, (float) st.getDamageValue() / st.getMaxDamage());
+            }
+        }
+        return worst;
     }
 
     private static int swordTier(LocalPlayer p) {
@@ -226,6 +265,10 @@ final class Survival {
 
     // ------------------------------------------------------------------ main loop
 
+    /** Planks (logs count 4) to carry before going under ground: tools, a table, fuel, a way back up. */
+    private static final int WOOD_STOCK = 20;
+    /** Height of the ground it last stood on under the open sky (how deep "deep" is). */
+    private int surfaceY = Integer.MIN_VALUE;
     private String doing = "";
     private @Nullable Vec3 watchPos;
     private int watchItems;
@@ -263,7 +306,7 @@ final class Survival {
             this.watchPos = p.position();
             this.watchItems = items;
             this.watchTicks = 0;
-        } else if (this.smeltingCount == 0 && ++this.watchTicks > 1200) {
+        } else if (this.smeltingCount == 0 && this.tick - this.lastBreakTick > 40 && ++this.watchTicks > 1200) {
             Autopilot.LOGGER.info("[AUTOPILOT] survival: WATCHDOG - no progress for 60 s while '{}' at {} -> walks elsewhere",
                     this.doing, p.blockPosition().toShortString());
             this.watchTicks = 0;
@@ -274,6 +317,7 @@ final class Survival {
             // Stuck digging the same way again: dig in another direction from now on.
             this.digDir = p.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
         }
+        this.safetyNet(p, level, items);
         if (this.unstickTicks > 0) {
             this.unstickTicks--;
             // (The ground around it: its own column is open above in a pit.)
@@ -293,6 +337,87 @@ final class Survival {
             return true;
         }
         return this.plan(mc, p, level);
+    }
+
+    // ------------------------------------------------------------------ never stuck for long
+
+    /** Times the safety net had to step in (for the tests). */
+    int stuckEvents;
+    private @Nullable Vec3 hardPos;
+    private int hardItems = -1;
+    private int hardTicks;
+    private final Set<Long> seenCountry = new java.util.HashSet<>();
+
+    private static long cell(BlockPos pos) {
+        return ((long) Math.floorDiv(pos.getX(), 24) << 32) ^ (Math.floorDiv(pos.getZ(), 24) & 0xffffffffL);
+    }
+
+    /**
+     * The last line: three minutes without getting anywhere (not 6 blocks away, nothing new in the
+     * inventory) - whatever it is doing does not work. Drop the goal, mark it unreachable and get
+     * away from here: up and out when under ground, else off into country it has not seen yet.
+     */
+    private void safetyNet(LocalPlayer p, Level level, int items) {
+        this.seenCountry.add(cell(p.blockPosition()));
+        if (this.hardPos == null || p.position().distanceToSqr(this.hardPos) > 36.0 || items != this.hardItems || this.smeltingCount > 0
+                || this.doing.isEmpty() || this.doing.equals("wartet zu Hause")) {
+            this.hardPos = p.position();
+            this.hardItems = items;
+            this.hardTicks = 0;
+            return;
+        }
+        if (++this.hardTicks < 3600) {
+            return;
+        }
+        this.stuckEvents++;
+        Autopilot.LOGGER.info("[AUTOPILOT] survival: STUCK 180 s while '{}' at {} -> drops it and gets away", this.doing, p.blockPosition().toShortString());
+        this.hardTicks = 0;
+        for (BlockPos b : new BlockPos[]{this.mineTarget, this.breaking, this.pathGoal, this.wayBlock}) {
+            if (b != null) {
+                this.unreachable.add(b.asLong());
+            }
+        }
+        this.mineTarget = null;
+        this.breaking = null;
+        this.wayBlock = null;
+        this.path = null;
+        this.stairStep = null;
+        this.dryWalk = 0;
+        this.digDir = p.getRandom().nextBoolean() ? this.digDir.getClockWise() : this.digDir.getCounterClockWise();
+        this.upDir = this.upDir.getOpposite();
+        this.exploreYaw = this.freshYaw(p, level);
+        this.exploreTicks = 600;
+        this.unstickTicks = 600;
+    }
+
+    /**
+     * A new direction to explore: of 12 directions the one leading to dry land it has not been to
+     * yet, preferring to keep going roughly the way it went.
+     */
+    private float freshYaw(LocalPlayer p, Level level) {
+        float heading = Float.isNaN(this.exploreYaw) ? p.getYRot() : this.exploreYaw;
+        float best = heading + 90.0F + p.getRandom().nextFloat() * 180.0F;
+        double bestScore = -1e9;
+        for (int i = 0; i < 12; i++) {
+            float yaw = heading + i * 30.0F;
+            Vec3 dir = Vec3.directionFromRotation(0.0F, yaw);
+            BlockPos at = BlockPos.containing(p.position().add(dir.scale(28.0)));
+            double score = Math.cos(Math.toRadians(i * 30.0)) + p.getRandom().nextDouble() * 0.8;
+            if (!this.seenCountry.contains(cell(at))) {
+                score += 3.0;
+            }
+            if (level.isLoaded(at)) {
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, at.getX(), at.getZ());
+                if (!level.getFluidState(new BlockPos(at.getX(), y - 1, at.getZ())).isEmpty()) {
+                    score -= 3.0; // a lake or the sea
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = yaw;
+            }
+        }
+        return best;
     }
 
     boolean ownsScreen() {
@@ -342,6 +467,10 @@ final class Survival {
                 return this.explore(mc, p, level, "sucht Tiere (Hunger)");
             }
         }
+        // An order (from the chat AI or a command) comes first, as far as the tools allow it.
+        if (this.order != null && this.doOrder(mc, p, level, pick)) {
+            return true;
+        }
         // 1. Wooden pickaxe.
         if (pick == 0) {
             return this.makeWithTable(mc, p, level, R_WOOD_PICK, "eine Holzspitzhacke");
@@ -354,19 +483,30 @@ final class Survival {
             return this.makeWithTable(mc, p, level, R_STONE_SWORD, "ein Steinschwert");
         }
         // Before going underground: sticks and planks for the next tools, and a spare crafting table.
-        if (p.getY() > 50 && foodCount(p) < 4 && this.hunt(mc, p, level)) {
+        boolean upTop = !underground(level, p);
+        if (upTop && !this.inHole(level, p) && p.onGround()) {
+            this.surfaceY = p.getBlockY();
+        }
+        if (upTop && foodCount(p) < 4 && this.hunt(mc, p, level)) {
             return true;
         }
-        if (p.getY() > 50 && (count(p, STICK) < 6 || count(p, PLANKS) + count(p, LOG) * 4 < 12 || !has(p, Items.CRAFTING_TABLE))) {
+        if (upTop && (count(p, STICK) < 6 || count(p, PLANKS) + count(p, LOG) * 4 < WOOD_STOCK || !has(p, Items.CRAFTING_TABLE))) {
             if (count(p, STICK) < 6 && count(p, PLANKS) >= 2) {
                 return this.craft(mc, p, level, R_STICKS);
             }
             if (!has(p, Items.CRAFTING_TABLE) && count(p, PLANKS) >= 4) {
                 return this.craft(mc, p, level, R_TABLE);
             }
-            if (count(p, PLANKS) + count(p, LOG) * 4 < 12 || count(p, PLANKS) < 2) {
+            if (count(p, PLANKS) + count(p, LOG) * 4 < WOOD_STOCK || count(p, PLANKS) < 2) {
                 return this.getPlanks(mc, p, level, count(p, PLANKS) + 4, "Holzvorrat für unter Tage");
             }
+        }
+        // A spare pickaxe before the only one breaks (deep down without one it is stuck for good).
+        if (pickaxes(p) == 1 && worstPickWear(p) > 0.75F) {
+            if (pick >= 3 && count(p, IRON) >= 3) {
+                return this.makeWithTable(mc, p, level, R_IRON_PICK, "eine Ersatz-Spitzhacke");
+            }
+            return this.makeWithTable(mc, p, level, R_STONE_PICK, "eine Ersatz-Spitzhacke");
         }
         // 3. Food, when there is little and an animal is in sight.
         if (foodCount(p) < 4 && this.hunt(mc, p, level)) {
@@ -413,6 +553,112 @@ final class Survival {
             return this.mineOre(mc, p, level, Kind.DIAMOND, -54);
         }
         return this.idleAtHome(mc, p, level);
+    }
+
+    // ------------------------------------------------------------------ orders
+
+    static final List<String> ORDERS = List.of("holz", "stein", "kohle", "eisen", "diamanten", "essen", "heim");
+    private @Nullable String order;
+    private int orderCount;
+
+    /** Sets an order ("holz", "eisen", ... see {@link #ORDERS}); null to cancel. Returns an error or null. */
+    @Nullable String order(@Nullable String what, int count) {
+        if (what == null) {
+            this.order = null;
+            return null;
+        }
+        if (!ORDERS.contains(what)) {
+            return "unbekannt (möglich: " + String.join(", ", ORDERS) + ")";
+        }
+        if (what.equals("heim") && !AutopilotSettings.INSTANCE.homeSet) {
+            return "kein Zuhause gesetzt (/autopilot home set)";
+        }
+        this.order = what;
+        this.orderCount = Math.max(1, Math.min(count, 256));
+        return null;
+    }
+
+    @Nullable String currentOrder() {
+        return this.order == null ? null : this.order + (this.order.equals("heim") ? "" : " x" + this.orderCount);
+    }
+
+    /** Works on the order; false when it is done or needs better tools first (the normal plan makes them). */
+    private boolean doOrder(Minecraft mc, LocalPlayer p, Level level, int pick) {
+        String o = this.order;
+        int n = this.orderCount;
+        boolean done = switch (o) {
+            case "holz" -> count(p, PLANKS) + count(p, LOG) * 4 >= n;
+            case "stein" -> count(p, COBBLE) >= n;
+            case "kohle" -> count(p, COAL) >= n;
+            case "eisen" -> count(p, IRON) >= n;
+            case "diamanten" -> count(p, DIAMOND) >= n;
+            case "essen" -> foodCount(p) >= n;
+            default -> { // heim
+                BlockPos home = this.home(level);
+                yield home == null || p.blockPosition().distSqr(home) <= 4 * 4;
+            }
+        };
+        if (done) {
+            this.ap.say(mc, "§aAuftrag erledigt: §f" + this.currentOrder());
+            Autopilot.LOGGER.info("[AUTOPILOT] survival: order done: {}", this.currentOrder());
+            this.order = null;
+            return false;
+        }
+        switch (o) {
+            case "holz" -> {
+                this.say(p, "Auftrag: Holz (" + (count(p, PLANKS) + count(p, LOG) * 4) + "/" + n + ")");
+                BlockPos log = this.nearest(level, p, Kind.LOG);
+                if (log == null && (underground(level, p) || this.inHole(level, p))) {
+                    return this.digUp(mc, p, level);
+                }
+                return log == null ? this.explore(mc, p, level, "sucht Bäume (Auftrag)") : this.mine(mc, p, level, log);
+            }
+            case "stein" -> {
+                if (pick < 1) {
+                    return false;
+                }
+                this.say(p, "Auftrag: Stein (" + count(p, COBBLE) + "/" + n + ")");
+                return this.mineStone(mc, p, level);
+            }
+            case "kohle" -> {
+                if (pick < 1) {
+                    return false;
+                }
+                this.say(p, "Auftrag: Kohle (" + count(p, COAL) + "/" + n + ")");
+                return this.mineOre(mc, p, level, Kind.COAL, 40);
+            }
+            case "eisen" -> {
+                if (pick < 2) {
+                    return false;
+                }
+                int raw = count(p, st -> st.is(Items.RAW_IRON));
+                if (this.smeltingCount > 0 || raw > 0 && count(p, IRON) + raw >= n) {
+                    return this.getIron(mc, p, level, n, R_IRON_BOOTS);
+                }
+                this.say(p, "Auftrag: Eisen (" + (count(p, IRON) + raw) + "/" + n + ")");
+                return this.mineOre(mc, p, level, Kind.IRON, 16);
+            }
+            case "diamanten" -> {
+                if (pick < 3) {
+                    return false;
+                }
+                this.say(p, "Auftrag: Diamanten (" + count(p, DIAMOND) + "/" + n + ")");
+                return this.mineOre(mc, p, level, Kind.DIAMOND, -54);
+            }
+            case "essen" -> {
+                if (this.hunt(mc, p, level)) {
+                    return true;
+                }
+                if (underground(level, p)) {
+                    return this.digUp(mc, p, level);
+                }
+                return this.explore(mc, p, level, "sucht Tiere (Auftrag)");
+            }
+            default -> {
+                this.say(p, "Auftrag: nach Hause");
+                return this.walkNear(mc, p, level, this.home(level));
+            }
+        }
     }
 
     /** Nothing left to do: go home and wait there (where the owner can find it). */
@@ -497,7 +743,7 @@ final class Survival {
         }
         this.say(p, "fällt Bäume für " + label);
         BlockPos log = this.nearest(level, p, Kind.LOG);
-        if (log == null && p.getY() < 50 && !level.canSeeSky(p.blockPosition()) || this.inHole(level, p)) {
+        if (log == null && (underground(level, p) || this.inHole(level, p))) {
             // Underground (or down its own shaft) and trees are up top: build back up first.
             return this.digUp(mc, p, level);
         }
@@ -850,6 +1096,17 @@ final class Survival {
         if (PathFinder.body(level, below) && PathFinder.body(level, below.below())) {
             return false; // a cave right under it: the staircase handles drops
         }
+        if (!PathFinder.body(level, below)) {
+            // What is under the block it would dig away? More than two blocks of air: a cave - it
+            // would fall in. The staircase looks for a safe way down instead.
+            int air = 0;
+            while (air < 3 && PathFinder.body(level, below.below(air + 1))) {
+                air++;
+            }
+            if (air >= 3 || !level.getFluidState(below.below()).isEmpty()) {
+                return false;
+            }
+        }
         this.say(p, "gräbt nach unten (y " + feet.getY() + ")");
         Vec3 center = Vec3.atBottomCenterOf(feet);
         double off = center.subtract(p.position()).horizontalDistance();
@@ -875,7 +1132,12 @@ final class Survival {
             return false;
         }
         // Down to the right depth (straight down where that is safe, else a staircase), then a
-        // straight tunnel (turning away from lava).
+        // straight tunnel (turning away from lava). At least 10 below the ground it came from (a
+        // flat world or a tower is lower than the usual ore height).
+        if (this.surfaceY != Integer.MIN_VALUE) {
+            depth = Math.min(depth, this.surfaceY - 10);
+        }
+        depth = Math.max(depth, level.getMinY() + 5);
         if (p.getY() > depth + 1 && this.digDown(mc, p, level, depth)) {
             return true;
         }
@@ -891,6 +1153,12 @@ final class Survival {
         if (level.getBlockState(pos).isAir()) {
             this.breaking = null;
             return false;
+        }
+        // Half-way through a block (by hand that takes seconds): finish it first, switching resets it.
+        if (this.breaking != null && !pos.equals(this.breaking) && this.tick - this.lastBreakTick <= 2 && this.reach(p, this.breaking)
+                && !PathFinder.body(level, this.breaking) && level.getFluidState(this.breaking).isEmpty()
+                && this.mineTicks > 5 && this.mineTicks < 180 && this.breaking.equals(this.mineTarget)) {
+            pos = this.breaking;
         }
         // The same block for 10 seconds and still there: give up on it, take another one.
         if (!pos.equals(this.mineTarget)) {
@@ -942,8 +1210,11 @@ final class Survival {
             }
         }
         this.breaking = pos;
+        this.lastBreakTick = this.tick;
         return true;
     }
+
+    private int lastBreakTick = -1000;
 
     private int blockedTicks;
     private int wetTicks;
@@ -991,7 +1262,7 @@ final class Survival {
             return this.explore(mc, p, level, "sucht trockenen Boden zum Graben");
         }
         BlockPos feet = BlockPos.containing(p.getX(), p.getY() + 0.2, p.getZ());
-        if (down && this.stairStep == null && feet.getY() >= 54 && this.dryTicks < 300
+        if (down && this.stairStep == null && !underground(level, p) && this.dryTicks < 300
                 && feet.getY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, feet.getX() + 3, feet.getZ()) - 1) {
             // (Only up on the surface: once it has dug in, it keeps digging where it is.)
             // Starting a way down: not next to the sea or a lake (the stairs would flood and digging in
@@ -1017,7 +1288,7 @@ final class Survival {
                 return this.explore(mc, p, level, "geht vom Wasser weg, um zu graben");
             }
         }
-        if (feet.getY() < 54) {
+        if (underground(level, p)) {
             this.dryTicks = 0; // (deep down: a new try next time it starts a staircase up top)
         }
         // The step must be right in front (and one lower going down); after a fall or a push it is
@@ -1055,26 +1326,30 @@ final class Survival {
             }
         }
         this.digTurns = 0;
-        if (down && !PathFinder.solidGround(level, step.below()) && !PathFinder.body(level, step.below())) {
-            // A hole or cave under the step: fine, the walk drops into it.
-            this.stairStep = null;
-        }
-        this.say(p, down ? "gräbt eine Treppe nach unten (y " + feet.getY() + ")" : "gräbt einen Tunnel");
-        for (BlockPos b : clear) {
-            if (!PathFinder.body(level, b)) {
-                return this.mine(mc, p, level, b);
-            }
-        }
-        if (this.stairStep != null && down && !PathFinder.solidGround(level, step.below())) {
-            // Would fall more than one block: make sure it is not a deep drop.
+        if (!PathFinder.solidGround(level, step.below())) {
+            // Nothing to stand on behind the wall: how deep does it go? A cave or a cliff - the other
+            // way (before digging into it, not after).
             int depth = 0;
             while (depth < 5 && PathFinder.body(level, step.below(depth + 1))) {
                 depth++;
             }
-            if (depth >= 4) {
+            if (depth >= (down ? 2 : 1) && !level.getFluidState(step.below()).is(FluidTags.WATER)) {
                 this.digDir = this.digDir.getClockWise();
                 this.stairStep = null;
+                if (++this.digTurns >= 4) {
+                    this.digTurns = 0;
+                    this.dryWalk = 100;
+                }
                 return true;
+            }
+        }
+        this.say(p, down ? "gräbt eine Treppe nach unten (y " + feet.getY() + ")" : "gräbt einen Tunnel");
+        // Only the blocks the body passes through: going down also the one above the step (the head
+        // passes there before dropping onto it); never the floor of the step.
+        BlockPos[] body = down ? new BlockPos[]{step.above(2), step.above(), step} : new BlockPos[]{step.above(), step};
+        for (BlockPos b : body) {
+            if (!PathFinder.body(level, b)) {
+                return this.mine(mc, p, level, b);
             }
         }
         Vec3 c = Vec3.atBottomCenterOf(step);
@@ -1144,6 +1419,17 @@ final class Survival {
         }
         int index = this.indexOf(p, st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE) || st.is(Items.DIRT) || st.is(Items.NETHERRACK));
         if (index < 0) {
+            if (pickaxeTier(p) > 0 && p.onGround()) {
+                // Nothing to build with: break a stone out of the wall next to it (gives cobble).
+                for (Direction d : Direction.Plane.HORIZONTAL) {
+                    BlockPos wall = feet.relative(d);
+                    if (kindOf(level.getBlockState(wall)) == Kind.STONE && !PathFinder.nearLava(level, wall)
+                            && level.getFluidState(wall.above()).isEmpty()) {
+                        this.pillarBase = null;
+                        return this.mine(mc, p, level, wall);
+                    }
+                }
+            }
             return this.explore(mc, p, level, "sucht einen Weg nach oben (keine Blöcke)");
         }
         int slot = this.ap.toHotbar(mc, p, index);
@@ -1463,7 +1749,7 @@ final class Survival {
     private boolean explore(Minecraft mc, LocalPlayer p, Level level, String what) {
         this.say(p, what);
         if (Float.isNaN(this.exploreYaw) || --this.exploreTicks <= 0 || this.stillTicks > 60) {
-            this.exploreYaw = Float.isNaN(this.exploreYaw) ? p.getYRot() : this.exploreYaw + 60.0F + p.getRandom().nextFloat() * 240.0F;
+            this.exploreYaw = this.freshYaw(p, level);
             this.exploreTicks = 400;
             this.stillTicks = 0;
         }
@@ -1482,7 +1768,8 @@ final class Survival {
             if (this.path == null || this.path.isEmpty()) {
                 this.exploreTicks = 0;
                 this.path = null;
-                if (++this.blindTicks > 100 && !this.climbing && p.getBlockY() < level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ()) - 1) {
+                if ((++this.blindTicks > 100 || this.blindTicks > 40 && underground(level, p)) && !this.climbing
+                        && p.getBlockY() < level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getBlockX(), p.getBlockZ()) - 1) {
                     // Still nowhere to go and under the surface: build up and out.
                     this.climbing = true;
                     try {
@@ -1490,6 +1777,16 @@ final class Survival {
                     } finally {
                         this.climbing = false;
                     }
+                }
+                // No path: straight ahead (swimming across water), but never off a cliff or into lava.
+                BlockPos ahead = BlockPos.containing(p.position().add(dir.scale(1.2)));
+                int drop = 0;
+                while (drop < 4 && PathFinder.body(level, ahead.below(drop + 1)) && level.getFluidState(ahead.below(drop + 1)).isEmpty()) {
+                    drop++;
+                }
+                if (p.onGround() && (drop >= 4 || PathFinder.nearLava(level, ahead) || PathFinder.nearLava(level, ahead.below()))) {
+                    this.exploreTicks = 0; // another direction next tick
+                    return true;
                 }
                 this.ap.face(p, dir, 30.0F);
                 this.ap.kForward = true;
