@@ -2121,7 +2121,12 @@ final class Gatherer {
 
     private Step mine(Ore ore, int depth) {
         if (ore == Ore.LOG && this.nearest(ore) == null && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD
-                && this.underground()) {
+                && (this.underground() || this.bot.tickCount < this.climbHold)) {
+            // (Held for a few seconds: at the edge of an overhang "under ground" flips with every
+            // step, and switching between climbing and exploring each tick gets it nowhere.)
+            if (this.underground()) {
+                this.climbHold = this.bot.tickCount + 100;
+            }
             return new ClimbUp("Holz gibt es oben"); // (no trees in caves)
         }
         if (this.nearest(ore) == null && !this.bot.isInWater() && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD) {
@@ -2546,6 +2551,8 @@ final class Gatherer {
     }
 
     /** Rock overhead (in a cave, its own staircase): the sky is not in sight. */
+    private int climbHold;
+
     private boolean underground() {
         // (Deep down, not just under an overhang or a tree: from there a player simply walks out.)
         BlockPos head = BlockPos.containing(this.bot.getEyePosition());
