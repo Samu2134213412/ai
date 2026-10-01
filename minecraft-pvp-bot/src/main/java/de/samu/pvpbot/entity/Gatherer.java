@@ -3061,6 +3061,7 @@ final class Gatherer {
 
     /** Rock overhead (in a cave, its own staircase): the sky is not in sight. */
     private int climbHold;
+    private int blazeEarUntil;
 
     private boolean underground() {
         // (Deep down, not just under an overhang or a tree: from there a player simply walks out.)
@@ -3723,13 +3724,15 @@ final class Gatherer {
         boolean wantRods = this.kit().count(Res.BLAZE_ROD.match) * 2 + this.kit().count(Res.BLAZE_POWDER.match)
                 < EYES_WANTED - this.kit().count(Res.EYE.match);
         BlockPos goal = wantRods && this.bot.tickCount > this.spawnerRetryTick ? this.nearest(Ore.SPAWNER) : null;
-        if (goal == null && wantRods) {
+        boolean heardGoal = false;
+        if (goal == null && wantRods && this.bot.tickCount > this.blazeEarUntil) {
             // A blaze nearby can be heard (like a player hears them breathing): go that way.
             var blaze = this.level().getNearestEntity(net.minecraft.world.entity.monster.Blaze.class,
                     net.minecraft.world.entity.ai.targeting.TargetingConditions.forNonCombat().ignoreLineOfSight(), this.bot,
                     this.bot.getX(), this.bot.getY(), this.bot.getZ(), this.bot.getBoundingBox().inflate(24.0));
             if (blaze != null) {
                 goal = blaze.blockPosition().below();
+                heardGoal = true;
             }
         }
         if (goal == null && wantRods) {
@@ -3836,6 +3839,10 @@ final class Gatherer {
                 if (level.getBlockState(goal).is(Blocks.SPAWNER)) {
                     // (A spawner stays worth it: try again in a minute, from wherever it is then.)
                     this.spawnerRetryTick = this.bot.tickCount + 1200;
+                } else if (heardGoal) {
+                    // A blaze it only hears, behind walls with no way to it: not that one for a minute,
+                    // on through the fortress instead (it kept going for the same one).
+                    this.blazeEarUntil = this.bot.tickCount + 1200;
                 } else {
                     this.blacklist.add(goal);
                     this.fortressVisited.add(cellKey(goal));
