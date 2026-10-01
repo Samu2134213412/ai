@@ -1606,7 +1606,7 @@ public class PvpBotEntity extends PathfinderMob {
         } else {
             this.setSprinting(false);
             this.getNavigation().stop();
-            this.getMoveControl().strafe(-0.2F, this.strafeDir * 0.5F);
+            this.safeStrafe(-0.2F, 0.5F);
         }
 
         if (this.meleeCooldown == 0 && sees) {
@@ -1650,6 +1650,49 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     /** Bow/crossbow: keep a comfortable distance, draw fully and shoot with a bit of lead. */
+    /**
+     * Backing off and circling round, but never off a ledge or into lava (a fortress bridge): look
+     * where the step would go first, like a player; the other way round, or stand still.
+     */
+    private void safeStrafe(float forward, float side) {
+        float[][] tries = {{forward, side * this.strafeDir}, {forward, -side * this.strafeDir}, {0.0F, side * this.strafeDir},
+                {0.0F, -side * this.strafeDir}};
+        for (float[] t : tries) {
+            if (this.safeMove(t[0], t[1])) {
+                if (t[1] != 0.0F && Math.signum(t[1]) != Math.signum(side * this.strafeDir)) {
+                    this.strafeDir = -this.strafeDir;
+                }
+                this.getMoveControl().strafe(t[0], t[1]);
+                return;
+            }
+        }
+        this.getMoveControl().strafe(0.0F, 0.0F);
+    }
+
+    private boolean safeMove(float forward, float side) {
+        double yaw = Math.toRadians(this.getYRot());
+        double x = side * Math.cos(yaw) - forward * Math.sin(yaw);
+        double z = forward * Math.cos(yaw) + side * Math.sin(yaw);
+        double len = Math.sqrt(x * x + z * z);
+        if (len < 1.0E-3) {
+            return true;
+        }
+        Level level = this.level();
+        for (double d : new double[]{0.7, 1.4}) {
+            BlockPos col = BlockPos.containing(this.getX() + x / len * d, this.getY() - 0.5, this.getZ() + z / len * d);
+            int depth = 0;
+            while (depth < 4 && level.getBlockState(col.below(depth)).getCollisionShape(level, col.below(depth)).isEmpty()
+                    && level.getFluidState(col.below(depth)).isEmpty()) {
+                depth++;
+            }
+            if (depth >= 3 || level.getFluidState(col.below(depth)).is(net.minecraft.tags.FluidTags.LAVA)
+                    || level.getFluidState(col.above()).is(net.minecraft.tags.FluidTags.LAVA)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void tickBow(ServerLevel level, LivingEntity target, double dist, boolean sees) {
         ItemStack bow = this.bow();
         if (bow.isEmpty() || !this.hasArrows()) {
@@ -1661,13 +1704,13 @@ public class PvpBotEntity extends PathfinderMob {
         if (dist < 7.0) {
             this.setSprinting(true);
             this.getNavigation().stop();
-            this.getMoveControl().strafe(-0.8F, this.strafeDir * 0.4F);
+            this.safeStrafe(-0.8F, 0.4F);
         } else if (dist > 24.0 || !sees) {
             this.getNavigation().moveTo(target, 1.1);
         } else {
             this.setSprinting(false);
             this.getNavigation().stop();
-            this.getMoveControl().strafe(0.0F, this.strafeDir * 0.6F);
+            this.safeStrafe(0.0F, 0.6F);
         }
         if (!this.isUsingItem()) {
             this.startUsingItem(InteractionHand.MAIN_HAND);
