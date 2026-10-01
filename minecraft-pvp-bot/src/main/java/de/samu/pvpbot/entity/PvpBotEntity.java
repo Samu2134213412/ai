@@ -372,6 +372,13 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     @Override
+    public int getMaxFallDistance() {
+        // Like a player: jumping down a 4-block wall costs half a heart - fine while healthy
+        // (a lake rim, a ledge; with 3 it gave up on trees right below it).
+        return this.getHealth() > 10.0F ? 4 : 3;
+    }
+
+    @Override
     public boolean canUsePortal(boolean allowPassengers) {
         return super.canUsePortal(allowPassengers) && this.gatherer.mayUsePortal();
     }
