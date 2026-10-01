@@ -716,7 +716,9 @@ final class Gatherer {
             }
             if (picks == 1 && pick.isDamageableItem() && pick.getDamageValue() > pick.getMaxDamage() * 0.75) {
                 // Worn: the next one now, while there is still a pickaxe to get the stuff with.
-                Item spare = pick.is(Items.DIAMOND_PICKAXE) || pick.is(Items.NETHERITE_PICKAXE) ? Items.IRON_PICKAXE
+                // (In the nether there is no iron ore: a stone pickaxe from cobble or blackstone.)
+                Item spare = this.inNether() ? Items.STONE_PICKAXE
+                        : pick.is(Items.DIAMOND_PICKAXE) || pick.is(Items.NETHERITE_PICKAXE) ? Items.IRON_PICKAXE
                         : pick.is(Items.GOLDEN_PICKAXE) ? Items.STONE_PICKAXE : pick.getItem();
                 needs.add(0, new Need(spare, "eine Ersatz-Spitzhacke")); // (first: without one nothing else works)
             }
@@ -2387,6 +2389,9 @@ final class Gatherer {
         if (this.reflexActive) {
             return;
         }
+        if (this.inNether() && this.bot.getTarget() != null && this.bot.onGround() && this.bot.tickCount % 5 == 0 && this.railEdges(level)) {
+            return; // fighting on a bridge: a block at the open edge first, so a hit cannot knock it down
+        }
         if (this.inNether() && this.speedrun && this.kit().count(BRIDGE_BLOCK) < 24 && this.bot.onGround()
                 && this.mineNearby(level, Blocks.NETHERRACK, Blocks.BLACKSTONE, Blocks.BASALT, Blocks.SOUL_SOIL)) {
             return; // low on blocks in the nether (bridges over lava, a way out of it): a few first
@@ -3081,6 +3086,34 @@ final class Gatherer {
             this.bot.onKitChanged();
         }
         return true;
+    }
+
+    /**
+     * At the edge of a fortress bridge (a drop or lava next to its feet): a block there, like a
+     * player who builds a rail before fighting blazes. Returns true when it placed one.
+     */
+    private boolean railEdges(ServerLevel level) {
+        if (this.kit().count(BRIDGE_BLOCK) == 0) {
+            return false;
+        }
+        BlockPos feet = this.bot.blockPosition();
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos side = feet.relative(d);
+            if (!level.getBlockState(side).canBeReplaced() || !level.getBlockState(side.above()).getCollisionShape(level, side.above()).isEmpty()
+                    && !level.getBlockState(side.above()).canBeReplaced()) {
+                continue;
+            }
+            int depth = 0;
+            while (depth < 4 && level.getBlockState(side.below(depth + 1)).getCollisionShape(level, side.below(depth + 1)).isEmpty()
+                    && level.getFluidState(side.below(depth + 1)).isEmpty()) {
+                depth++;
+            }
+            boolean lava = level.getFluidState(side.below(depth + 1)).is(net.minecraft.tags.FluidTags.LAVA);
+            if (depth >= 3 || lava) {
+                return this.bridge(level, side, false);
+            }
+        }
+        return false;
     }
 
     private void doFillWater(ServerLevel level) {
