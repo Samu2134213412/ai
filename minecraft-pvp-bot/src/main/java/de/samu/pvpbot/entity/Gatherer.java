@@ -2301,10 +2301,11 @@ final class Gatherer {
     private @Nullable Step barterStep() {
         BotKit kit = this.kit();
         if (kit.count(Res.GOLD_BLOCK.match) > 0 && kit.count(Res.GOLD_INGOT.match) < 32) {
-            return new Craft(GOLD_FROM_BLOCK);
+            return this.craftAtTable(GOLD_FROM_BLOCK);
         }
         if (kit.count(Res.GOLD_NUGGET.match) >= 9) {
-            return new Craft(RECIPES.get(Items.GOLD_INGOT));
+            // (9 nuggets are a 3x3 recipe: at a crafting table, set up first if there is none)
+            return this.resolveItem(Items.GOLD_INGOT, 0);
         }
         int ingots = kit.count(Res.GOLD_INGOT.match);
         boolean boots = kit.count(st -> st.is(Items.GOLDEN_BOOTS)) > 0;
@@ -2327,6 +2328,17 @@ final class Gatherer {
             }
         }
         return null;
+    }
+
+    /** A recipe that needs a crafting table: set one up first (or make one) if there is none here. */
+    private @Nullable Step craftAtTable(Recipe recipe) {
+        if (needsTable(recipe) && this.station(Blocks.CRAFTING_TABLE) == null) {
+            if (this.kit().count(st -> st.is(Items.CRAFTING_TABLE)) > 0) {
+                return new PlaceStation(Blocks.CRAFTING_TABLE);
+            }
+            return this.resolveItem(Items.CRAFTING_TABLE, 1);
+        }
+        return new Craft(recipe);
     }
 
     private static final Recipe GOLD_FROM_BLOCK = new Recipe(Items.GOLD_INGOT, 9, List.of(new Ingredient(Res.GOLD_BLOCK, 1)));
@@ -2542,7 +2554,7 @@ final class Gatherer {
             case RAW_MEAT -> new Hunt();
             case STRING -> this.visibleMob(EntityTypes.SPIDER) != null ? new HuntMob("Spinnen (Faden)", EntityTypes.SPIDER) : new Explore("Spinnen (Faden)");
             case FEATHER -> this.visibleMob(EntityTypes.CHICKEN) != null ? new HuntMob("Hühner (Federn)", EntityTypes.CHICKEN) : new Explore("Hühner (Federn)");
-            case GOLD_INGOT -> this.kit().count(Res.GOLD_BLOCK.match) > 0 ? new Craft(GOLD_FROM_BLOCK) : this.resolveItem(Items.GOLD_INGOT, depth);
+            case GOLD_INGOT -> this.kit().count(Res.GOLD_BLOCK.match) > 0 ? this.craftAtTable(GOLD_FROM_BLOCK) : this.resolveItem(Items.GOLD_INGOT, depth);
             case GOLD_NUGGET -> this.nearest(Ore.NETHER_GOLD) != null ? new Mine(Ore.NETHER_GOLD) : null;
             case GOLD_BLOCK -> this.nearest(Ore.GOLD_BLOCK) != null ? new Mine(Ore.GOLD_BLOCK) : null;
             case BLAZE_ROD, BLAZE_POWDER, PEARL, EYE -> null;
