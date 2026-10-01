@@ -5366,8 +5366,8 @@ final class Gatherer {
                 this.known.clear();
                 this.known.putAll(this.scanning);
                 for (Map.Entry<Ore, List<BlockPos>> e : old.entrySet()) {
-                    if (e.getKey() == Ore.STONE || e.getKey() == Ore.LOG) {
-                        continue;
+                    if (e.getKey() == Ore.STONE) {
+                        continue; // (stone is everywhere; trees it saw across a lake are worth remembering)
                     }
                     List<BlockPos> list = this.known.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
                     for (BlockPos p : e.getValue()) {
