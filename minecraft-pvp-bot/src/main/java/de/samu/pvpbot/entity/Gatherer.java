@@ -1981,12 +1981,38 @@ final class Gatherer {
                 return;
             }
             this.speedPortalWalk = 0;
-            Direction facing = this.bot.getDirection();
-            this.portalBase = this.bot.blockPosition().relative(facing, 2).relative(facing.getClockWise(), -1);
-            this.portalAlong = facing.getClockWise();
+            // A building site: level, dry floor for the whole frame, room above, and a dry spot in
+            // front to stand on - not the edge of the pool (it fell in and could not get back up).
+            BlockPos site = null;
+            Direction along = Direction.NORTH;
+            BlockPos feet = this.bot.blockPosition();
+            double bestSite = Double.MAX_VALUE;
+            for (BlockPos b : BlockPos.betweenClosed(feet.offset(-7, -2, -7), feet.offset(7, 2, 7))) {
+                for (Direction a : new Direction[]{Direction.NORTH, Direction.EAST}) {
+                    if (this.portalSiteOk(level, b, a)) {
+                        double d = b.distSqr(feet) + (pool == null ? 0.0 : Math.max(0.0, b.distSqr(pool) - 16.0));
+                        if (d < bestSite) {
+                            bestSite = d;
+                            site = b.immutable();
+                            along = a;
+                        }
+                    }
+                }
+            }
+            if (site == null) {
+                // Nowhere to build here: a bit further along (the next lava it sees decides).
+                if (pool != null) {
+                    this.blacklist.add(pool);
+                }
+                this.giveUpSpeedPortal("kein ebener, trockener Platz am Lavasee");
+                return;
+            }
+            this.portalBase = site;
+            this.portalAlong = along;
             this.portalProgress = 0;
             if (PvpBotEntity.DEBUG) {
-                PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal at {} along {}", this.portalBase.toShortString(), this.portalAlong);
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal at {} along {} (bot at {})", this.portalBase.toShortString(),
+                        this.portalAlong, feet.toShortString());
             }
         }
         List<BlockPos> frame = new ArrayList<>();
@@ -2000,6 +2026,9 @@ final class Gatherer {
         }
         // (Away fetching lava is fine; with lava in the bucket, or for the corners, back to the frame.)
         boolean atFrameWork = !cornersDone || this.kit().count(st -> st.is(Items.LAVA_BUCKET)) > 0;
+        if (atFrameWork && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(middle)) <= 4.5) {
+            this.speedPortalWalk = 0;
+        }
         if (atFrameWork && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(middle)) > 4.5) {
             // (Back to the frame, after fetching lava.)
             this.bot.getNavigation().moveTo(middle.getX() + 0.5, this.portalBase.getY(), middle.getZ() + 0.5, 1.0);
@@ -2040,8 +2069,15 @@ final class Gatherer {
             }
             boolean lavaThere = level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA) && level.getFluidState(p).isSource();
             if (!lavaThere && kit.count(st -> st.is(Items.LAVA_BUCKET)) == 0) {
+                if (kit.count(st -> st.is(Items.BUCKET)) == 0) {
+                    this.giveUpSpeedPortal("kein leerer Eimer für Lava");
+                    return;
+                }
                 this.fetchLava(level, frame, inside);
                 return;
+            }
+            if (PvpBotEntity.DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: speed portal casts {} ({})", p.toShortString(), lavaThere ? "lava there" : "bucket");
             }
             this.bot.lookAtBlock(p);
             this.bot.swing(InteractionHand.MAIN_HAND, this.bot.getMainHandItem().getAttackAnimation());
@@ -2068,6 +2104,31 @@ final class Gatherer {
     }
 
     private int speedPortalWalk;
+
+    /** A 4x5 portal fits here: solid dry floor under the frame, nothing but air in it, a dry place to stand in front. */
+    private boolean portalSiteOk(ServerLevel level, BlockPos base, Direction along) {
+        Direction front = along.getClockWise();
+        for (int i = 0; i < 4; i++) {
+            BlockPos col = base.relative(along, i);
+            BlockPos floor = col.below();
+            if (level.getBlockState(floor).getCollisionShape(level, floor).isEmpty() || !level.getFluidState(floor).isEmpty()
+                    || this.nearLava(level, floor)) {
+                return false;
+            }
+            for (int j = 0; j < 5; j++) {
+                BlockPos p = col.above(j);
+                if (!level.getBlockState(p).isAir() || this.nearLava(level, p)) {
+                    return false;
+                }
+            }
+            BlockPos stand = col.relative(front, 2);
+            if (i == 1 && (level.getBlockState(stand.below()).getCollisionShape(level, stand.below()).isEmpty()
+                    || !level.getBlockState(stand).isAir() || !level.getBlockState(stand.above()).isAir())) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     /** Fills the empty bucket at the nearest lava source (not one in the frame). */
     private void fetchLava(ServerLevel level, List<BlockPos> frame, List<BlockPos> inside) {
