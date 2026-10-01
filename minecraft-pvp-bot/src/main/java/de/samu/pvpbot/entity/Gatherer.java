@@ -2180,8 +2180,8 @@ final class Gatherer {
             return;
         }
         if (this.inNether() && this.speedrun && this.kit().count(BRIDGE_BLOCK) < 24 && this.bot.onGround()
-                && this.mineNearby(level, Blocks.NETHERRACK)) {
-            return; // low on blocks in the nether (bridges over lava): a few netherrack first
+                && this.mineNearby(level, Blocks.NETHERRACK, Blocks.BLACKSTONE, Blocks.BASALT, Blocks.SOUL_SOIL)) {
+            return; // low on blocks in the nether (bridges over lava, a way out of it): a few first
         }
         if (this.bot.tickCount % 40 == 0 && !this.kit().hasRoom() && this.kit().count(JUNK) > 192) {
             // Inventory full of rubble: throw a stack away, like a player makes room.
@@ -2827,7 +2827,8 @@ final class Gatherer {
     }
 
     private static final Predicate<ItemStack> BRIDGE_BLOCK = st -> st.is(Items.COBBLESTONE) || st.is(Items.COBBLED_DEEPSLATE)
-            || st.is(Items.NETHERRACK) || st.is(Items.DIRT) || st.is(Items.BLACKSTONE) || st.is(Items.END_STONE);
+            || st.is(Items.NETHERRACK) || st.is(Items.DIRT) || st.is(Items.BLACKSTONE) || st.is(Items.END_STONE)
+            || st.is(Items.BASALT) || st.is(Items.SOUL_SOIL);
 
     /** Puts a block (cobblestone, netherrack, dirt) into the gap in front of its feet. */
     private boolean bridge(ServerLevel level, BlockPos gap) {
@@ -3403,7 +3404,7 @@ final class Gatherer {
     }
 
     /** Mines a block of this kind it can see within reach (not the floor it stands on). */
-    private boolean mineNearby(ServerLevel level, net.minecraft.world.level.block.Block kind) {
+    private boolean mineNearby(ServerLevel level, net.minecraft.world.level.block.Block... kinds) {
         if (++this.netherrackTicks > 1200) {
             if (this.netherrackTicks > 2400) {
                 this.netherrackTicks = 0; // (a while exploring, then try again)
@@ -3415,7 +3416,12 @@ final class Gatherer {
         double bestDist = Double.MAX_VALUE;
         for (BlockPos p : BlockPos.betweenClosed(feet.offset(-3, -1, -3), feet.offset(3, 2, 3))) {
             // (The floor around is fine, just not the block it stands on.)
-            if (p.equals(feet.below()) || !level.getBlockState(p).is(kind) || this.nearLava(level, p) || !this.seesBlock(level, p)) {
+            BlockState state = level.getBlockState(p);
+            boolean wanted = false;
+            for (net.minecraft.world.level.block.Block kind : kinds) {
+                wanted |= state.is(kind);
+            }
+            if (p.equals(feet.below()) || !wanted || this.nearLava(level, p) || !this.seesBlock(level, p)) {
                 continue;
             }
             double d = this.bot.getEyePosition().distanceToSqr(Vec3.atCenterOf(p));
@@ -3686,14 +3692,16 @@ final class Gatherer {
             if (level.getFluidState(p).isEmpty() && level.getFluidState(p.above()).isEmpty()
                     && level.getBlockState(p).getCollisionShape(level, p).isEmpty() && level.getBlockState(p.above()).getCollisionShape(level, p.above()).isEmpty()
                     && !level.getBlockState(p.below()).getCollisionShape(level, p.below()).isEmpty() && level.getFluidState(p.below()).isEmpty()) {
-                double d = p.distSqr(feet);
+                // (Out of lava it can only climb one block: a shore higher up is a wall, not a way out.)
+                double d = p.distSqr(feet) + (p.getY() > feet.getY() + 1 ? 400.0 : 0.0);
                 if (d < best) {
                     best = d;
                     shore = p.immutable();
                 }
             }
         }
-        BlockPos out = shore != null && (this.lastSafe == null || best < this.lastSafe.distSqr(feet)) ? shore : this.lastSafe;
+        boolean safeReachable = this.lastSafe != null && this.lastSafe.getY() <= feet.getY() + 1;
+        BlockPos out = shore != null && (this.lastSafe == null || !safeReachable || best < this.lastSafe.distSqr(feet)) ? shore : this.lastSafe;
         if (out != null) {
             this.bot.getMoveControl().setWantedPosition(out.getX() + 0.5, out.getY(), out.getZ() + 0.5, 1.3);
         }
@@ -4521,12 +4529,15 @@ final class Gatherer {
             this.mineTargetTicks = 0;
             // Diamonds are worth a longer way (digging over to them, bridging a cave).
             double far = Math.sqrt(this.bot.blockPosition().distSqr(target));
-            this.mineBudget = ore == Ore.DIAMOND ? 600 + (int) (far * 80.0) : 600;
+            this.mineBudget = ore == Ore.DIAMOND ? 600 + (int) (far * 80.0) : ore == Ore.OBSIDIAN ? 1200 : 600;
         }
         if (++this.mineTargetTicks > this.mineBudget) {
             // 30 seconds and still not mined (out of reach, behind water ...): take another one.
             if (PvpBotEntity.DEBUG) {
-                PvpBotMod.LOGGER.info("[SELFTEST]   gather: gives up on {} at {}", ore, target.toShortString());
+                PvpBotMod.LOGGER.info("[SELFTEST]   gather: gives up on {} at {} - from {} dist {} sees {} hand {} lava near {} nav {}", ore,
+                        target.toShortString(), this.bot.blockPosition().toShortString(),
+                        String.format("%.1f", this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(target))), this.seesBlock(level, target),
+                        this.bot.getMainHandItem().getItem(), this.nearLava(level, target), this.bot.getNavigation().isDone() ? "done" : "moving");
             }
             this.blacklist.add(target);
             this.mineTarget = null;
