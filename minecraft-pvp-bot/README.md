@@ -80,7 +80,7 @@ Neues lernt, schreibt er es in den Chat.
    starte ihn, wähle **Minecraft 26.3** aus und klicke auf *Installieren*.
 2. **Fabric API** herunterladen (Version für 26.3): <https://modrinth.com/mod/fabric-api>
 3. **Simple Voice Chat** herunterladen (Fabric, Version für 26.3): <https://modrinth.com/plugin/simple-voice-chat>
-   – **Pflicht** für den PvP-Bot (Server *und* alle Spieler).
+   – **Pflicht** für den PvP-Bot (Server *und* alle Spieler) und für den Autopilot.
 4. Die Mod(s) herunterladen (siehe unten) – du kannst eine oder beide nehmen.
 5. Lege die `.jar`-Dateien in deinen `mods`-Ordner:
    - Windows: `%appdata%\.minecraft\mods` (in die Adresszeile vom Explorer eingeben)
@@ -173,6 +173,20 @@ Netherportal bauen und anzünden. Die nächsten Etappen (Nether, Stronghold, Dra
 | `/autopilot trick <name>` | Nächster Angriff (wie beim Bot) |
 | **N** | Autopilot-Menü mit allen Einstellungen |
 | `/autopilot brain` / `brain reset` | Gelerntes anzeigen / löschen |
+| `/autopilot auftrag <holz\|stein\|kohle\|eisen\|diamanten\|essen\|heim> [anzahl]` | Sammelauftrag (schaltet volle Kontrolle ein); `auftrag stop` bricht ab |
+| `@auto <text>` im Chat | Mit der KI des Autopiloten reden (bleibt auf deinem PC, geht nicht in den Server-Chat) |
+| `/autopilot ki key <key>` | Deinen Anthropic-API-Key setzen (nur lokal in `config/pvpbot-autopilot-ai.json`, wird nie angezeigt) |
+| `/autopilot ki` / `ki aus` / `ki frag <text>` | KI-Status / Key löschen / Frage ohne Chat |
+
+**KI-Chat beim Autopilot:** Die KI bekommt nur, was du auch weißt (Leben, Hunger, Ort, Inventar, was der
+Autopilot gerade tut, welche Spieler du siehst) und setzt mit Werkzeugen die Ziele: Modus (voll/Monster/Spieler/aus),
+Sammelauftrag, einen sichtbaren Spieler angreifen, Zuhause setzen/heimgehen. **Voice Chat:** Redet ein Spieler in
+deiner Nähe (Simple Voice Chat), dreht sich der Autopilot zu ihm, wenn er gerade nichts zu tun hat.
+
+**Nie lange festhängen:** Kommt der Autopilot in voller Kontrolle 3 Minuten lang nicht weiter (keine 6 Blöcke,
+nichts Neues im Inventar), lässt er das Ziel fallen und macht sich frei – unter Tage nach oben raus, sonst in
+Gegend, in der er noch nicht war. Er gräbt einen angefangenen Block fertig, lässt Erz unter Wasser oder neben Lava
+liegen, gräbt keinen Boden über einer Höhle weg und nimmt Holzvorrat und eine Ersatz-Spitzhacke mit.
 
 Die Tasten lassen sich in den Minecraft-Einstellungen unter *Steuerung → PvP-Autopilot* ändern.
 Der Autopilot pausiert, sobald ein Menü oder der Chat offen ist, und du kannst jederzeit mit **K**
