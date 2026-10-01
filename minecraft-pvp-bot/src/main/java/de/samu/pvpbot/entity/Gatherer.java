@@ -4753,6 +4753,10 @@ final class Gatherer {
         this.crystalShots.put(crystal.getUUID(), 99);
         this.crystalTarget = null;
         this.crystalNoLos = 0;
+        if (this.poleSpot != null) {
+            // That side did not work: next time from another one (it kept building the same pole).
+            this.badPoleSpots.add(this.poleSpot);
+        }
         this.poleSpot = null;
         this.poleDone = true;
     }
