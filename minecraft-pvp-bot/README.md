@@ -183,6 +183,12 @@ Autopilot gerade tut, welche Spieler du siehst) und setzt mit Werkzeugen die Zie
 Sammelauftrag, einen sichtbaren Spieler angreifen, Zuhause setzen/heimgehen. **Voice Chat:** Redet ein Spieler in
 deiner Nähe (Simple Voice Chat), dreht sich der Autopilot zu ihm, wenn er gerade nichts zu tun hat.
 
+**Kein Kampf, den er nicht gewinnen kann (Bot und Autopilot):** Vor jedem Kampf schätzen beide wie ein Spieler
+ab, ob sie gewinnen: Leben × Rüstung × Waffe – nur aus dem, was man sieht (die Rüstung und Waffe des Gegners, bei
+Monstern auch die, die direkt daneben stehen). Ist der Gegner zu stark oder die eigene Ausrüstung zu schlecht, greifen
+sie von sich aus nicht an und weichen aus; kippt ein Kampf (unter 45 % der gegnerischen Stärke), brechen sie ab und
+ziehen sich zurück. Ziele, die du selbst befiehlst (Befehl, KI, Duell), werden trotzdem angegriffen.
+
 **Nie lange festhängen:** Kommt der Autopilot in voller Kontrolle 3 Minuten lang nicht weiter (keine 6 Blöcke,
 nichts Neues im Inventar), lässt er das Ziel fallen und macht sich frei – unter Tage nach oben raus, sonst in
 Gegend, in der er noch nicht war. Er gräbt einen angefangenen Block fertig, lässt Erz unter Wasser oder neben Lava

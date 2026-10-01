@@ -139,7 +139,7 @@ final class AutopilotParcours {
             });
             int bz = base[2] + 64;
             System.out.println(TAG + "Boden y=" + base[1] + ", Kurse bei z=" + bz);
-            run(sp, "forceload add " + (base[0] - 110) + " " + (bz - 20) + " " + (base[0] + 145) + " " + (bz + 20));
+            run(sp, "forceload add " + (base[0] - 110) + " " + (bz - 20) + " " + (base[0] + 180) + " " + (bz + 20));
             ctx.waitTicks(40);
             for (Course c : COURSES) {
                 List<String> cmds = new ArrayList<>();
@@ -156,11 +156,16 @@ final class AutopilotParcours {
                 }
                 results.add(result + " - " + c.name());
             }
+            String odds = runOverpowered(ctx, sp, base[0] + 160, base[1], bz);
+            if (odds.startsWith("PASS")) {
+                passed++;
+            }
+            results.add(odds + " - Parcours 8: Uebermacht (nicht angreifen)");
             ctx.runOnClient(mc -> Autopilot.INSTANCE.setFullControl(mc, false));
         }
         System.out.println(TAG + "==================== ERGEBNIS");
         results.forEach(r -> System.out.println(TAG + r));
-        System.out.println(TAG + passed + "/" + COURSES.size() + " bestanden");
+        System.out.println(TAG + passed + "/" + (COURSES.size() + 1) + " bestanden");
         System.out.println("[AUTOPILOT-TEST] DONE");
     }
 
@@ -226,6 +231,62 @@ final class AutopilotParcours {
         boolean ok = st[3] == 1 && st[0] == 0 && st[2] == 0 && (!c.noFalls() || st[1] == 0);
         String result = (ok ? "PASS" : "FAIL") + " nach " + t / 20 + "s (Ziel " + (st[3] == 1 ? "erreicht" : "NICHT erreicht")
                 + ", Lava/Feuer " + st[0] + ", Stuerze " + st[1] + ", Tode " + st[2] + ", Sicherheitsnetz " + stucks[0] + ")";
+        System.out.println(TAG + result + " | " + info[0]);
+        return result;
+    }
+
+    /**
+     * A zombie in diamond armor with a netherite sword, the autopilot with a wooden sword: it must
+     * not pick that fight (full control would fight monsters it can beat) and get away from it.
+     */
+    private static String runOverpowered(ClientGameTestContext ctx, TestSingleplayerContext sp, int x, int y, int z) {
+        System.out.println(TAG + "==================== Parcours 8: Uebermacht (nicht angreifen)");
+        ctx.runOnClient(mc -> {
+            Autopilot.INSTANCE.setFullControl(mc, false);
+            Autopilot.INSTANCE.resetSurvival();
+        });
+        run(sp, "clear @a;kill @e[type=item];effect clear @a;effect give @a minecraft:instant_health 1 10;effect give @a minecraft:saturation 1 20");
+        run(sp, "tp @a " + x + ".5 " + y + " " + z + ".5 -90 0");
+        run(sp, "give @a minecraft:wooden_sword;give @a minecraft:cooked_beef 8");
+        run(sp, "difficulty easy");
+        run(sp, "summon minecraft:zombie " + (x + 7) + " " + y + " " + z + " {PersistenceRequired:1b,Tags:[\"uebermacht\"],equipment:{"
+                + "mainhand:{id:\"minecraft:netherite_sword\",count:1},head:{id:\"minecraft:diamond_helmet\",count:1},"
+                + "chest:{id:\"minecraft:diamond_chestplate\",count:1},legs:{id:\"minecraft:diamond_leggings\",count:1},"
+                + "feet:{id:\"minecraft:diamond_boots\",count:1}}}");
+        ctx.waitTicks(10);
+        ctx.runOnClient(mc -> Autopilot.INSTANCE.setFullControl(mc, true));
+        boolean[] hit = new boolean[1];
+        boolean[] dead = new boolean[1];
+        double[] far = new double[1];
+        String[] info = new String[1];
+        for (int t = 0; t < 600; t += 2) {
+            ctx.waitTicks(2);
+            int tt = t;
+            ctx.runOnClient(mc -> {
+                LocalPlayer p = mc.player;
+                if (p == null) {
+                    return;
+                }
+                dead[0] |= p.isDeadOrDying();
+                for (var e : mc.level.entitiesForRendering()) {
+                    if (e.getType() == net.minecraft.world.entity.EntityTypes.ZOMBIE && e instanceof net.minecraft.world.entity.LivingEntity zombie
+                            && zombie.distanceTo(p) < 64.0F) {
+                        hit[0] |= zombie.getHealth() < zombie.getMaxHealth();
+                        far[0] = Math.max(far[0], zombie.distanceTo(p));
+                    }
+                }
+                info[0] = String.format("hp=%.1f pos=%s | %s", p.getHealth(), p.blockPosition().toShortString(),
+                        Autopilot.INSTANCE.status().replaceAll("§.", ""));
+            });
+            if (tt % 200 == 0) {
+                System.out.println(TAG + "t=" + tt / 20 + "s " + info[0]);
+            }
+        }
+        ctx.runOnClient(mc -> Autopilot.INSTANCE.setFullControl(mc, false));
+        run(sp, "kill @e[tag=uebermacht];difficulty peaceful");
+        boolean ok = !hit[0] && !dead[0];
+        String result = (ok ? "PASS" : "FAIL") + " nach 30s (Zombie angegriffen: " + (hit[0] ? "JA" : "nein") + ", Tod: " + (dead[0] ? "JA" : "nein")
+                + ", groesster Abstand " + (int) far[0] + " Bloecke)";
         System.out.println(TAG + result + " | " + info[0]);
         return result;
     }

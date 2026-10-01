@@ -1,6 +1,7 @@
 package de.samu.pvpbot.autopilot;
 
 import de.samu.pvpbot.autopilot.brain.BotBrain;
+import de.samu.pvpbot.autopilot.brain.FightOdds;
 import de.samu.pvpbot.autopilot.brain.BotBrain.Pattern;
 import de.samu.pvpbot.autopilot.brain.Kit;
 import de.samu.pvpbot.autopilot.brain.Kit.Role;
@@ -250,6 +251,10 @@ public final class Autopilot {
 
         LivingEntity t = this.target instanceof LivingEntity living ? living : null;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
+        if (t == null && this.targetMode != TargetMode.MANUAL && this.tickFlee(p)) {
+            this.applyKeys(mc);
+            return;
+        }
         if (this.waterClutch(mc, p, t)) {
             this.status(p, "§bWassereimer-Clutch");
             this.applyKeys(mc);
@@ -421,12 +426,71 @@ public final class Autopilot {
                 };
                 // Only what we can actually see: no finding players through walls.
                 if (fits && e.isAlive() && p.distanceToSqr(e) < bestDist && p.hasLineOfSight(e)) {
+                    if (this.avoid.getOrDefault(e.getUUID(), 0L) > this.ticks || this.outmatched(p, (LivingEntity) e, FightOdds.START)) {
+                        // Too strong for it (or its own gear too bad): no fight. Coming close -> get away.
+                        if (e instanceof Enemy && p.distanceToSqr(e) < 7.0 * 7.0 && this.fleeTicks <= 0) {
+                            this.fleeFrom = e;
+                            this.fleeTicks = 60;
+                        }
+                        continue;
+                    }
                     best = e;
                     bestDist = p.distanceToSqr(e);
                 }
             }
             this.target = best;
         }
+        // Fighting on its own account (not a target the player picked) and losing: break off.
+        if (this.target instanceof LivingEntity t && this.targetMode != TargetMode.MANUAL && this.ticks % 20 == 0
+                && this.outmatched(p, t, FightOdds.GIVE_UP)) {
+            this.say(mc, "§6Gegen " + t.getName().getString() + " verliere ich – Rückzug.");
+            LOGGER.info("[AUTOPILOT] odds: breaks off the fight with {} (hp {})", t.getName().getString(), p.getHealth());
+            this.avoid.put(t.getUUID(), this.ticks + 600);
+            this.fleeFrom = t;
+            this.fleeTicks = 140;
+            this.finishAttempt(mc);
+            this.target = null;
+        }
+    }
+
+    // ------------------------------------------------------------------ fight or not
+
+    private final Map<java.util.UUID, Long> avoid = new java.util.HashMap<>();
+    private @Nullable Entity fleeFrom;
+    private int fleeTicks;
+
+    /** Damage per hit of the best weapon it carries. */
+    private double ownDamage(LocalPlayer p) {
+        double best = FightOdds.weapon(p.getMainHandItem());
+        for (ItemStack st : p.getInventory().getNonEquipmentItems()) {
+            best = Math.max(best, FightOdds.weapon(st));
+        }
+        return best;
+    }
+
+    /** Below this share of the enemy's (and its friends') strength, judged from what is seen? */
+    private boolean outmatched(LocalPlayer p, LivingEntity enemy, double share) {
+        return FightOdds.odds(p, this.ownDamage(p), FightOdds.group(p, enemy)) < share;
+    }
+
+    /** Running from something it cannot beat: sprint away from it. Returns true while fleeing. */
+    private boolean tickFlee(LocalPlayer p) {
+        if (this.fleeTicks <= 0 || this.fleeFrom == null) {
+            return false;
+        }
+        this.fleeTicks--;
+        Entity from = this.fleeFrom;
+        if (!from.isAlive() || from.level() != p.level() || p.distanceTo(from) > 20.0F) {
+            this.fleeTicks = 0;
+            this.fleeFrom = null;
+            return false;
+        }
+        this.face(p, p.position().subtract(from.position()).multiply(1.0, 0.0, 1.0), 40.0F);
+        this.kForward = true;
+        this.kSprint = p.getFoodData().getFoodLevel() > 6;
+        this.kJump = p.horizontalCollision || p.isInWater();
+        this.status(p, "§6weicht " + from.getName().getString() + " aus (zu stark)");
+        return true;
     }
 
     // ------------------------------------------------------------------ choosing

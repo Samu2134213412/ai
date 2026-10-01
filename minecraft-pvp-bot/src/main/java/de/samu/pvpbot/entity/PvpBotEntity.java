@@ -254,6 +254,16 @@ public class PvpBotEntity extends PathfinderMob {
         if (current != null && current.getUUID().equals(id) || this.targetQueue.contains(id)) {
             return;
         }
+        if (ordered) {
+            this.orderedTargets.add(id);
+        } else if (this.outmatchedBy(target, de.samu.pvpbot.brain.FightOdds.START)) {
+            // Not its own idea to fight someone stronger (or with bad gear): leave it, get away if it comes.
+            this.tellOwner("§6" + target.getName().getString() + " ist mir zu stark – ich lasse mich nicht darauf ein.", false);
+            if (this.distanceTo(target) < 12.0F) {
+                this.retreatFrom(target);
+            }
+            return;
+        }
         if (current == null) {
             this.setTarget(target);
         } else if (ordered) {
@@ -264,7 +274,48 @@ public class PvpBotEntity extends PathfinderMob {
         }
     }
 
+    /** Targets the owner (command, AI) asked for: fought even if strong. Others only with good odds. */
+    private final java.util.Set<UUID> orderedTargets = new java.util.HashSet<>();
+    private @Nullable UUID retreatFrom;
+
+    /** Own damage per hit: the best weapon it carries. */
+    private double ownDamage() {
+        double best = de.samu.pvpbot.brain.FightOdds.weapon(this.getMainHandItem());
+        for (ItemStack st : this.getKit().items()) {
+            best = Math.max(best, de.samu.pvpbot.brain.FightOdds.weapon(st));
+        }
+        return best;
+    }
+
+    /** Below this share of the enemy's (and its friends') strength? */
+    private boolean outmatchedBy(LivingEntity enemy, double share) {
+        return de.samu.pvpbot.brain.FightOdds.odds(this, this.ownDamage(), de.samu.pvpbot.brain.FightOdds.group(this, enemy)) < share;
+    }
+
+    private void retreatFrom(LivingEntity enemy) {
+        this.retreatFrom = enemy.getUUID();
+        this.retreatUntil = this.tickCount + 200;
+        this.targetQueue.remove(enemy.getUUID());
+        this.setTarget(null);
+    }
+
+    /** Fighting on its own account and it is going badly: break off and get away. */
+    private void checkLosing() {
+        LivingEntity t = this.getTarget();
+        if (t == null || this.duelOwner || this.orderedTargets.contains(t.getUUID()) || this.tickCount % 20 != 0) {
+            return;
+        }
+        if (this.outmatchedBy(t, de.samu.pvpbot.brain.FightOdds.GIVE_UP)) {
+            this.tellOwner("§6Gegen " + t.getName().getString() + " verliere ich – ich ziehe mich zurück.", false);
+            if (DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   odds: breaks off the fight with {} (hp {})", t.getName().getString(), this.getHealth());
+            }
+            this.retreatFrom(t);
+        }
+    }
+
     public void clearTargets() {
+        this.orderedTargets.clear();
         this.targetQueue.clear();
         this.duelOwner = false;
         this.setTarget(null);
@@ -624,6 +675,26 @@ public class PvpBotEntity extends PathfinderMob {
      * only go on once it is healthy again - one at a time instead of all of them at once.
      */
     private void tickRetreat(ServerLevel level) {
+        this.checkLosing();
+        if (this.retreatFrom != null) {
+            Entity from = level.getEntity(this.retreatFrom);
+            if (!this.isRetreating() || !(from instanceof LivingEntity enemy) || !enemy.isAlive() || this.distanceTo(enemy) > 24.0F) {
+                this.retreatFrom = null;
+            } else {
+                // Away from it (sprinting), like a player who sees he cannot win.
+                this.setTarget(null);
+                Vec3 away = this.position().subtract(enemy.position()).multiply(1.0, 0.0, 1.0);
+                if (away.lengthSqr() < 1.0E-4) {
+                    away = new Vec3(1.0, 0.0, 0.0);
+                }
+                Vec3 goal = this.position().add(away.normalize().scale(10.0));
+                this.setSprinting(true);
+                if (this.getNavigation().isDone() || this.tickCount % 20 == 0) {
+                    this.getNavigation().moveTo(goal.x, goal.y, goal.z, 1.3);
+                }
+                return;
+            }
+        }
         if (!this.gatherer.isSpeedrun() && !this.gatherer.isAutonomousMode()) {
             return;
         }
