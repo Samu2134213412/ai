@@ -2023,7 +2023,7 @@ final class Gatherer {
      */
     private void doSpeedPortal(ServerLevel level) {
         this.speedPortal = true;
-        BlockPos newPool = this.nearest(Ore.LAVA);
+        BlockPos newPool = this.speedLavaSource();
         if (this.portalBase != null && newPool != null && newPool.distSqr(this.portalBase) > 32 * 32
                 && this.kit().count(st -> st.is(Items.LAVA_BUCKET)) == 0 && !this.speedFrameDone()) {
             // The lava here ran out and the next pool is far: a new frame there (shorter ways with the bucket).
