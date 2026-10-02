@@ -2476,7 +2476,7 @@ final class Gatherer {
      */
     private @Nullable BlockPos tablePos;
     private final List<BlockPos> furnaces = new ArrayList<>();
-    private @Nullable net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> stationLevel;
+    private net.minecraft.resources.@Nullable ResourceKey<net.minecraft.world.level.Level> stationLevel;
     static final int MAX_FURNACES = 5;
 
     /** A crafting table or furnace within reach (its own first, or one it sees right here). */
