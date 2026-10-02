@@ -1943,6 +1943,11 @@ final class Gatherer {
         return best;
     }
 
+    private boolean animalInSight() {
+        return this.visibleMob(EntityTypes.COW) != null || this.visibleMob(EntityTypes.PIG) != null
+                || this.visibleMob(EntityTypes.SHEEP) != null || this.visibleMob(EntityTypes.CHICKEN) != null;
+    }
+
     private @Nullable LivingEntity visibleMob(net.minecraft.world.entity.EntityType<?> type) {
         LivingEntity best = null;
         double bestDist = Double.MAX_VALUE;
@@ -2616,6 +2621,11 @@ final class Gatherer {
     }
 
     private Step smelt(Res input, Res output, int missing, int depth) {
+        if (input == Res.RAW_MEAT && this.kit().count(input.match) < Math.min(missing, 8) && this.animalInSight()) {
+            // More animals in sight: all the meat first, then one round at the furnace (not a new
+            // furnace for every single cow).
+            return new Hunt();
+        }
         if (this.kit().count(input.match) < 1) {
             Step s = this.resolve(input, Math.max(1, missing), depth + 1);
             return s != null ? s : new Explore(input.label);
