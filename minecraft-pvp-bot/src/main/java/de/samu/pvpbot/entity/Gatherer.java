@@ -764,20 +764,29 @@ final class Gatherer {
             }
         }
         if (!(next instanceof Craft) && !(next instanceof Smelt) && !(next instanceof PlaceStation) && !(next instanceof PickUpStation)) {
-            // Done at the crafting table / furnace: take them along (a furnace only once it is empty).
-            for (BlockPos st : new BlockPos[]{this.tablePos, this.furnacePos}) {
-                if (st != null && st.closerToCenterThan(this.bot.position(), 6.0) && this.kit().hasRoom()
-                        && (st != this.furnacePos || this.furnaceEmpty(st))) {
-                    return new PickUpStation(st);
+            // Done at the crafting table / furnaces: take them along - the furnaces first (each once
+            // nothing is cooking in it any more), then the table. Never left behind.
+            this.forgetGoneStations(this.level());
+            if (this.kit().hasRoom()) {
+                for (BlockPos f : this.furnaces) {
+                    if (this.furnaceEmpty(f)) {
+                        return new PickUpStation(f);
+                    }
+                }
+                if (this.tablePos != null && this.furnaces.isEmpty()) {
+                    return new PickUpStation(this.tablePos);
                 }
             }
         }
         return next;
     }
 
+    /** Nothing cooking in it (or it went out): it can be taken along - whatever is left inside drops and is picked up. */
     private boolean furnaceEmpty(BlockPos pos) {
         if (this.level().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity f) {
-            return f.getItem(0).isEmpty() && f.getItem(2).isEmpty();
+            BlockState st = this.level().getBlockState(pos);
+            boolean lit = st.hasProperty(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT) && st.getValue(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT);
+            return f.getItem(0).isEmpty() || !lit;
         }
         return true;
     }
@@ -2365,6 +2374,10 @@ final class Gatherer {
     /** A recipe that needs a crafting table: set one up first (or make one) if there is none here. */
     private @Nullable Step craftAtTable(Recipe recipe) {
         if (needsTable(recipe) && this.station(Blocks.CRAFTING_TABLE) == null) {
+            Step back = this.backToTable();
+            if (back != null) {
+                return back;
+            }
             if (this.kit().count(st -> st.is(Items.CRAFTING_TABLE)) > 0) {
                 return new PlaceStation(Blocks.CRAFTING_TABLE);
             }
@@ -2439,7 +2452,12 @@ final class Gatherer {
             }
         }
         if (needsTable(recipe) && this.station(Blocks.CRAFTING_TABLE) == null) {
-            // A 3x3 recipe: set up a crafting table first (make one if there is none in the bag).
+            // A 3x3 recipe: its own table if it still stands somewhere (back there and take it along),
+            // else set one up (make one only if there is none in the bag).
+            Step back = this.backToTable();
+            if (back != null) {
+                return back;
+            }
             if (this.kit().count(st -> st.is(Items.CRAFTING_TABLE)) > 0) {
                 return new PlaceStation(Blocks.CRAFTING_TABLE);
             }
@@ -2450,27 +2468,60 @@ final class Gatherer {
 
     // ------------------------------------------------------------------ crafting table and furnace
 
+    /**
+     * Its own crafting table (where it put it down) and its own furnaces (up to 5, around the
+     * table). It always takes them along again - furnaces first, then the table - and only makes a
+     * new table when its own is gone (broken) or out of reach. Tables and furnaces of others it
+     * may use, but never takes.
+     */
     private @Nullable BlockPos tablePos;
-    private @Nullable BlockPos furnacePos;
+    private final List<BlockPos> furnaces = new ArrayList<>();
+    private @Nullable net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> stationLevel;
+    static final int MAX_FURNACES = 5;
 
-    /** A crafting table or furnace within reach (its own, or one it sees right here). */
+    /** A crafting table or furnace within reach (its own first, or one it sees right here). */
     private @Nullable BlockPos station(net.minecraft.world.level.block.Block block) {
         ServerLevel level = this.level();
-        BlockPos own = block == Blocks.CRAFTING_TABLE ? this.tablePos : this.furnacePos;
-        if (own != null && level.getBlockState(own).is(block) && own.closerToCenterThan(this.bot.getEyePosition(), 4.5)) {
-            return own;
+        this.forgetGoneStations(level);
+        List<BlockPos> own = block == Blocks.CRAFTING_TABLE ? (this.tablePos == null ? List.of() : List.of(this.tablePos)) : this.furnaces;
+        for (BlockPos p : own) {
+            if (p.closerToCenterThan(this.bot.getEyePosition(), 4.5)) {
+                if (block == Blocks.FURNACE && level.getBlockEntity(p) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity f
+                        && !f.getItem(0).isEmpty() && own.size() > 1) {
+                    continue; // (that one is busy: another of its furnaces)
+                }
+                return p;
+            }
         }
         BlockPos feet = this.bot.blockPosition();
         for (BlockPos p : BlockPos.betweenClosed(feet.offset(-3, -1, -3), feet.offset(3, 2, 3))) {
             if (level.getBlockState(p).is(block) && p.closerToCenterThan(this.bot.getEyePosition(), 4.5) && this.seesBlock(level, p)) {
-                BlockPos found = p.immutable();
-                if (block == Blocks.CRAFTING_TABLE) {
-                    this.tablePos = found;
-                } else {
-                    this.furnacePos = found;
-                }
-                return found;
+                return p.immutable(); // (someone else's: used, not taken)
             }
+        }
+        return null;
+    }
+
+    /** Its own stations that are gone (broken, burnt) or in another dimension are forgotten. */
+    private void forgetGoneStations(ServerLevel level) {
+        if (this.stationLevel != null && this.stationLevel != level.dimension()) {
+            // (Left behind in the other dimension: out of reach - a new one when needed.)
+            this.tablePos = null;
+            this.furnaces.clear();
+            this.stationLevel = null;
+            return;
+        }
+        if (this.tablePos != null && level.isLoaded(this.tablePos) && !level.getBlockState(this.tablePos).is(Blocks.CRAFTING_TABLE)) {
+            this.tablePos = null;
+        }
+        this.furnaces.removeIf(p -> level.isLoaded(p) && !level.getBlockState(p).is(Blocks.FURNACE));
+    }
+
+    /** Its own table still stands somewhere it can get to: go back to it instead of making a new one. */
+    private @Nullable Step backToTable() {
+        this.forgetGoneStations(this.level());
+        if (this.tablePos != null && !this.tablePos.closerToCenterThan(this.bot.getEyePosition(), 4.5)) {
+            return new PickUpStation(this.tablePos);
         }
         return null;
     }
@@ -2518,10 +2569,11 @@ final class Gatherer {
                     this.bot.onKitChanged();
                     this.blacklist.add(p); // (its own, not something to mine for resources)
                     if (block == Blocks.CRAFTING_TABLE) {
-                        this.tablePos = p;
-                    } else {
-                        this.furnacePos = p;
+                        this.tablePos = p.immutable();
+                    } else if (!this.furnaces.contains(p) && this.furnaces.size() < MAX_FURNACES) {
+                        this.furnaces.add(p.immutable());
                     }
+                    this.stationLevel = level.dimension();
                     return;
                 }
             }
@@ -2541,19 +2593,50 @@ final class Gatherer {
 
     /** Takes its crafting table or furnace along again (break it, the drop gets picked up). */
     private void doPickUpStation(ServerLevel level, BlockPos pos) {
-        this.bot.getNavigation().stop();
         if (!level.getBlockState(pos).is(Blocks.CRAFTING_TABLE) && !level.getBlockState(pos).is(Blocks.FURNACE)) {
-            if (pos.equals(this.tablePos)) {
-                this.tablePos = null;
-            }
-            if (pos.equals(this.furnacePos)) {
-                this.furnacePos = null;
-            }
-            this.blacklist.remove(pos);
+            // Gone (taken, broken): forgotten - a new one when needed.
+            this.forgetStation(pos);
             this.step = null;
             return;
         }
+        if (!pos.closerToCenterThan(this.bot.getEyePosition(), 4.5)) {
+            // Back to where it put it down.
+            if (!pos.equals(this.stationGoal)) {
+                this.stationGoal = pos;
+                this.stationGoalTicks = 0;
+            }
+            if (++this.stationGoalTicks > 600 || pos.distSqr(this.bot.blockPosition()) > 96 * 96) {
+                // Out of reach (behind lava, up a cliff, far away): left there - a new one when needed.
+                if (PvpBotEntity.DEBUG) {
+                    PvpBotMod.LOGGER.info("[SELFTEST]   gather: own {} at {} out of reach - leaves it", bn(level, pos), pos.toShortString());
+                }
+                this.forgetStation(pos);
+                this.step = null;
+                return;
+            }
+            if (this.bot.getNavigation().isDone() || this.noProgress()) {
+                this.bot.getNavigation().moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 1.1);
+            }
+            this.step = null;
+            return;
+        }
+        this.bot.getNavigation().stop();
+        this.stationGoal = null;
         this.breakBlock(level, pos);
+    }
+
+    private @Nullable BlockPos stationGoal;
+    private int stationGoalTicks;
+
+    private void forgetStation(BlockPos pos) {
+        if (pos.equals(this.tablePos)) {
+            this.tablePos = null;
+        }
+        this.furnaces.remove(pos);
+        this.blacklist.remove(pos);
+        if (pos.equals(this.stationGoal)) {
+            this.stationGoal = null;
+        }
     }
 
     /** How to get {@code count} of a resource. */
@@ -2646,7 +2729,14 @@ final class Gatherer {
             return this.mine(Ore.LOG, depth);
         }
         if (this.station(Blocks.FURNACE) == null) {
-            if (this.kit().count(st -> st.is(Items.FURNACE)) > 0) {
+            // Its own furnace further off (left standing): take it along first, then set it up here.
+            this.forgetGoneStations(this.level());
+            for (BlockPos f : this.furnaces) {
+                if (!f.closerToCenterThan(this.bot.getEyePosition(), 4.5)) {
+                    return new PickUpStation(f);
+                }
+            }
+            if (this.kit().count(st -> st.is(Items.FURNACE)) > 0 && this.furnaces.size() < MAX_FURNACES) {
                 return new PlaceStation(Blocks.FURNACE);
             }
             Step s = this.resolveItem(Items.FURNACE, depth + 1);

@@ -136,6 +136,11 @@ Wassereimer, einen zweiten Eimer und ein Feuerzeug hat und einen Lavasee sieht, 
 Blöcke in die vier Ecken als Form, dann für jeden Rahmenblock einen Eimer Lava hinein und Wasser drüber – Obsidian an
 Ort und Stelle. Danach anzünden und ab in den Nether. Klappt es dort nicht, baut er wie bisher mit abgebautem Obsidian.
 
+**Werkbank und Öfen:** Der Bot merkt sich, wo er seine Werkbank hingestellt hat, und nimmt sie immer wieder mit
+(geht dafür auch zurück). Eine neue baut er nur, wenn seine alte kaputt oder unerreichbar ist. Um die Werkbank
+darf er bis zu 5 Öfen stellen; beim Weiterziehen nimmt er erst alle Öfen mit, dann die Werkbank. Werkbänke und Öfen
+anderer benutzt er, nimmt sie aber nie mit.
+
 **Piglin-Tausch (wie Speedrunner):** Für Enderperlen jagt der Bot nicht nur Endermen, er tauscht auch mit Piglins.
 Im Nether trägt er Goldstiefel (dann lassen ihn Piglins in Ruhe), baut Nethergolderz und Goldblöcke aus Bastionen ab,
 macht daraus Goldbarren und wirft einem Piglin, den er sieht, einen Barren hin. Was der Piglin zurückwirft
