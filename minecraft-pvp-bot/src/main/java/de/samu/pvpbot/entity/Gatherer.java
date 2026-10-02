@@ -1188,10 +1188,15 @@ final class Gatherer {
     private int swimTicks;
 
     /** In open water (sea, lake): swim to the nearest land it can see, like a player. */
+    private double seaHeading = Double.NaN;
+
     private boolean swimToLand(ServerLevel level) {
         if (!this.bot.isInWater() || !level.canSeeSky(this.bot.blockPosition().above())) {
             this.swimTicks = 0;
             this.landGoal = null;
+            if (this.bot.onGround() && !this.bot.isInWater()) {
+                this.seaHeading = Double.NaN;
+            }
             return false;
         }
         if (++this.swimTicks < 40) {
@@ -1228,8 +1233,15 @@ final class Gatherer {
                 this.landGoal = this.lastLand;
             }
             if (this.landGoal == null) {
-                this.landGoal = Double.isNaN(this.exploreHeading) ? here.relative(this.digDir, 32)
-                        : here.offset((int) (Math.cos(this.exploreHeading) * 32), 0, (int) (Math.sin(this.exploreHeading) * 32));
+                // Open sea: one straight course until land shows up (not round in circles after
+                // every new explore heading).
+                if (Double.isNaN(this.seaHeading)) {
+                    this.seaHeading = !Double.isNaN(this.exploreHeading) ? this.exploreHeading
+                            : this.bot.getRandom().nextDouble() * Math.PI * 2.0;
+                }
+                this.landGoal = here.offset((int) (Math.cos(this.seaHeading) * 32), 0, (int) (Math.sin(this.seaHeading) * 32));
+            } else {
+                this.seaHeading = Double.NaN;
             }
             if (PvpBotEntity.DEBUG) {
                 PvpBotMod.LOGGER.info("[SELFTEST]   swims to land at {} from {}", this.landGoal.toShortString(), here.toShortString());
@@ -2536,6 +2548,9 @@ final class Gatherer {
         if (this.kit().count(st -> st.is(item)) == 0) {
             return;
         }
+        if (this.wet(level) && this.stationWalk == 0 && this.placeStationNear(level, block, item)) {
+            return; // (standing in the shallows next to dry ground: put it there, like a player)
+        }
         if (this.wet(level) || !this.bot.onGround() || this.stationWalk > 0) {
             // Swimming or falling, or no room here: first somewhere else (a table needs ground).
             this.stationWalk = Math.max(0, this.stationWalk - 1);
@@ -2556,6 +2571,25 @@ final class Gatherer {
             this.stationWalk = 60;
             return;
         }
+        if (this.placeStationNear(level, block, item)) {
+            return;
+        }
+        // No room here (a 1-wide tunnel): make some (not into water or lava).
+        BlockPos room = feet.relative(this.digDir);
+        if (level.getFluidState(room).isEmpty() && !this.nearLava(level, room)
+                && !level.getBlockState(room).getCollisionShape(level, room).isEmpty()) {
+            this.breakBlock(level, room);
+        } else if (++this.stationTries > 8) {
+            this.stationTries = 0;
+            this.stationWalk = 60; // (nothing to dig away either: somewhere else)
+        } else {
+            this.digDir = this.digDir.getClockWise();
+        }
+    }
+
+    /** Puts the station on a free, dry spot right next to it (ground under it); false if there is none. */
+    private boolean placeStationNear(ServerLevel level, net.minecraft.world.level.block.Block block, Item item) {
+        BlockPos feet = this.bot.blockPosition();
         for (Direction d : Direction.Plane.HORIZONTAL) {
             for (int dy = 0; dy <= 1; dy++) {
                 BlockPos p = feet.relative(d).above(dy);
@@ -2574,21 +2608,11 @@ final class Gatherer {
                         this.furnaces.add(p.immutable());
                     }
                     this.stationLevel = level.dimension();
-                    return;
+                    return true;
                 }
             }
         }
-        // No room here (a 1-wide tunnel): make some (not into water or lava).
-        BlockPos room = feet.relative(this.digDir);
-        if (level.getFluidState(room).isEmpty() && !this.nearLava(level, room)
-                && !level.getBlockState(room).getCollisionShape(level, room).isEmpty()) {
-            this.breakBlock(level, room);
-        } else if (++this.stationTries > 8) {
-            this.stationTries = 0;
-            this.stationWalk = 60; // (nothing to dig away either: somewhere else)
-        } else {
-            this.digDir = this.digDir.getClockWise();
-        }
+        return false;
     }
 
     /** Takes its crafting table or furnace along again (break it, the drop gets picked up). */
