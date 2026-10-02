@@ -95,7 +95,10 @@ final class Gatherer {
                 || s.is(net.minecraft.world.level.block.Blocks.WARPED_STEM) || s.is(net.minecraft.world.level.block.Blocks.WARPED_WART_BLOCK)),
         PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)),
         // Gold for bartering with piglins: nether gold ore (nuggets) and the gold blocks of bastions.
-        NETHERRACK("Netherrack", Res.BUILD_BLOCK, s -> s.is(net.minecraft.world.level.block.Blocks.NETHERRACK)),
+        // (Basalt deltas and soul sand valleys have no netherrack: basalt, blackstone and soul soil do too.)
+        NETHERRACK("Netherrack", Res.BUILD_BLOCK, s -> s.is(net.minecraft.world.level.block.Blocks.NETHERRACK)
+                || s.is(net.minecraft.world.level.block.Blocks.BASALT) || s.is(net.minecraft.world.level.block.Blocks.BLACKSTONE)
+                || s.is(net.minecraft.world.level.block.Blocks.SOUL_SOIL)),
         NETHER_GOLD("Nethergolderz", Res.GOLD_NUGGET, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_GOLD_ORE)),
         GOLD_BLOCK("Goldblock", Res.GOLD_BLOCK, s -> s.is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)),
         STRONGHOLD("Festungsmauern", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.MOSSY_STONE_BRICKS)
@@ -1329,7 +1332,8 @@ final class Gatherer {
         this.digDir = Direction.Plane.HORIZONTAL.getRandomDirection(this.bot.getRandom());
         this.exploreHeading = Double.NaN;
         this.freeSituation = sit;
-        this.freeWay = de.samu.pvpbot.brain.TaskLearner.INSTANCE.choose(this.freeSituation, FREE_WAYS);
+        // (Never digging down in the nether: under it is the lava sea or a deep drop - it fell 25+ blocks.)
+        this.freeWay = de.samu.pvpbot.brain.TaskLearner.INSTANCE.choose(this.freeSituation, this.inNether() ? FREE_WAYS_NETHER : FREE_WAYS);
         this.freeFrom = this.bot.position();
         if (PvpBotEntity.DEBUG) {
             PvpBotMod.LOGGER.info("[SELFTEST]   LEARN: stuck in \"{}\" -> tries \"{}\"", this.freeSituation, this.freeWay);
@@ -1370,6 +1374,7 @@ final class Gatherer {
 
     /** Ways out of a stuck spot the learner chooses from. */
     private static final List<String> FREE_WAYS = List.of("graben", "hochgraben", "hochbauen", "erkunden", "runtergraben");
+    private static final List<String> FREE_WAYS_NETHER = List.of("graben", "hochgraben", "hochbauen", "erkunden");
     private String freeWay = "graben";
     private String freeSituation = "";
     private @Nullable Vec3 freeFrom;
@@ -5060,7 +5065,7 @@ final class Gatherer {
             if (ore != Ore.WATER && ore != Ore.LAVA && this.level().getFluidState(p.above()).is(net.minecraft.tags.FluidTags.WATER)) {
                 continue; // (under water - the bottom of a lake or the sea: nobody mines there)
             }
-            if ((ore == Ore.NETHER_GOLD || ore == Ore.GOLD_BLOCK) && Math.abs(p.getY() - this.bot.getBlockY()) > 3) {
+            if ((ore == Ore.NETHER_GOLD || ore == Ore.GOLD_BLOCK || ore == Ore.NETHERRACK) && Math.abs(p.getY() - this.bot.getBlockY()) > 3) {
                 continue; // (gold high up a nether cliff: climbing after it ends in a fall - there is more)
             }
             if (ore != Ore.LAVA && ore != Ore.OBSIDIAN && ore != Ore.WATER && this.lavaNear(p, ore == Ore.DIAMOND ? 1 : 2)) {
