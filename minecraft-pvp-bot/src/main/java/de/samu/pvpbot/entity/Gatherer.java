@@ -1257,8 +1257,9 @@ final class Gatherer {
                 this.climbOutOfWater(level);
             } else if (this.kit().count(BRIDGE_BLOCK) == 0 && this.onPillar(level)
                     && !level.getBlockState(this.bot.blockPosition().below(2)).getCollisionShape(level, this.bot.blockPosition().below(2)).isEmpty()) {
-                // On a pillar with nothing to bridge with: down it block by block (and keep the blocks).
-                this.breakBlock(level, this.bot.blockPosition().below());
+                // On a pillar with nothing to bridge with: off it the way it came is not possible without
+                // digging under itself (never) - explore instead, it jumps down where it is low enough.
+                this.doExplore();
             } else {
                 // The way out the learner picked for this kind of situation.
                 switch (this.freeWay) {
@@ -3898,13 +3899,8 @@ final class Gatherer {
                     }
                     lava |= !level.getFluidState(under.below(drop + 1)).isEmpty() || this.nearLava(level, under);
                     BlockState roof = level.getBlockState(under);
-                    if (!lava && drop <= 5 && !roof.getCollisionShape(level, under).isEmpty() && roof.getDestroySpeed(level, under) >= 0.0F) {
-                        this.bot.getNavigation().stop();
-                        this.bot.getMoveControl().setWantedPosition(this.bot.getX(), this.bot.getY(), this.bot.getZ(), 0.0);
-                        this.breakBlock(level, under);
-                    } else {
-                        this.doDig(level, true);
-                    }
+                    // (Never straight down through the block it stands on: a staircase down instead.)
+                    this.doDig(level, true);
                 } else {
                     this.doDig(level, false); // (never down towards the lava sea)
                 }
@@ -4939,7 +4935,12 @@ final class Gatherer {
         this.bot.getNavigation().stop();
         BlockPos below = this.bot.blockPosition().below();
         if (!level.getBlockState(below).getCollisionShape(level, below).isEmpty()) {
-            this.breakBlock(level, below);
+            this.downOwnPole = true;
+            try {
+                this.breakBlock(level, below);
+            } finally {
+                this.downOwnPole = false;
+            }
         } else if (this.bot.onGround()) {
             // Standing on the edge of the ground next to the pole: down already.
             this.towerGroundY = Integer.MIN_VALUE;
@@ -5274,7 +5275,16 @@ final class Gatherer {
     }
 
     /** Breaks a block the way a player would (right tool, real time). Returns true when it is gone. */
+    private boolean downOwnPole;
+
     private boolean breakBlock(ServerLevel level, BlockPos pos) {
+        if (!this.downOwnPole && (pos.equals(this.bot.blockPosition().below()) || pos.equals(this.bot.getOnPos()))) {
+            // Never the block it stands on: under it may be a cave, a ravine or the lava sea. (Only
+            // its own pole in the End it takes down again under itself: below are just its own blocks.)
+            this.stopBreaking();
+            this.blacklist.add(pos.immutable());
+            return false;
+        }
         BlockState state = level.getBlockState(pos);
         if (state.getCollisionShape(level, pos).isEmpty() && state.isAir()) {
             this.stopBreaking();
