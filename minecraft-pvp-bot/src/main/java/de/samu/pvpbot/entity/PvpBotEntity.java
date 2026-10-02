@@ -772,7 +772,18 @@ public class PvpBotEntity extends PathfinderMob {
             Vec3 ahead = this.position().add(dir.normalize().scale(0.8));
             BlockPos col = BlockPos.containing(ahead.x, this.getY() - 0.5, ahead.z).above();
             int drop = this.dropAt(level, col);
-            if (drop >= 3 && !this.plannedDrop(drop)) {
+            // Held at the same edge for a while with no other way (on a tree top, a ledge): a drop
+            // that only costs a little health is taken after all - never lava, the void or one that
+            // would leave it nearly dead.
+            if (drop >= 3 && this.blockPosition().equals(this.edgeHeldAt)) {
+                this.edgeHeldTicks++;
+            } else {
+                this.edgeHeldAt = drop >= 3 ? this.blockPosition() : null;
+                this.edgeHeldTicks = 0;
+            }
+            boolean harmless = drop < 12 && drop - 3 < this.getHealth() - 8.0F && this.edgeHeldTicks > 60
+                    && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD; // (deeper: unseen below)
+            if (drop >= 3 && !this.plannedDrop(drop) && !harmless) {
                 towardsEdge = true;
                 // Sneaking at the edge: the step over it is not taken.
                 this.setDeltaMovement(0.0, v.y, 0.0);
@@ -781,6 +792,15 @@ public class PvpBotEntity extends PathfinderMob {
             }
         }
         this.setSneaking(edgeNear || towardsEdge);
+        // Under attack at an edge in the nether or the End (fortress bridge, end island): a rail
+        // of blocks at the open sides, so a blaze or a wither skeleton cannot knock it down.
+        boolean underAttack = this.getTarget() != null || this.getLastHurtByMob() != null
+                && this.tickCount - this.getLastHurtByMobTimestamp() < 200;
+        if (edgeNear && underAttack && this.tickCount % 5 == 0
+                && this.level().dimension() != net.minecraft.world.level.Level.OVERWORLD
+                && (this.gatherer.isAutonomousMode() || this.gatherer.isSpeedrun())) {
+            this.gatherer.railEdges(level);
+        }
         // Nothing to do right now: a step back from the edge (not on a pillar or a 1-wide bridge,
         // where every side is an edge - there it just stays put).
         if (edgeNear && edgeSides == 1 && away != null && this.getTarget() == null && this.getNavigation().isDone()
@@ -792,6 +812,9 @@ public class PvpBotEntity extends PathfinderMob {
             }
         }
     }
+
+    private @Nullable BlockPos edgeHeldAt;
+    private int edgeHeldTicks;
 
     /** How far it would fall stepping into this column (99 for lava or the void). */
     private int dropAt(ServerLevel level, BlockPos feet) {
@@ -806,7 +829,7 @@ public class PvpBotEntity extends PathfinderMob {
         }
         int depth = 0;
         BlockPos p = feet.below();
-        while (depth < 6 && level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+        while (depth < 12 && level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
             if (level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA)) {
                 return 99;
             }

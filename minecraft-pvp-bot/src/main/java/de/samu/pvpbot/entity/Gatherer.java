@@ -3561,7 +3561,7 @@ final class Gatherer {
      * At the edge of a fortress bridge (a drop or lava next to its feet): a block there, like a
      * player who builds a rail before fighting blazes. Returns true when it placed one.
      */
-    private boolean railEdges(ServerLevel level) {
+    boolean railEdges(ServerLevel level) {
         if (this.kit().count(BRIDGE_BLOCK) == 0) {
             return false;
         }
