@@ -58,6 +58,8 @@ final class Gatherer {
         GOLD_NUGGET("Goldnuggets", s -> s.is(Items.GOLD_NUGGET)),
         GOLD_INGOT("Goldbarren", s -> s.is(Items.GOLD_INGOT)),
         GOLD_BLOCK("Goldblöcke", s -> s.is(Items.GOLD_BLOCK)),
+        BUILD_BLOCK("Baublöcke", s -> s.is(Items.NETHERRACK) || s.is(Items.COBBLESTONE) || s.is(Items.COBBLED_DEEPSLATE)
+                || s.is(Items.BLACKSTONE) || s.is(Items.BASALT) || s.is(Items.SOUL_SOIL)),
         EYE("Enderaugen", s -> s.is(Items.ENDER_EYE)),
         STRING("Faden", s -> s.is(Items.STRING)),
         FEATHER("Federn", s -> s.is(Items.FEATHER)),
@@ -93,6 +95,7 @@ final class Gatherer {
                 || s.is(net.minecraft.world.level.block.Blocks.WARPED_STEM) || s.is(net.minecraft.world.level.block.Blocks.WARPED_WART_BLOCK)),
         PORTAL("Netherportal", Res.OBSIDIAN, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)),
         // Gold for bartering with piglins: nether gold ore (nuggets) and the gold blocks of bastions.
+        NETHERRACK("Netherrack", Res.BUILD_BLOCK, s -> s.is(net.minecraft.world.level.block.Blocks.NETHERRACK)),
         NETHER_GOLD("Nethergolderz", Res.GOLD_NUGGET, s -> s.is(net.minecraft.world.level.block.Blocks.NETHER_GOLD_ORE)),
         GOLD_BLOCK("Goldblock", Res.GOLD_BLOCK, s -> s.is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)),
         STRONGHOLD("Festungsmauern", Res.EYE, s -> s.is(net.minecraft.world.level.block.Blocks.STONE_BRICKS) || s.is(net.minecraft.world.level.block.Blocks.MOSSY_STONE_BRICKS)
@@ -1705,6 +1708,20 @@ final class Gatherer {
             }
             return null;
         }
+        // In the nether never without blocks: they are the way out of the lava sea and over it. Low
+        // (under 16): netherrack first, up to 32 - every death in the lava sea was with 0 blocks.
+        if (this.inNether()) {
+            int blocks = kit.count(BRIDGE_BLOCK);
+            if (blocks < 16) {
+                this.stockingBlocks = true;
+            } else if (blocks >= 32) {
+                this.stockingBlocks = false;
+            }
+            if (this.stockingBlocks && this.nearest(Ore.NETHERRACK) != null) {
+                this.goalLabel = "Blöcke für den Nether (" + blocks + "/32)";
+                return new Mine(Ore.NETHERRACK);
+            }
+        }
         this.goalLabel = "Enderaugen (" + eyes + "/" + EYES_WANTED + ")";
         if (powder > 0 && pearls > 0) {
             return new Craft(RECIPES.get(Items.ENDER_EYE));
@@ -2557,6 +2574,7 @@ final class Gatherer {
             case GOLD_INGOT -> this.kit().count(Res.GOLD_BLOCK.match) > 0 ? this.craftAtTable(GOLD_FROM_BLOCK) : this.resolveItem(Items.GOLD_INGOT, depth);
             case GOLD_NUGGET -> this.nearest(Ore.NETHER_GOLD) != null ? new Mine(Ore.NETHER_GOLD) : null;
             case GOLD_BLOCK -> this.nearest(Ore.GOLD_BLOCK) != null ? new Mine(Ore.GOLD_BLOCK) : null;
+            case BUILD_BLOCK -> this.nearest(Ore.NETHERRACK) != null ? new Mine(Ore.NETHERRACK) : null;
             case BLAZE_ROD, BLAZE_POWDER, PEARL, EYE -> null;
         };
     }
@@ -3061,6 +3079,7 @@ final class Gatherer {
 
     /** Rock overhead (in a cave, its own staircase): the sky is not in sight. */
     private int climbHold;
+    private boolean stockingBlocks;
     private int blazeEarUntil;
 
     private boolean underground() {
