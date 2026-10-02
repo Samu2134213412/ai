@@ -2724,7 +2724,27 @@ final class Gatherer {
     /** Wood (in planks) beyond what the next pickaxe and its sticks need - that may be burnt. */
     private int spareWood() {
         int wood = this.kit().count(Res.LOG.match) * 4 + this.kit().count(Res.PLANKS.match);
-        return (this.speedrun || this.autonomous) ? Math.max(0, wood - 8) : wood;
+        if (!this.speedrun && !this.autonomous) {
+            return wood;
+        }
+        // Kept back only what is really still needed: planks for two sticks (unless it has them),
+        // for a crafting table (unless it carries or has one) and for a wooden pickaxe (unless it
+        // has a better one).
+        int keep = 0;
+        if (this.kit().count(Res.STICK.match) < 2) {
+            keep += 1;
+        }
+        if (this.tablePos == null && this.kit().count(st -> st.is(Items.CRAFTING_TABLE)) == 0) {
+            keep += 4;
+        }
+        boolean pick = false;
+        for (ItemStack st : this.kit().items()) {
+            pick |= pickaxeTier(st.getItem()) >= 2;
+        }
+        if (!pick) {
+            keep += 3;
+        }
+        return Math.max(0, wood - keep);
     }
 
     private Step smelt(Res input, Res output, int missing, int depth) {
