@@ -1123,17 +1123,28 @@ public class PvpBotEntity extends PathfinderMob {
         double start = this.random.nextDouble() * Math.PI * 2.0;
         for (int k = 0; k < 8; k++) {
             double a = start + k * Math.PI / 4.0;
-            BlockPos land = BlockPos.containing(this.getX() + Math.cos(a) * 1.6, this.getY(), this.getZ() + Math.sin(a) * 1.6);
-            boolean ground = false;
-            boolean lava = false;
-            for (int dy = -3; dy <= 1; dy++) {
-                BlockPos p = land.above(dy);
-                lava |= level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA);
-                if (dy < 0 && dy >= -2 && !level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
-                    ground = true;
+            boolean safe = true;
+            // The whole flight path (a hop carries up to 3 blocks): ground under every step, no lava.
+            for (double d : new double[]{0.8, 1.6, 2.4, 3.2}) {
+                BlockPos land = BlockPos.containing(this.getX() + Math.cos(a) * d, this.getY(), this.getZ() + Math.sin(a) * d);
+                boolean ground = false;
+                boolean lava = false;
+                for (int dy = -3; dy <= 1; dy++) {
+                    BlockPos p = land.above(dy);
+                    lava |= level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA);
+                    if (dy < 0 && dy >= -2 && !level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+                        ground = true;
+                    }
+                }
+                if (!level.getBlockState(land).getCollisionShape(level, land).isEmpty()) {
+                    break; // (a wall: the hop stops there, on the ground before it)
+                }
+                if (!ground || lava) {
+                    safe = false;
+                    break;
                 }
             }
-            if (ground && !lava) {
+            if (safe) {
                 return a;
             }
         }
@@ -1160,7 +1171,9 @@ public class PvpBotEntity extends PathfinderMob {
         this.getNavigation().stop();
         double angle = this.safeHopAngle(level);
         if (Double.isNaN(angle) && this.unstuckStage <= 2) {
-            this.unstuckStage = 2; // (no safe side to hop to - lava or a drop all round: dig free instead)
+            // No safe side to hop to (lava or a drop all round - a fortress bridge): never a blind
+            // jump, dig free instead.
+            this.unstuckStage = 3;
             angle = 0.0;
         }
         String how;
