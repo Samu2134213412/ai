@@ -1257,9 +1257,13 @@ final class Gatherer {
                 this.climbOutOfWater(level);
             } else if (this.kit().count(BRIDGE_BLOCK) == 0 && this.onPillar(level)
                     && !level.getBlockState(this.bot.blockPosition().below(2)).getCollisionShape(level, this.bot.blockPosition().below(2)).isEmpty()) {
-                // On a pillar with nothing to bridge with: off it the way it came is not possible without
-                // digging under itself (never) - explore instead, it jumps down where it is low enough.
-                this.doExplore();
+                // On a pillar with nothing to bridge with: down it block by block (and keep the blocks).
+                // (Not in the nether - never under itself there: explore instead.)
+                if (this.inNether()) {
+                    this.doExplore();
+                } else {
+                    this.breakBlock(level, this.bot.blockPosition().below());
+                }
             } else {
                 // The way out the learner picked for this kind of situation.
                 switch (this.freeWay) {
@@ -5278,9 +5282,8 @@ final class Gatherer {
     private boolean downOwnPole;
 
     private boolean breakBlock(ServerLevel level, BlockPos pos) {
-        if (!this.downOwnPole && (pos.equals(this.bot.blockPosition().below()) || pos.equals(this.bot.getOnPos()))) {
-            // Never the block it stands on: under it may be a cave, a ravine or the lava sea. (Only
-            // its own pole in the End it takes down again under itself: below are just its own blocks.)
+        if (this.inNether() && !this.downOwnPole && (pos.equals(this.bot.blockPosition().below()) || pos.equals(this.bot.getOnPos()))) {
+            // In the nether never the block it stands on: under a thin floor is the lava sea or a deep drop.
             this.stopBreaking();
             this.blacklist.add(pos.immutable());
             return false;
