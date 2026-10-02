@@ -1844,11 +1844,60 @@ public final class Autopilot {
         boolean jump = this.kJump && !(this.wasJump && mc.player != null && !mc.player.onGround() && !mc.player.isFallFlying());
         o.keyJump.setDown(jump);
         this.wasJump = jump;
+        // At the edge of a deep drop, lava or the void: sneak like a player (the game then keeps the
+        // feet on the edge) - not over shallow steps, those it walks down on purpose.
+        boolean edge = mc.player != null && this.edgeAhead(mc.player);
+        if (edge) {
+            this.kSneak = true;
+            this.kSprint = false;
+        }
         o.keySprint.setDown(this.kSprint);
         o.keyShift.setDown(this.kSneak);
         o.keyUse.setDown(this.kUse);
         o.keyAttack.setDown(this.kAttack);
         this.keysHeld = true;
+    }
+
+    /** Walking towards a drop of 5+ blocks, lava or the void (within a step), on the ground. */
+    private boolean edgeAhead(LocalPlayer p) {
+        if (!p.onGround() || p.isFallFlying() || p.isInWater() || !(this.kForward || this.kBack || this.kLeft || this.kRight)) {
+            return false;
+        }
+        float yaw = p.getYRot();
+        Vec3 fwd = Vec3.directionFromRotation(0.0F, yaw);
+        Vec3 right = new Vec3(-fwd.z, 0.0, fwd.x);
+        Vec3 dir = Vec3.ZERO;
+        if (this.kForward) dir = dir.add(fwd);
+        if (this.kBack) dir = dir.subtract(fwd);
+        if (this.kRight) dir = dir.add(right);
+        if (this.kLeft) dir = dir.subtract(right);
+        if (dir.lengthSqr() < 1.0E-4) {
+            return false;
+        }
+        dir = dir.normalize();
+        var level = p.level();
+        for (double d : new double[]{0.6, 1.2}) {
+            BlockPos col = BlockPos.containing(p.getX() + dir.x * d, p.getY() + 0.2, p.getZ() + dir.z * d);
+            if (!level.getBlockState(col).getCollisionShape(level, col).isEmpty()) {
+                return false; // (a wall ahead, no drop)
+            }
+            int depth = 0;
+            BlockPos b = col.below();
+            while (depth < 6 && level.getBlockState(b).getCollisionShape(level, b).isEmpty()) {
+                if (level.getFluidState(b).is(net.minecraft.tags.FluidTags.LAVA) || b.getY() <= level.getMinY()) {
+                    return true;
+                }
+                if (!level.getFluidState(b).isEmpty()) {
+                    break; // (water breaks the fall)
+                }
+                depth++;
+                b = b.below();
+            }
+            if (depth >= 5 || level.getFluidState(b).is(net.minecraft.tags.FluidTags.LAVA)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void releaseKeys(Minecraft mc) {

@@ -23,6 +23,7 @@ Beide lernen dazu (siehe unten) und passen sich an das Kit an, das sie gerade ha
 | **Schwert/Axt-Nahkampf** | Mit Schwert, Axt oder Dreizack. Der Autopilot springt dabei für kritische Treffer. |
 | **Bogenschüsse** | Hält Abstand, spannt voll und zielt mit Vorhalt und Pfeilabfall. |
 | **Überleben** | Totem in die Zweithand, goldene Äpfel bei wenig Leben, Windladungs-„Clutch“ gegen Fallschaden. |
+| **Kanten & Schleichen** | An Abgründen (ab 3 Blöcken, Lava, Void) schleicht er wie ein Spieler und geht nicht drüber – außer es ist ein geplanter, sicherer Schritt nach unten. Hat er nichts zu tun, tritt er einen Schritt von der Kante weg. Der Autopilot schleicht an tiefen Kanten (ab 5 Blöcken, Lava, Void) automatisch. |
 | **Selbst befreien** | Steckt er fest (z. B. mit der Elytra an einer Wand), zieht er erst hoch bzw. springt zur Seite, dann Windladung, dann baut er sich frei (nie Bedrock, Obsidian oder Kisten). Der Bot teleportiert sich als letzte Möglichkeit an eine freie Stelle. |
 
 ## Der Bot lernt dazu

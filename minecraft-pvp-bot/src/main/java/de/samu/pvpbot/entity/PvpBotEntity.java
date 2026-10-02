@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
@@ -745,33 +746,95 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     /**
-     * While fighting, and always in the nether and the End: never step off a ledge into a deep drop
-     * or lava (a fortress bridge over the lava sea). Like a player who sneaks at the edge: stop.
+     * Edges like a player: it sneaks at the edge of a drop (3 blocks or more, lava, the void) and
+     * never steps over it unless that step is a planned, safe one down on its path; and when it has
+     * nothing to do it stays a step away from such edges.
      */
     private void guardLedge(ServerLevel level) {
-        boolean dangerous = this.level().dimension() != net.minecraft.world.level.Level.OVERWORLD; // (lava seas, the void)
-        if (this.getTarget() == null && !dangerous || !this.onGround() || this.isFallFlying()
-                || !this.gatherer.isAutonomousMode() && !this.gatherer.isSpeedrun()) {
+        if (!this.onGround() || this.isFallFlying() || this.isInWater()) {
+            this.setSneaking(false);
             return;
+        }
+        boolean edgeNear = false;
+        int edgeSides = 0;
+        Direction away = null;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            if (this.dropAt(level, this.blockPosition().relative(d)) >= 3) {
+                edgeNear = true;
+                edgeSides++;
+                away = d.getOpposite();
+            }
         }
         Vec3 v = this.getDeltaMovement();
         Vec3 dir = new Vec3(v.x, 0.0, v.z);
-        if (dir.lengthSqr() < 1.0E-4) {
-            return;
+        boolean towardsEdge = false;
+        if (dir.lengthSqr() > 1.0E-4) {
+            Vec3 ahead = this.position().add(dir.normalize().scale(0.8));
+            BlockPos col = BlockPos.containing(ahead.x, this.getY() - 0.5, ahead.z).above();
+            int drop = this.dropAt(level, col);
+            if (drop >= 3 && !this.plannedDrop(drop)) {
+                towardsEdge = true;
+                // Sneaking at the edge: the step over it is not taken.
+                this.setDeltaMovement(0.0, v.y, 0.0);
+                this.getNavigation().stop();
+                this.getMoveControl().setWantedPosition(this.getX(), this.getY(), this.getZ(), 0.0);
+            }
         }
-        Vec3 ahead = this.position().add(dir.normalize().scale(0.8));
-        BlockPos col = BlockPos.containing(ahead.x, this.getY() - 0.5, ahead.z);
+        this.setSneaking(edgeNear || towardsEdge);
+        // Nothing to do right now: a step back from the edge (not on a pillar or a 1-wide bridge,
+        // where every side is an edge - there it just stays put).
+        if (edgeNear && edgeSides == 1 && away != null && this.getTarget() == null && this.getNavigation().isDone()
+                && !this.gatherer.busyBreaking() && this.tickCount % 20 == 0) {
+            BlockPos step = this.blockPosition().relative(away);
+            if (this.dropAt(level, step) == 0 && level.getBlockState(step).getCollisionShape(level, step).isEmpty()
+                    && level.getBlockState(step.above()).getCollisionShape(level, step.above()).isEmpty()) {
+                this.getMoveControl().setWantedPosition(step.getX() + 0.5, step.getY(), step.getZ() + 0.5, 0.5);
+            }
+        }
+    }
+
+    /** How far it would fall stepping into this column (99 for lava or the void). */
+    private int dropAt(ServerLevel level, BlockPos feet) {
+        if (!level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()) {
+            return 0; // (a wall, not a drop)
+        }
+        for (BlockPos p : new BlockPos[]{feet, feet.below()}) {
+            if (level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.END_PORTAL)
+                    || level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
+                return 0; // (a portal it wants to go into, not an edge)
+            }
+        }
         int depth = 0;
-        while (depth < 4 && level.getBlockState(col.below(depth)).getCollisionShape(level, col.below(depth)).isEmpty()
-                && level.getFluidState(col.below(depth)).isEmpty()) {
+        BlockPos p = feet.below();
+        while (depth < 6 && level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+            if (level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA)) {
+                return 99;
+            }
+            if (!level.getFluidState(p).isEmpty()) {
+                return depth; // (water breaks the fall)
+            }
+            if (p.getY() <= level.getMinY()) {
+                return 99;
+            }
             depth++;
+            p = p.below();
         }
-        boolean lava = level.getFluidState(col.below(depth)).is(net.minecraft.tags.FluidTags.LAVA)
-                || level.getFluidState(col.below(Math.max(0, depth - 1))).is(net.minecraft.tags.FluidTags.LAVA);
-        if (depth >= 4 || lava) {
-            this.setDeltaMovement(0.0, v.y, 0.0);
-            this.getNavigation().stop();
-            this.getMoveControl().setWantedPosition(this.getX(), this.getY(), this.getZ(), 0.0);
+        return level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA) ? 99 : depth;
+    }
+
+    /** That step down is the next one on its path and not deeper than it may jump. */
+    private boolean plannedDrop(int drop) {
+        var path = this.getNavigation().getPath();
+        if (path == null || path.isDone() || drop > this.getMaxFallDistance()) {
+            return false;
+        }
+        return path.getNextNodePos().getY() < this.blockPosition().getY();
+    }
+
+    private void setSneaking(boolean sneak) {
+        if (this.isShiftKeyDown() != sneak) {
+            this.setShiftKeyDown(sneak);
+            this.setPose(sneak ? net.minecraft.world.entity.Pose.CROUCHING : net.minecraft.world.entity.Pose.STANDING);
         }
     }
 
