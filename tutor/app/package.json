@@ -4,8 +4,8 @@
   "private": true,
   "description": "Tutor \u2013 iPad-App (Capacitor)",
   "scripts": {
-    "build": "node scripts/build-www.mjs",
-    "sync": "node scripts/build-www.mjs && cap sync ios",
+    "build": "node ../scripts/build-www.mjs www",
+    "sync": "node ../scripts/build-www.mjs www && cap sync ios",
     "open": "cap open ios",
     "test": "node --test ../tests/"
   },

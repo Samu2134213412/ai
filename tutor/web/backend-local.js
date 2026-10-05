@@ -26,7 +26,7 @@ function createBackend(env) {
   const getTemplate = () => (templatePromise = templatePromise || (env.template
     ? Promise.resolve(env.template) : F("prompts/tutor.md").then((r) => r.text())));
 
-  const S = { cfg: { ...DEFAULT_CONFIG }, tasks: [], reminders: { enabled: false, time: "16:00" },
+  const S = { cfg: { ...DEFAULT_CONFIG, host: env.defaultHost || "" }, tasks: [], reminders: { enabled: false, time: "16:00" },
     blocklist: [...C.DEFAULT_BLOCKLIST], focus: { ends_at: 0, minutes: 0 }, sessions: [],
     conv: [newTask()], confirm: false, started: clock().iso };
   let ready = null;
@@ -36,7 +36,7 @@ function createBackend(env) {
   const persist = () => storage.set("tutor.data", { cfg: S.cfg, tasks: S.tasks, reminders: S.reminders,
     blocklist: S.blocklist, focus: S.focus, sessions: S.sessions.slice(-30) });
   const load = () => (ready = ready || storage.get("tutor.data").then((d) => {
-    if (d) { S.cfg = { ...DEFAULT_CONFIG, ...d.cfg }; S.tasks = d.tasks || []; S.reminders = d.reminders || S.reminders;
+    if (d) { S.cfg = { ...DEFAULT_CONFIG, host: env.defaultHost || "", ...d.cfg }; S.tasks = d.tasks || []; S.reminders = d.reminders || S.reminders;
       S.blocklist = d.blocklist || S.blocklist; S.focus = d.focus || S.focus; S.sessions = d.sessions || []; }
   }));
 

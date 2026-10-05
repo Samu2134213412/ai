@@ -4,6 +4,7 @@
 (function (root) {
 "use strict";
 const Cap = root.Capacitor;
+const desktop = !!root.TutorDesktop;           // Electron-App (PC)
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const q = new URLSearchParams(root.location ? root.location.search : "");
 let forced = false;
@@ -29,10 +30,11 @@ const storage = {
 };
 
 const Local = root.TutorBackendLocal;
-root.TutorBackend = (isNative || forced) && Local ? Local.createBackend({ storage }) : null;
+root.TutorBackend = (isNative || forced || desktop) && Local
+  ? Local.createBackend({ storage, defaultHost: desktop ? "http://localhost:11434" : "" }) : null;
 
 const N = {
-  isNative,
+  isNative, isDesktop: desktop,
   hasNotifications: !!Notif, hasShield: !!Shield, hasScreenShare: !!Share,
 
   async notificationsStatus() {

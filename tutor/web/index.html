@@ -123,6 +123,14 @@
   <label class="hint">Tutor-Modell<input id="sModel" style="width:100%"></label>
   <label class="hint">Vision-Modell (Seiten lesen)<input id="sVision" style="width:100%"></label>
   <div id="sTest" class="hint"></div>
+  <div id="desktopSettings" hidden>
+    <h4>PC</h4>
+    <label class="hint">Programme im Fokus beenden (Programmnamen, einer pro Zeile – z. B. Discord, Steam)
+      <textarea id="dApps" rows="3" placeholder="discord&#10;steam"></textarea></label>
+    <p class="hint">Nur wirklich eingetragene Programme, nur während einer Fokus-Sitzung. System-Programme werden nie beendet.</p>
+    <label class="row2"><input type="checkbox" id="dTray"> Beim Schließen im Tray weiterlaufen (Erinnerungen bleiben aktiv)</label>
+    <label class="row2"><input type="checkbox" id="dAuto"> Beim Anmelden starten</label>
+  </div>
   <div id="nativeSettings" hidden>
     <h4>iPad</h4>
     <div class="actions left">
@@ -132,6 +140,13 @@
     <div id="sNativeState" class="hint"></div>
   </div>
   <div class="actions"><button type="button" id="sTestBtn">Verbindung testen</button><button value="ok" class="go">Fertig</button></div>
+</form></dialog>
+
+<dialog id="winDlg"><form method="dialog">
+  <h3>Welches Fenster soll der Tutor sehen?</h3>
+  <p class="hint">Wähle z. B. das GoodNotes-Fenster. Der Tutor sieht nur dieses Fenster, solange die Freigabe läuft.</p>
+  <div id="winList" class="winList"></div>
+  <div class="actions"><button value="cancel">Abbrechen</button></div>
 </form></dialog>
 
 <dialog id="plannerDlg"><div class="dlg">

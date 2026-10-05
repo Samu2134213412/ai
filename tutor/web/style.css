@@ -90,6 +90,12 @@ body {
   background: color-mix(in srgb, var(--chip-on) 35%, transparent); border: 6px dashed var(--chip-on); }
 #drop[hidden] { display: none; }
 
+.winList { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 50vh; overflow-y: auto; }
+.winCard { display: grid; gap: 4px; text-align: left; padding: 6px; border-radius: 12px; }
+.winCard img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; background: var(--chip); }
+.winCard span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.winCard.pick { border-color: var(--chip-on); border-width: 2px; }
+
 /* ---------- Blob ---------- */
 .blob {
   position: fixed; left: 0; top: 0; z-index: 30; width: 56px; height: 56px; pointer-events: none;

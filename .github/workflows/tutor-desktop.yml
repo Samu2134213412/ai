@@ -1,0 +1,40 @@
+name: Tutor Desktop-App bauen
+
+# Baut die Installer für Windows, macOS und Linux. Start: Actions → „Tutor Desktop-App bauen“ → Run workflow
+# (oder ein Tag tutor-desktop-v*). Die Dateien liegen danach als Artefakte am Lauf.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["tutor-desktop-v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tutor/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tutor/desktop/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # ohne Signierzertifikat bauen
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tutor-desktop-${{ matrix.os }}
+          path: |
+            tutor/desktop/dist/*.exe
+            tutor/desktop/dist/*.dmg
+            tutor/desktop/dist/*.AppImage
+            tutor/desktop/dist/*.deb
+          if-no-files-found: error

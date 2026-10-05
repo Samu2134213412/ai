@@ -356,6 +356,28 @@ function snapshot(rect, maxEdge = 900) {
 /* ---------------- Live-Zugriff: Fenster teilen & Kurzbefehl-Screenshots ---------------- */
 
 let cap = null;                               // { stream, video } bei laufender Freigabe
+async function pickWindow() {
+  say("Suche Fenster …", 0);
+  const list = await TutorDesktop.listWindows();
+  say("");
+  if (!list.length) throw new Error("Keine Fenster gefunden.");
+  list.sort((a, b) => (/goodnotes/i.test(b.name) ? 1 : 0) - (/goodnotes/i.test(a.name) ? 1 : 0) || a.screen - b.screen);
+  const box = $("winList"), dlg = $("winDlg");
+  return new Promise((resolve) => {
+    let picked = null;
+    box.replaceChildren(...list.map((w) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "winCard" + (/goodnotes/i.test(w.name) ? " pick" : "");
+      const img = document.createElement("img"); img.alt = ""; if (w.thumb) img.src = w.thumb;
+      const t = document.createElement("span"); t.textContent = (w.screen ? "🖥 " : "") + w.name;
+      b.append(img, t);
+      b.onclick = () => { picked = w.id; dlg.close(); };
+      return b;
+    }));
+    dlg.addEventListener("close", () => resolve(picked), { once: true });
+    dlg.showModal();
+  });
+}
 async function grabFrame() {
   const v = cap.video;
   if (!v.videoWidth) await new Promise((r) => v.addEventListener("loadeddata", r, { once: true }));
@@ -379,6 +401,11 @@ async function toggleCapture() {
   }
   if (cap) return stopCapture();
   try {
+    if (window.TutorDesktop) {                                  // PC-App: Fenster in der App wählen
+      const id = await pickWindow();
+      if (!id) return;
+      if (!(await TutorDesktop.chooseWindow(id))) throw new Error("Fenster nicht mehr verfügbar.");
+    }
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
     const video = document.createElement("video");
     video.srcObject = stream; video.muted = true; await video.play();

@@ -128,6 +128,12 @@ habe ich nicht auf einem iPad durchgespielt, die Menünamen können abweichen.
 nativen App: Sie kann per ReplayKit den Bildschirm teilen, während GoodNotes
 läuft. Das steht auf der Liste unten.
 
+## PC-Version (Windows, macOS, Linux)
+
+Desktop-App (Electron) ohne Python-Server: lokales Ollama, Fensterauswahl für GoodNotes,
+Tray mit Erinnerungen, Fokus mit der Browser-Erweiterung und optionalem Beenden von
+Ablenkungs-Programmen. Installer baut ein GitHub-Workflow. Details: [desktop/README.md](desktop/README.md).
+
 ## iPad-App
 
 Aus der Web-Oberfläche gibt es eine iPad-App (`app/`, Capacitor + Swift). Sie spricht direkt mit
@@ -164,8 +170,8 @@ Eine Web-App kann keine Tabs oder Apps schließen, das kann nur eine Erweiterung
 
 1. Chrome/Edge → `chrome://extensions` → Entwicklermodus → *Entpackte Erweiterung
    laden* → Ordner `extension/`.
-2. `python web.py` laufen lassen (Server auf diesem Rechner), im Popup oder im
-   Planer einen Fokus starten.
+2. `python web.py` **oder die PC-App** (`desktop/`) laufen lassen (beide nutzen `127.0.0.1:8765`),
+   im Popup oder im Planer einen Fokus starten.
 3. Solange er läuft, werden offene YouTube-/Instagram-/TikTok-… Tabs
    **geschlossen und geparkt**, neue werden auf eine Fokus-Seite umgeleitet. Danach
    gibt es eine Benachrichtigung, und das Popup öffnet die geparkten Tabs wieder.

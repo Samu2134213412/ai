@@ -142,3 +142,12 @@ test("Einstellungen validieren die Adresse; Speichern legt Sitzung ab", async ()
   assert.strictEqual((await b.api("/api/save", {})).saved, "in der App");
   done();
 });
+
+test("Standard-Adresse (Desktop) gilt, bis der Nutzer sie ändert", async () => {
+  const storage = memStorage();
+  const b = createBackend({ storage, template: TEMPLATE, clock, defaultHost: "http://localhost:11434" });
+  assert.strictEqual((await b.api("/api/settings")).host, "http://localhost:11434");
+  await b.api("/api/settings", { host: "http://192.168.0.5:11434" });
+  const b2 = createBackend({ storage, template: TEMPLATE, clock, defaultHost: "http://localhost:11434" });
+  assert.strictEqual((await b2.api("/api/settings")).host, "http://192.168.0.5:11434");
+});

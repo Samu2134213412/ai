@@ -54,8 +54,20 @@ async function load() {
 }
 async function post(path, body) { data = await App.api(path, body || {}); render(); }
 
+const D = window.TutorDesktop;                   // PC-App (Electron)
+function pushDesktop() {
+  if (D && data) D.pushFocus({ ends_at: data.focus.ends_at, minutes: data.focus.minutes, blocklist: data.blocklist });
+}
+if (D) D.onFocusCommand(async (cmd) => {         // Start/Stop aus der Browser-Erweiterung oder dem Tray
+  try {
+    if (cmd.type === "start") { await post("/api/focus/start", { minutes: cmd.minutes }); App.say("Fokus! 🛡", 3000); }
+    else if (cmd.type === "stop") await post("/api/focus/stop");
+  } catch (e) { App.addMsg("err", e.message); }
+});
+
 function render() {
   if (!data) return;
+  pushDesktop();
   if (window.TutorNative && TutorNative.isNative) TutorNative.onPlannerState(data);
   // Aufgaben
   const today = new Date().toISOString().slice(0, 10);
@@ -90,7 +102,7 @@ function setFocus(f) {
   }
   if (!wasFocus && f.active && N && N.hasShield) N.shield(true).then((err) => err && App.say("Sperre nicht aktiv: " + err, 6000));
   wasFocus = f.active;
-  paintFocus();
+  paintFocus(); pushDesktop();
 }
 function paintFocus() {
   const chip = $("focusChip"), on = focusLeft > 0;
@@ -162,7 +174,13 @@ if (window.TutorBackend) {
   $("settingsBtn").addEventListener("click", async () => {
     const c = await App.api("/api/settings");
     $("sHost").value = c.host; $("sModel").value = c.model; $("sVision").value = c.vision_model;
-    $("sTest").textContent = ""; nativeState(); $("settingsDlg").showModal();
+    $("sTest").textContent = ""; nativeState();
+    if (D) {
+      const st = await D.getSettings();
+      $("desktopSettings").hidden = false;
+      $("dApps").value = st.blockedApps.join("\n"); $("dTray").checked = st.trayOnClose; $("dAuto").checked = st.autostart;
+    }
+    $("settingsDlg").showModal();
   });
   const save = () => App.api("/api/settings", { host: $("sHost").value, model: $("sModel").value, vision_model: $("sVision").value });
   $("sTestBtn").addEventListener("click", async () => {
@@ -174,7 +192,9 @@ if (window.TutorBackend) {
       if (!s.problem) App.applyState(s, s.models);
     } catch (e) { $("sTest").textContent = "⚠ " + e.message; }
   });
-  $("settingsDlg").addEventListener("close", async () => { try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });
+  $("settingsDlg").addEventListener("close", async () => {
+    if (D && !$("desktopSettings").hidden) await D.setSettings({ blockedApps: $("dApps").value.split(/[\n,]+/), trayOnClose: $("dTray").checked, autostart: $("dAuto").checked });
+    try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });
   $("sNotif").addEventListener("click", async () => { await askNotifications(); $("sNativeState").textContent = $("notifState").textContent; });
   $("sShield").addEventListener("click", async () => {
     try { await N.shieldAuthorize(); await N.shieldPick(); } catch (e) { $("sNativeState").textContent = "⚠ " + e.message; }

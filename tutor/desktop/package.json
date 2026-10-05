@@ -1,0 +1,28 @@
+{
+  "name": "tutor-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tutor – Desktop-App für Windows, macOS und Linux",
+  "author": "Tutor",
+  "main": "main.js",
+  "scripts": {
+    "build-www": "node ../scripts/build-www.mjs www",
+    "start": "npm run build-www && electron .",
+    "dist": "npm run build-www && electron-builder --publish never",
+    "test": "node --test test/lib.test.js"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "de.tutor.desktop",
+    "productName": "Tutor",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "lib/**", "www/**", "assets/**", "package.json"],
+    "win": { "target": ["nsis", "portable"], "icon": "assets/icon.ico" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true },
+    "mac": { "target": ["dmg"], "category": "public.app-category.education", "icon": "assets/icon.png" },
+    "linux": { "target": ["AppImage", "deb"], "category": "Education", "icon": "assets/icon.png" }
+  }
+}
