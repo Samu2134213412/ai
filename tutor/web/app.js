@@ -348,7 +348,60 @@ function snapshot(rect, maxEdge = 900) {
   return cropCanvas(rect.x, rect.y, rect.w, rect.h, 700, maxEdge).toDataURL("image/jpeg", 0.9);
 }
 
+/* ---------------- Live-Zugriff: Fenster teilen & Kurzbefehl-Screenshots ---------------- */
+
+let cap = null;                               // { stream, video } bei laufender Freigabe
+async function grabFrame() {
+  const v = cap.video;
+  if (!v.videoWidth) await new Promise((r) => v.addEventListener("loadeddata", r, { once: true }));
+  const cv = document.createElement("canvas");
+  cv.width = v.videoWidth; cv.height = v.videoHeight;
+  cv.getContext("2d").drawImage(v, 0, 0);
+  page = null; $("pager").hidden = true;
+  setPage(cv, cv.width, cv.height);
+}
+function stopCapture() {
+  if (!cap) return;
+  cap.stream.getTracks().forEach((t) => t.stop());
+  cap = null; $("capture").textContent = "🖥 Fenster teilen";
+  say("Freigabe beendet.");
+}
+async function toggleCapture() {
+  if (cap) return stopCapture();
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    const video = document.createElement("video");
+    video.srcObject = stream; video.muted = true; await video.play();
+    cap = { stream, video };
+    stream.getVideoTracks()[0].addEventListener("ended", stopCapture);
+    $("capture").textContent = "⏹ Freigabe beenden";
+    await grabFrame();
+    if (perm) await readPage(); else say("Schalte „Darf zuschauen“ ein, dann lese ich mit.", 5000);
+  } catch (e) {
+    if (e.name !== "NotAllowedError") { setChat(true); addMsg("err", "Freigabe nicht möglich: " + e.message); }
+  }
+}
+if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) $("capture").hidden = false;
+$("capture").addEventListener("click", toggleCapture);
+
+/* Kurzbefehl (iPad): neuer Screenshot beim Server → als Seite laden und lesen. */
+let shotVersion = null;
+async function pollShot() {
+  try {
+    const { version } = await api("/api/shot");
+    if (shotVersion === null) { shotVersion = version; return; }
+    if (version === shotVersion || busy) return;
+    shotVersion = version;
+    const blobData = await (await fetch("/api/shot.img")).blob();
+    stopCapture();
+    await openFile(new File([blobData], "screenshot", { type: blobData.type }));
+    hop();
+  } catch { /* offline: nächster Versuch */ }
+}
+setInterval(pollShot, 2000);
+
 async function readPage() {
+  if (cap && !busy) await grabFrame();      // frisches Bild direkt aus dem geteilten Fenster
   if (!page || busy) return;
   if (!perm) return say("Ich darf noch nicht zuschauen – schalte 👀 ein.", 4500);
   busy = true;

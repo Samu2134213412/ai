@@ -199,6 +199,50 @@ class PlannerWebTests(unittest.TestCase):
         self.assertNotIn("Abschrift: 3x", sys_prompt)
 
 
+class ShotTests(unittest.TestCase):
+    def setUp(self):
+        self.server, self.base = start()
+
+    def tearDown(self):
+        self.server.shutdown(); self.server.server_close()
+
+    def upload(self, data, ctype="image/png", headers=None):
+        req = urllib.request.Request(self.base + "/api/shot", data=data,
+                                     headers={"Content-Type": ctype, **(headers or {})})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_raw_upload_roundtrip(self):
+        self.assertEqual(json.loads(call(self.base, "/api/shot")[2])["version"], 0)
+        self.assertEqual(call(self.base, "/api/shot.img")[0], 404)
+        png = b"\x89PNG" + b"x" * 400
+        self.assertEqual(self.upload(png), (200, {"ok": True, "version": 1}))
+        status, headers, body = call(self.base, "/api/shot.img")
+        self.assertEqual((status, body, headers["Content-Type"]), (200, png, "image/png"))
+        self.assertEqual(self.upload(png, "image/jpeg")[1]["version"], 2)
+
+    def test_rejects_non_images_and_tiny(self):
+        self.assertEqual(self.upload(b"x" * 400, "text/html")[0], 415)
+        self.assertEqual(self.upload(b"x" * 400, "image/svg+xml")[0], 415)
+        self.assertEqual(self.upload(b"x" * 10)[0], 400)
+
+    def test_token_and_origin(self):
+        server, base = start(token="geheim")
+        try:
+            req = lambda h: urllib.request.Request(base + "/api/shot", data=b"x" * 400,
+                                                   headers={"Content-Type": "image/png", **h})
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(req({}))
+            self.assertEqual(ctx.exception.code, 401)
+            self.assertEqual(urllib.request.urlopen(req({"X-Tutor-Token": "geheim"})).status, 200)
+        finally:
+            server.shutdown(); server.server_close()
+        self.assertEqual(self.upload(b"x" * 400, headers={"Origin": "http://evil.example"})[0], 403)
+
+
 class TokenTests(unittest.TestCase):
     def test_token_required(self):
         server, base = start(token="geheim")

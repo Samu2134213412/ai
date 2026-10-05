@@ -96,6 +96,38 @@ erneut (`🔍`). PDFs lädt das iPad über die pdf.js-Bibliothek von cdnjs
 (Internet nötig); PNG geht komplett offline. Auf einem echten iPad ist das
 Ganze bisher nicht getestet, nur im Desktop-Chromium.
 
+### Direkt statt Export: GoodNotes ohne PNG-Umweg
+
+GoodNotes selbst bietet keine Schnittstelle, und iPadOS lässt Apps keine Daten
+anderer Apps lesen. Der Tutor kann also nicht „in“ GoodNotes greifen. Diese zwei
+Wege kommen ohne Export aus:
+
+**1. Fenster teilen (Mac, Windows, Browser-GoodNotes, Chromebook):** Chip
+**🖥 Fenster teilen** → GoodNotes-Fenster wählen. Der Tutor sieht die Seite live;
+**🔍 Nochmal ansehen** holt jeweils ein frisches Bild. Auf dem iPad bietet Safari
+diese Funktion nicht an.
+
+**2. iPad: Kurzbefehl „An Tutor“** (ein Tipp, kein Export-Dialog). In der
+Kurzbefehle-App einen neuen Kurzbefehl anlegen:
+
+1. *Bildschirmfoto aufnehmen*
+2. *Bild zuschneiden* auf die GoodNotes-Hälfte (im Split View sonst mit im Bild)
+3. *Bild konvertieren* → JPEG
+4. *Inhalt von URL abrufen*: URL `http://<IP-des-Rechners>:8765/api/shot`,
+   Methode **POST**, Header `Content-Type: image/jpeg` und `X-Tutor-Token: <Token>`
+   (steht in der URL, die `web.py --host 0.0.0.0` ausgibt), Anfragetext: *Datei* →
+   das Bild aus Schritt 3
+
+Auslösen per **Rücktipp** (Einstellungen → Bedienungshilfen → Tippen →
+Rücktipp), Aktionstaste oder „Hey Siri, An Tutor“. Der Tutor im Split View
+lädt den neuen Screenshot nach ca. 2 s selbst und liest ihn (bei eingeschaltetem
+👀). Die Server-Seite (`POST /api/shot`) ist getestet; den Kurzbefehl selbst
+habe ich nicht auf einem iPad durchgespielt, die Menünamen können abweichen.
+
+**Richtig direkt** (die Seite live mitverfolgen) geht auf dem iPad nur mit einer
+nativen App: Sie kann per ReplayKit den Bildschirm teilen, während GoodNotes
+läuft. Das steht auf der Liste unten.
+
 ## Organisieren, Fokus, Erinnerungen
 
 Chip **📋 Planer** (Web-Oberfläche):
@@ -149,7 +181,8 @@ Was erst eine native App (z. B. SwiftUI oder Capacitor) leisten kann:
 | Apps wie Instagram/YouTube auf dem iPad sperren | Screen-Time-API (FamilyControls); Apple muss das Entitlement freigeben |
 | Erinnerungen bei geschlossener App | lokale Benachrichtigungen (UNUserNotificationCenter) |
 | Handschrift direkt vom Pencil | PencilKit + Texterkennung auf dem Gerät |
-| GoodNotes-Seite ohne Export | Share-Extension „An Tutor senden“ |
+| GoodNotes-Seite live mitlesen | ReplayKit-Bildschirmfreigabe (Broadcast-Extension) |
+| GoodNotes-Seite aus dem Teilen-Menü | Share-Extension „An Tutor senden“ |
 
 Bis dahin laufen Server, Logik und Oberfläche unverändert weiter; die App würde
 dieselbe API und `web/` wiederverwenden.

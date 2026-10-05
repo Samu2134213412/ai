@@ -47,6 +47,7 @@ class App:
         self.token = token
         self.lock = threading.Lock()
         self.session = core.Session(config, client, self._prompt(config["subject"]))
+        self.shot = {"version": 0, "data": b"", "ctype": "image/png"}   # letzter Screenshot (Kurzbefehl)
         self.session.context_extra = lambda: pl.planner_block(
             self.planner.open_tasks(), date.today())
 
@@ -193,6 +194,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.planner_state())
             if url.path == "/api/focus":
                 return self._json(self.app.planner.focus(time.time()))
+            if url.path == "/api/shot":
+                return self._json({"version": self.app.shot["version"]})
+            if url.path == "/api/shot.img":
+                shot = self.app.shot
+                if not shot["data"]:
+                    return self._json({"error": "Noch kein Screenshot."}, 404)
+                return self._send(200, shot["data"], shot["ctype"])
             if url.path == "/api/plan.ics":
                 body = self.app.planner.ics(datetime.now()).encode()
                 return self._send(200, body, "text/calendar; charset=utf-8",
@@ -229,6 +237,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "Nicht autorisiert – URL mit ?t=… öffnen."}, 401)
         if not self._origin_ok():
             return self._json({"error": "Falscher Origin"}, 403)
+        if path == "/api/shot":
+            return self._receive_shot()
         try:
             body = self._body()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -285,6 +295,19 @@ class Handler(BaseHTTPRequestHandler):
             saved = session.save()
             return self._json({"saved": str(saved) if saved else None})
         return self._json({"error": "Unbekannt"}, 404)
+
+    def _receive_shot(self):
+        """Roher Bild-Upload, z. B. aus einem iPad-Kurzbefehl („Inhalt von URL abrufen“)."""
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        n = int(self.headers.get("Content-Length") or 0)
+        if not ctype.startswith("image/") or ctype == "image/svg+xml":
+            return self._json({"error": "Bild (PNG/JPEG) als Anfrage-Inhalt senden."}, 415)
+        if not 100 < n <= MAX_BODY:
+            return self._json({"error": "Bild fehlt oder ist zu groß."}, 400)
+        data = self.rfile.read(n)
+        shot = self.app.shot
+        shot.update(data=data, ctype=ctype, version=shot["version"] + 1)
+        return self._json({"ok": True, "version": shot["version"]})
 
     def _planner_route(self, path: str, body: dict):
         app = self.app
