@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tutor</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tutor">
+<meta name="theme-color" content="#ffd9a8">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header id="bar">
+  <div class="row top">
+    <button id="home" class="home" type="button" aria-label="Chat ein-/ausklappen"></button>
+    <form id="askForm" autocomplete="off">
+      <input id="askInput" type="text" placeholder="Frag mich etwas …" enterkeyhint="send" aria-label="Nachricht an den Tutor">
+      <button class="send" type="submit" aria-label="Senden">➤</button>
+    </form>
+  </div>
+  <div class="row chips" role="toolbar" aria-label="Optionen">
+    <label class="chip sel"><span>Fach</span>
+      <select id="subject">
+        <option value="">Allgemein</option><option>Mathe</option><option>Physik</option>
+        <option>Chemie</option><option>Biologie</option><option>Informatik</option>
+        <option>Deutsch</option><option>Englisch</option><option>Geschichte</option>
+        <option value="__other">Anderes …</option>
+      </select></label>
+    <label class="chip sel"><span>Modell</span><select id="model"></select></label>
+    <div class="chip stage" id="stage" title="Hinweisstufe"><i></i><i></i><i></i><b id="stageLabel">–</b></div>
+    <button class="chip toggle" id="perm" type="button" aria-pressed="false" title="Darf der Tutor die Seite ansehen und darauf schreiben?">👀 Darf zuschauen</button>
+    <button class="chip" id="share" type="button">📄 Seite</button>
+    <button class="chip" id="reread" type="button" hidden>🔍 Nochmal ansehen</button>
+    <button class="chip" id="export" type="button" hidden>⬇︎ Als PNG</button>
+    <button class="chip" id="giveup" type="button">🏳 Aufgeben</button>
+    <button class="chip" id="newTask" type="button">↺ Neu</button>
+    <button class="chip" id="save" type="button">💾</button>
+  </div>
+</header>
+
+<main id="area">
+  <div id="empty">
+    <h2>Zeig mir deine Seite</h2>
+    <p>Zieh eine Seite aus <b>GoodNotes</b> hierher, füge sie ein oder tippe <b>📄 Seite</b>.</p>
+    <ol>
+      <li>GoodNotes: <i>Teilen → Seite exportieren → Bild (PNG)</i> oder Auswahl kopieren</li>
+      <li>Hier: einfügen, ablegen oder aus „Dateien“ wählen (auch PDF)</li>
+      <li>Schalte <b>👀 Darf zuschauen</b> ein – dann liest, zeigt und schreibt der Blob auf deiner Seite.</li>
+    </ol>
+  </div>
+  <div id="pager" hidden><button id="prevPg" type="button">‹</button><span id="pgNo"></span><button id="nextPg" type="button">›</button></div>
+  <div id="pageWrap" hidden>
+    <canvas id="page"></canvas>
+    <canvas id="ink"></canvas>
+  </div>
+  <input id="file" type="file" accept="image/*,application/pdf" hidden>
+</main>
+
+<section id="chat" aria-live="polite" hidden>
+  <div id="log"></div>
+</section>
+
+<div id="blob" class="blob" data-mood="idle" aria-hidden="true">
+  <div class="say" id="say"></div>
+  <svg viewBox="0 0 100 100" overflow="visible">
+    <defs>
+      <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffdcae"/><stop offset="1" stop-color="#ffab98"/></linearGradient>
+    </defs>
+    <ellipse class="shadow" cx="50" cy="97" rx="30" ry="4" fill="#000" opacity=".12"/>
+    <g class="wobble">
+      <path d="M50 8C74 6 93 24 93 51C93 78 75 93 50 93C25 93 7 78 7 51C7 26 27 10 50 8Z" fill="url(#body)"/>
+      <ellipse cx="29" cy="62" rx="7" ry="4.5" fill="#ff7f9f" opacity=".5"/><ellipse cx="71" cy="62" rx="7" ry="4.5" fill="#ff7f9f" opacity=".5"/>
+      <g class="eyes">
+        <g class="eye" transform="translate(36 46)"><g class="blink"><circle r="7.5" fill="#2b2118"/><g class="pupil"><circle cx="2" cy="-2.2" r="2.5" fill="#fff"/></g></g></g>
+        <g class="eye" transform="translate(64 46)"><g class="blink"><circle r="7.5" fill="#2b2118"/><g class="pupil"><circle cx="2" cy="-2.2" r="2.5" fill="#fff"/></g></g></g>
+      </g>
+      <g class="happyEyes"><path d="M29 48Q36 39 43 48M57 48Q64 39 71 48" fill="none" stroke="#2b2118" stroke-width="3.4" stroke-linecap="round"/></g>
+      <path class="mouth smile" d="M42 63Q50 71 58 63" fill="none" stroke="#2b2118" stroke-width="3" stroke-linecap="round"/>
+      <ellipse class="mouth open" cx="50" cy="66" rx="5" ry="4.5" fill="#7a2e2e"/>
+      <ellipse class="mouth hmm" cx="50" cy="66" rx="3" ry="3" fill="none" stroke="#2b2118" stroke-width="2.6"/>
+      <g id="hand" class="hand">
+        <g transform="translate(86 70) rotate(40)"><rect x="-2.4" y="-4" width="4.8" height="30" rx="1.2" fill="#ffd43b"/><rect x="-2.4" y="-4" width="4.8" height="5" rx="1.2" fill="#ff8aa0"/><path d="M-2.4 26 L0 33 L2.4 26Z" fill="#f1c9a0"/><path d="M-1 30.4 L0 33 L1 30.4Z" fill="#37322d"/></g>
+        <circle cx="86" cy="70" r="6.5" fill="#ffbfa6" stroke="#f29c84" stroke-width="1.2"/>
+      </g>
+    </g>
+  </svg>
+</div>
+
+<div id="drop" hidden>Seite hier ablegen</div>
+<script src="/app.js"></script>
+</body>
+</html>

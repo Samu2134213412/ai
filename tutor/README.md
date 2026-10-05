@@ -7,6 +7,8 @@ Teilschritt). Läuft komplett lokal über [Ollama](https://ollama.com).
 ```
 tutor/
 ├── main.py            # CLI, Hinweisstufen-Logik, Streaming, Befehle
+├── web.py             # Web-Oberfläche (Server) – Blob-Leiste, Seiten-Ansicht
+├── web/               # index.html, style.css, app.js, icon.svg (PWA)
 ├── config.yaml        # Modell, temperature, Fach, Sprache, Stufen, Sessions
 ├── prompts/tutor.md   # System-Prompt mit Regeln + 2 Beispieldialogen
 ├── requirements.txt
@@ -51,6 +53,46 @@ python main.py --modell qwen2.5:14b --speichern
 | `/exit`          | beenden (auch Strg+D)                                       |
 
 Strg+C bricht eine laufende Antwort ab, ohne das Programm zu beenden.
+
+## Web-Oberfläche mit Blob (iPad / GoodNotes)
+
+```bash
+ollama pull qwen2.5vl:7b          # Vision-Modell, liest deine Seiten
+python web.py                     # nur dieser Rechner: http://127.0.0.1:8765
+python web.py --host 0.0.0.0      # fürs iPad im selben WLAN
+```
+
+Mit `--host 0.0.0.0` gibt `web.py` eine URL mit Zugangs-Token aus
+(`http://<IP>:8765/?t=…`). Auf dem iPad in Safari öffnen → Teilen →
+**Zum Home-Bildschirm**. Das Token landet in einem Cookie; die URL nicht
+weitergeben. Der Tutor läuft auf dem Rechner mit Ollama, das iPad ist nur
+Bildschirm.
+
+**Oben die Leiste:** Blob mit Gesicht (Klick klappt den Chat auf), Eingabefeld,
+Chips für Fach, Modell, Hinweisstufe, `👀 Darf zuschauen`, `📄 Seite`,
+`🔍 Nochmal ansehen`, `⬇︎ Als PNG`, `🏳 Aufgeben`, `↺ Neu`, `💾`.
+
+**Der Blob und deine Seite** (alles nur mit `👀 Darf zuschauen`, standardmäßig aus):
+
+1. Seite aus GoodNotes holen: *Teilen → Seite exportieren → PNG/PDF* und über
+   `📄 Seite` aus „Dateien“ wählen – oder Auswahl kopieren und hier einfügen,
+   oder per Drag & Drop (Split View: GoodNotes links, Tutor rechts).
+2. Das Vision-Modell liest die Seite (Handschrift, Formeln); die Abschrift
+   erscheint im Chat, damit du Lesefehler siehst. Der Tutor nutzt sie als Kontext.
+3. **Antippen** einer Stelle: der Blob fliegt hin, markiert sie, liest sie genau
+   und fragt, was unklar ist. **Pencil/Maus-Ziehen** zeichnet eigene Striche.
+4. Nach jeder Antwort fliegt der Blob an die Stelle (oder an den Rand) und
+   **schreibt die Kernfrage als Randnotiz** auf die Seite, dann fliegt er zurück.
+5. `⬇︎ Als PNG` teilt die Seite samt Notizen (iPad-Teilen-Dialog → „In GoodNotes
+   öffnen“ bzw. Dateien) – dort wieder importieren.
+
+**Grenzen (ehrlich):** GoodNotes hat keine Schnittstelle für Plugins. Der Blob
+kann deshalb nicht live in GoodNotes zeichnen, nicht über anderen Apps
+schweben und den Pencil in GoodNotes nicht mitlesen. Er arbeitet auf einer
+Kopie der Seite in seinem eigenen Fenster; geänderte Seiten zeigst du ihm
+erneut (`🔍`). PDFs lädt das iPad über die pdf.js-Bibliothek von cdnjs
+(Internet nötig); PNG geht komplett offline. Auf einem echten iPad ist das
+Ganze bisher nicht getestet, nur im Desktop-Chromium.
 
 ## Wie die Hinweisstufen funktionieren
 
@@ -103,7 +145,7 @@ qwen2.5:32b    9f13ba1299af  23 GB    100% GPU     4 minutes from now
 ## Tests
 
 ```bash
-# Offline (ohne Ollama): Stufenlogik, Befehle, Fehlerbehandlung, Speichern
+# Offline (ohne Ollama): Stufenlogik, Befehle, Fehlerbehandlung, Speichern, Web-API
 python -m unittest discover -s tests -v
 
 # Live gegen das echte Modell: Lernender drängelt 5× nach der Lösung

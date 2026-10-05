@@ -30,11 +30,13 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = {
     "host": "http://localhost:11434",
     "model": "qwen2.5:32b",
+    "vision_model": "qwen2.5vl:7b",
     "temperature": 0.6,
     "subject": "",
     "language": "Deutsch",
     "hints": {"turns_per_stage": 2, "min_attempts_before_giving_up": 2},
     "sessions": {"autosave": False, "directory": "sessions"},
+    "web": {"host": "127.0.0.1", "port": 8765},
 }
 
 GIVEN_UP = 4  # Pseudo-Stufe: Lösung freigegeben
@@ -121,6 +123,7 @@ class Task:
     attempts: int = 0          # Nachrichten des Lernenden zu dieser Aufgabe
     given_up: bool = False
     messages: list = field(default_factory=list)  # user/assistant-Verlauf
+    page_notes: list = field(default_factory=list)  # gelesene Seiteninhalte (Web-UI)
 
     def stage(self, turns_per_stage: int) -> int:
         """Aktuelle Hinweisstufe 1–3 bzw. GIVEN_UP."""
@@ -128,6 +131,20 @@ class Task:
             return GIVEN_UP
         per = max(1, int(turns_per_stage))
         return min(1 + max(self.attempts - 1, 0) // per, 3)
+
+
+def page_block(task: Task) -> str:
+    """Von der Bildanalyse gelesene Seiteninhalte (GoodNotes-Seite o. ä.)."""
+    if not task.page_notes:
+        return ""
+    notes = "\n".join(f"- {n}" for n in task.page_notes[-4:])
+    return (
+        "\n\n# Seite des Lernenden (vom Programm per Bildanalyse gelesen)\n"
+        "Der Lernende hat dir seine Notizseite gezeigt. Das ist die Abschrift "
+        "(kann Lesefehler enthalten – frag bei Unklarem nach):\n" + notes + "\n"
+        "Beziehe dich konkret auf Stellen der Seite. Für Lösungen gelten trotzdem "
+        "dieselben Stufenregeln.\n"
+    )
 
 
 def status_block(task: Task, turns_per_stage: int) -> str:
@@ -186,6 +203,31 @@ def check_model(client, model: str) -> None:
         raise TutorError(_missing_hint(model))
 
 
+def describe_image(client, model: str, image_b64: str, focus: str = "") -> str:
+    """Lässt ein Vision-Modell eine Notizseite lesen (Text, Formeln, Handschrift)."""
+    prompt = (
+        "Das Bild ist eine Notiz-/Arbeitsseite eines Lernenden (z. B. aus GoodNotes). "
+        "Schreibe ab, was darauf steht: Aufgabenstellung, Rechenschritte, Handschrift, "
+        "Formeln, Skizzen (kurz beschrieben). Keine Bewertung, keine Lösung, "
+        "nichts dazuerfinden. Antworte auf Deutsch, höchstens 200 Wörter."
+    )
+    if focus:
+        prompt += f" Konzentriere dich besonders auf: {focus}"
+    try:
+        resp = client.chat(model=model, messages=[
+            {"role": "user", "content": prompt, "images": [image_b64]}],
+            options={"temperature": 0.1})
+    except ollama.ResponseError as exc:
+        if exc.status_code == 404:
+            raise TutorError(_missing_hint(model)) from exc
+        raise TutorError(f"Ollama-Fehler: {exc.error}") from exc
+    except (ConnectionError, OSError) as exc:
+        raise TutorError(_connection_hint(client_host(client))) from exc
+    msg = resp["message"] if isinstance(resp, dict) else resp.message
+    content = msg["content"] if isinstance(msg, dict) else msg.content
+    return (content or "").strip()
+
+
 def stream_reply(client, model: str, messages: list, temperature: float):
     """Liefert die Antwort des Modells Stück für Stück."""
     try:
@@ -229,38 +271,53 @@ class Session:
     # -- Modell-Anfrage -----------------------------------------------------
 
     def build_messages(self) -> list[dict]:
-        system = self.system_prompt + status_block(self.task, self.turns_per_stage)
+        system = (self.system_prompt + page_block(self.task)
+                  + status_block(self.task, self.turns_per_stage))
         return [{"role": "system", "content": system}, *self.task.messages]
 
-    def ask(self, text: str) -> str | None:
-        """Schickt eine Nachricht des Lernenden und streamt die Antwort."""
+    def stream_turn(self, text: str):
+        """Eine Runde: Nachricht des Lernenden → Antwort stückweise (Generator).
+
+        Bei TutorError wird die Runde zurückgenommen (zählt nicht als Versuch).
+        Bricht der Aufrufer den Generator ab, bleibt die Teilantwort im Verlauf.
+        """
         task = self.task
         if not task.title:
             task.title = text[:80]
         task.attempts += 1
         task.messages.append({"role": "user", "content": text})
-
         parts: list[str] = []
-        self.out.write(_c("36", "Tutor: "))
-        self.out.flush()
         try:
             for piece in stream_reply(self.client, self.model, self.build_messages(),
                                       self.config["temperature"]):
+                parts.append(piece)
+                yield piece
+        except TutorError:
+            task.messages.pop()
+            task.attempts -= 1
+            raise
+        finally:
+            if parts:
+                task.messages.append({"role": "assistant", "content": "".join(parts)})
+
+    def ask(self, text: str) -> str | None:
+        """Terminal-Variante: streamt die Antwort direkt nach self.out."""
+        self.out.write(_c("36", "Tutor: "))
+        self.out.flush()
+        parts: list[str] = []
+        try:
+            for piece in self.stream_turn(text):
                 parts.append(piece)
                 self.out.write(piece)
                 self.out.flush()
         except TutorError as exc:
             self.out.write("\n")
             error(str(exc))
-            task.messages.pop()          # fehlgeschlagene Runde zählt nicht
-            task.attempts -= 1
             return None
         except KeyboardInterrupt:
             self.out.write(_c("2", " [abgebrochen]"))
         self.out.write("\n\n")
-        reply = "".join(parts)
-        task.messages.append({"role": "assistant", "content": reply})
-        return reply
+        return "".join(parts)
 
     # -- Befehle ------------------------------------------------------------
 
@@ -308,24 +365,32 @@ class Session:
         else:
             info("Beschreibe die Aufgabe und was du schon versucht hast.")
 
-    def give_up(self) -> None:
+    GIVE_UP_TEXT = ("Ich gebe auf. Bitte zeig mir die vollständige Lösung "
+                    "und erkläre jeden Schritt.")
+
+    def request_give_up(self) -> tuple[str, str]:
+        """Prüft /aufgeben. Rückgabe (status, meldung); status 'ok' = freigegeben,
+        danach muss GIVE_UP_TEXT als Nachricht gesendet werden."""
         task = self.task
         if task.attempts == 0:
-            info("Es gibt noch keine Aufgabe. Beschreibe zuerst, woran du arbeitest.")
-            return
+            return "none", "Es gibt noch keine Aufgabe. Beschreibe zuerst, woran du arbeitest."
         if task.given_up:
-            info("Die Lösung ist für diese Aufgabe bereits freigegeben. /neu für die nächste.")
-            return
+            return "done", "Die Lösung ist für diese Aufgabe bereits freigegeben. /neu für die nächste."
         minimum = self.config["hints"]["min_attempts_before_giving_up"]
         if task.attempts < minimum and not self.confirm_give_up:
             self.confirm_give_up = True
-            info(f"Du hast erst {task.attempts} Versuch(e). Noch ein Anlauf lohnt sich oft. "
-                 "Zum Bestätigen nochmal /aufgeben eingeben.")
-            return
+            return "confirm", (f"Du hast erst {task.attempts} Versuch(e). Noch ein Anlauf "
+                               "lohnt sich oft. Zum Bestätigen nochmal /aufgeben eingeben.")
         self.confirm_give_up = False
         task.given_up = True
-        self.ask("Ich gebe auf. Bitte zeig mir die vollständige Lösung "
-                 "und erkläre jeden Schritt.")
+        return "ok", ""
+
+    def give_up(self) -> None:
+        status, msg = self.request_give_up()
+        if status != "ok":
+            info(msg)
+            return
+        self.ask(self.GIVE_UP_TEXT)
 
     def switch_model(self, name: str) -> None:
         if not name:

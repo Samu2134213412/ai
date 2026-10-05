@@ -28,12 +28,17 @@ class FakeClient:
             raise ConnectionError("Failed to connect to Ollama")
         return {"models": [{"model": m} for m in self.models]}
 
-    def chat(self, model, messages, stream, options):
+    def chat(self, model, messages, stream=False, options=None):
         self.calls.append({"model": model, "messages": messages, "options": options})
         if self.fail == "connection":
             raise ConnectionError("Failed to connect to Ollama")
         if model not in self.models:
             raise ollama.ResponseError(f"model '{model}' not found", 404)
+        if not stream:
+            return {"message": {"content": "Abschrift: 3x + 7 = 22"}}
+        return self._stream()
+
+    def _stream(self):
         for word in self.reply.split(" "):
             yield {"message": {"content": word + " "}}
 

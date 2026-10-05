@@ -7,6 +7,9 @@ host: http://localhost:11434
 # Modell, das Ollama verwenden soll (vorher: ollama pull <modell>)
 model: qwen2.5:32b
 
+# Vision-Modell: liest geteilte Notizseiten (Web-UI). Vorher: ollama pull qwen2.5vl:7b
+vision_model: qwen2.5vl:7b
+
 # Kreativität: niedriger = fokussierter, höher = freier
 temperature: 0.6
 
@@ -28,3 +31,8 @@ hints:
 sessions:
   autosave: false        # true = beim Beenden automatisch speichern
   directory: sessions
+
+# Web-Oberfläche (python web.py)
+web:
+  host: 127.0.0.1        # für das iPad: 0.0.0.0 (oder --host 0.0.0.0)
+  port: 8765
