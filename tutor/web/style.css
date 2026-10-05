@@ -82,6 +82,7 @@ body {
 #pageWrap { position: relative; box-shadow: var(--shadow); border-radius: 6px; background: #fff; }
 #pageWrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6px; touch-action: none; }
 #ink { cursor: crosshair; }
+#pager[hidden] { display: none; }
 #pager { position: absolute; z-index: 5; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center;
   background: var(--chip); border: 1.5px solid var(--line); border-radius: 999px; padding: 4px 10px; }
 #pager button { border: 0; background: none; font-size: 22px; color: var(--ink); }

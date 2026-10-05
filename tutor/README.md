@@ -128,6 +128,13 @@ habe ich nicht auf einem iPad durchgespielt, die Menünamen können abweichen.
 nativen App: Sie kann per ReplayKit den Bildschirm teilen, während GoodNotes
 läuft. Das steht auf der Liste unten.
 
+## iPad-App
+
+Aus der Web-Oberfläche gibt es eine iPad-App (`app/`, Capacitor + Swift). Sie spricht direkt mit
+Ollama im WLAN (kein Python-Server nötig), plant echte Benachrichtigungen, kann Apps per
+Screen Time sperren und GoodNotes im Split View live per ReplayKit mitlesen. Bauen, Xcode-Setup
+und ehrlicher Teststand: siehe [app/README.md](app/README.md).
+
 ## Organisieren, Fokus, Erinnerungen
 
 Chip **📋 Planer** (Web-Oberfläche):

@@ -29,6 +29,10 @@ const pctx = pageCv.getContext("2d"), ictx = ink.getContext("2d");
 /* ---------------- API ---------------- */
 
 async function api(path, body) {
+  const B = window.TutorBackend;
+  if (B) {                                       // iPad-App: Logik läuft lokal
+    try { return await B.api(path, body); } catch (e) { throw e; }
+  }
   const r = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     headers: { "Content-Type": "application/json" },
@@ -40,6 +44,7 @@ async function api(path, body) {
 }
 
 async function stream(path, body, onPiece) {
+  if (window.TutorBackend) return window.TutorBackend.stream(path, body, onPiece);
   const r = await fetch(path, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
@@ -367,6 +372,11 @@ function stopCapture() {
   say("Freigabe beendet.");
 }
 async function toggleCapture() {
+  if (window.TutorNative && TutorNative.hasScreenShare) {      // iPad: ReplayKit-Freigabe
+    try { await TutorNative.startBroadcast(); say("Wähle „Tutor“ und starte die Übertragung.", 6000); }
+    catch (e) { setChat(true); addMsg("err", "Freigabe nicht möglich: " + e.message); }
+    return;
+  }
   if (cap) return stopCapture();
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
@@ -382,17 +392,25 @@ async function toggleCapture() {
   }
 }
 if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) $("capture").hidden = false;
+if (window.TutorNative && TutorNative.hasScreenShare) { $("capture").hidden = false; $("capture").textContent = "📱 Bildschirm teilen"; }
 $("capture").addEventListener("click", toggleCapture);
 
-/* Kurzbefehl (iPad): neuer Screenshot beim Server → als Seite laden und lesen. */
+/* Neuer Screenshot: vom Server (Kurzbefehl) oder, in der App, von der ReplayKit-Freigabe. */
 let shotVersion = null;
+const b64Blob = (b64, type) => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type }); };
 async function pollShot() {
   try {
-    const { version } = await api("/api/shot");
+    let version, getBlob;
+    if (window.TutorNative && TutorNative.hasScreenShare) {
+      const f = await TutorNative.latestFrame();
+      if (!f) return;
+      version = f.version; getBlob = async () => b64Blob(f.data, "image/jpeg");
+    } else if (window.TutorBackend) return;
+    else { version = (await api("/api/shot")).version; getBlob = async () => (await fetch("/api/shot.img")).blob(); }
     if (shotVersion === null) { shotVersion = version; return; }
     if (version === shotVersion || busy) return;
     shotVersion = version;
-    const blobData = await (await fetch("/api/shot.img")).blob();
+    const blobData = await getBlob();
     stopCapture();
     await openFile(new File([blobData], "screenshot", { type: blobData.type }));
     hop();
@@ -635,7 +653,7 @@ new ResizeObserver(fitPage).observe(area);
 /* ---------------- Start ---------------- */
 
 window.TutorApp = {
-  api, say, hop, setChat, addMsg,
+  api, say, hop, setChat, addMsg, applyState,
   hasPage: () => !!page,
   pageImages: () => pageTiles(),
   busy: () => busy,
@@ -649,6 +667,10 @@ window.TutorApp = {
     const s = await api("/api/state");
     applyState(s, s.models);
     say("Hallo! Ich bin dein Tutor. 👋", 4500);
+    if (s.problem) {
+      setChat(true); addMsg("err", s.problem);
+      if (window.TutorBackend) setTimeout(() => $("settingsBtn").click(), 600);
+    }
   } catch (e) {
     setChat(true); addMsg("err", e.message);
   }

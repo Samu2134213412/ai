@@ -44,6 +44,7 @@
     <button class="chip" id="giveup" type="button">🏳 Aufgeben</button>
     <button class="chip" id="newTask" type="button">↺ Neu</button>
     <button class="chip" id="save" type="button">💾</button>
+    <button class="chip" id="settingsBtn" type="button" hidden title="Einstellungen">⚙︎</button>
   </div>
 </header>
 
@@ -115,6 +116,24 @@
   <div class="actions"><button value="later" class="go">Los geht’s</button></div>
 </form></dialog>
 
+<dialog id="settingsDlg"><form method="dialog">
+  <h3>⚙︎ Einstellungen</h3>
+  <p class="hint">Der Tutor läuft über Ollama auf deinem Mac/PC im selben WLAN. Dort starten: <code>OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS="*" ollama serve</code></p>
+  <label class="hint">Ollama-Adresse<input id="sHost" placeholder="http://192.168.0.10:11434" inputmode="url" autocapitalize="off" autocorrect="off" style="width:100%"></label>
+  <label class="hint">Tutor-Modell<input id="sModel" style="width:100%"></label>
+  <label class="hint">Vision-Modell (Seiten lesen)<input id="sVision" style="width:100%"></label>
+  <div id="sTest" class="hint"></div>
+  <div id="nativeSettings" hidden>
+    <h4>iPad</h4>
+    <div class="actions left">
+      <button type="button" id="sNotif">🔔 Benachrichtigungen</button>
+      <button type="button" id="sShield">🛡 Fokus-Sperre: Apps wählen</button>
+    </div>
+    <div id="sNativeState" class="hint"></div>
+  </div>
+  <div class="actions"><button type="button" id="sTestBtn">Verbindung testen</button><button value="ok" class="go">Fertig</button></div>
+</form></dialog>
+
 <dialog id="plannerDlg"><div class="dlg">
   <header><h3>📋 Planer</h3><button type="button" id="plannerClose" aria-label="Schließen">✕</button></header>
 
@@ -150,6 +169,9 @@
 <datalist id="subjects"><option>Mathe</option><option>Physik</option><option>Chemie</option><option>Biologie</option><option>Informatik</option><option>Deutsch</option><option>Englisch</option><option>Geschichte</option></datalist>
 
 <div id="drop" hidden>Seite hier ablegen</div>
+<script src="/core.js"></script>
+<script src="/backend-local.js"></script>
+<script src="/native.js"></script>
 <script src="/app.js"></script>
 <script src="/planner.js"></script>
 </body>

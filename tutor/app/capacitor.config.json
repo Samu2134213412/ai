@@ -1,0 +1,12 @@
+{
+  "appId": "de.tutor.app",
+  "appName": "Tutor",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#fff7ec"
+  },
+  "plugins": {
+    "LocalNotifications": { "iconColor": "#ff9f7a" }
+  }
+}

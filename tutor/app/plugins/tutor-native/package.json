@@ -1,0 +1,9 @@
+{
+  "name": "tutor-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native Teile der Tutor-App: Fokus-Sperre (Screen Time) und Bildschirm-Freigabe (ReplayKit)",
+  "files": ["ios/Sources", "Package.swift"],
+  "capacitor": { "ios": { "src": "ios" } },
+  "peerDependencies": { "@capacitor/core": ">=8.0.0" }
+}

@@ -11,7 +11,7 @@ const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-let data = null, focusLeft = 0, wasFocus = false;
+let data = null, focusLeft = 0, wasFocus = false, shieldChecked = false;
 
 /* ---------------- Benachrichtigungen ---------------- */
 
@@ -24,6 +24,11 @@ async function notify(title, body) {
   try { new Notification(title, { body, icon: "/icon.svg" }); } catch { App.say(title, 6000); }
 }
 async function askNotifications() {
+  if (window.TutorNative && TutorNative.hasNotifications) {
+    const r = await TutorNative.requestNotifications(); syncNotifState();
+    if (r === "granted") TutorNative.onPlannerState(data || (await App.api("/api/planner")));
+    return r;
+  }
   if (!("Notification" in window)) { App.say("Dieses Gerät/Browser unterstützt keine Benachrichtigungen. Nutze den Kalender-Export."); return "unsupported"; }
   const r = await Notification.requestPermission();
   syncNotifState();
@@ -31,6 +36,10 @@ async function askNotifications() {
   return r;
 }
 function syncNotifState() {
+  if (window.TutorNative && TutorNative.hasNotifications) {
+    TutorNative.notificationsStatus().then((st) => { $("notifState").textContent = { granted: "✅ erlaubt", denied: "⛔ blockiert (iPad-Einstellungen → Tutor)", prompt: "noch nicht erlaubt" }[st] || st; });
+    return;
+  }
   const st = !("Notification" in window) ? "nicht unterstützt" : { granted: "✅ erlaubt", denied: "⛔ blockiert (in den Systemeinstellungen ändern)", default: "noch nicht erlaubt" }[Notification.permission];
   $("notifState").textContent = st;
 }
@@ -47,6 +56,7 @@ async function post(path, body) { data = await App.api(path, body || {}); render
 
 function render() {
   if (!data) return;
+  if (window.TutorNative && TutorNative.isNative) TutorNative.onPlannerState(data);
   // Aufgaben
   const today = new Date().toISOString().slice(0, 10);
   $("taskList").innerHTML = data.tasks.length ? data.tasks.map((t) => `
@@ -73,7 +83,12 @@ function render() {
 
 function setFocus(f) {
   focusLeft = f.active ? f.remaining : 0;
-  if (wasFocus && !f.active) notify("Fokus geschafft 🎉", "Zeit für eine kurze Pause.");
+  const N = window.TutorNative;
+  if (wasFocus && !f.active) {
+    if (!(N && N.isNative)) notify("Fokus geschafft 🎉", "Zeit für eine kurze Pause.");
+    if (N && N.hasShield) N.shield(false);
+  }
+  if (!wasFocus && f.active && N && N.hasShield) N.shield(true).then((err) => err && App.say("Sperre nicht aktiv: " + err, 6000));
   wasFocus = f.active;
   paintFocus();
 }
@@ -92,7 +107,12 @@ $("focusChip").addEventListener("click", async () => {
   await post("/api/focus/start", { minutes: 25 });
   App.say("25 Minuten Fokus – los! 🛡", 4000); App.hop();
 });
-setInterval(() => { if (focusLeft > 0) { focusLeft = Math.max(0, focusLeft - 1); paintFocus(); } }, 1000);
+setInterval(() => {
+  if (focusLeft <= 0) return;
+  focusLeft -= 1;
+  if (focusLeft === 0) setFocus({ active: false, remaining: 0 });   // Ende sofort: Sperre lösen, melden
+  else paintFocus();
+}, 1000);
 
 /* ---------------- Dialog-Verdrahtung ---------------- */
 
@@ -118,6 +138,49 @@ const saveRem = () => post("/api/reminders", { enabled: $("remOn").checked, time
 $("remOn").addEventListener("change", async () => { await saveRem(); if ($("remOn").checked && Notification.permission === "default") askNotifications(); });
 $("remTime").addEventListener("change", saveRem);
 $("notifBtn").addEventListener("click", askNotifications);
+$("icsLink").addEventListener("click", async (e) => {
+  if (!window.TutorBackend) return;               // Server-Modus: normaler Download
+  e.preventDefault();
+  const { ics } = await App.api("/api/plan.ics");
+  const file = new File([ics], "lernplan.ics", { type: "text/calendar" });
+  try { if (navigator.canShare && navigator.canShare({ files: [file] })) return await navigator.share({ files: [file], title: "Lernplan" }); }
+  catch (err) { if (err.name === "AbortError") return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = "lernplan.ics"; a.click();
+});
+
+/* ---------------- Einstellungen (iPad-App) ---------------- */
+
+if (window.TutorBackend) {
+  $("settingsBtn").hidden = false;
+  const N = window.TutorNative;
+  const nativeState = async () => {
+    if (!N || !N.isNative) return;
+    $("nativeSettings").hidden = false;
+    const st = await N.shieldStatus();
+    $("sNativeState").textContent = st ? `Fokus-Sperre: ${st.authorized ? "freigegeben" : "nicht freigegeben"}, ${st.hasSelection ? "Apps gewählt" : "keine Apps gewählt"}` : "Fokus-Sperre auf diesem Gerät nicht verfügbar.";
+  };
+  $("settingsBtn").addEventListener("click", async () => {
+    const c = await App.api("/api/settings");
+    $("sHost").value = c.host; $("sModel").value = c.model; $("sVision").value = c.vision_model;
+    $("sTest").textContent = ""; nativeState(); $("settingsDlg").showModal();
+  });
+  const save = () => App.api("/api/settings", { host: $("sHost").value, model: $("sModel").value, vision_model: $("sVision").value });
+  $("sTestBtn").addEventListener("click", async () => {
+    $("sTest").textContent = "Teste …";
+    try {
+      await save();
+      const s = await App.api("/api/state");
+      $("sTest").textContent = s.problem ? "⚠ " + s.problem : `✅ verbunden · ${s.models.length} Modelle`;
+      if (!s.problem) App.applyState(s, s.models);
+    } catch (e) { $("sTest").textContent = "⚠ " + e.message; }
+  });
+  $("settingsDlg").addEventListener("close", async () => { try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });
+  $("sNotif").addEventListener("click", async () => { await askNotifications(); $("sNativeState").textContent = $("notifState").textContent; });
+  $("sShield").addEventListener("click", async () => {
+    try { await N.shieldAuthorize(); await N.shieldPick(); } catch (e) { $("sNativeState").textContent = "⚠ " + e.message; }
+    nativeState();
+  });
+}
 
 $("extractTasks").addEventListener("click", async () => {
   const box = $("candidates"); box.textContent = "Lese …";
@@ -146,6 +209,11 @@ function once(key, fn) {
 async function tick() {
   let d; try { d = await App.api("/api/planner"); } catch { return; }
   data = d; setFocus(d.focus);
+  if (!shieldChecked) {                           // App-Start ohne Fokus: übrig gebliebene Sperre aufheben
+    shieldChecked = true;
+    if (!d.focus.active && window.TutorNative && TutorNative.hasShield) TutorNative.shield(false);
+  }
+  if (window.TutorNative && TutorNative.isNative) { if (document.getElementById("plannerDlg").open) render(); return; }   // App: native Benachrichtigungen
   const now = new Date(), hm = now.toTimeString().slice(0, 5), day = now.toISOString().slice(0, 10);
   if (d.reminders.enabled && hm >= d.reminders.time && hm < addMin(d.reminders.time, 30)) once(`daily-${day}`, () => notify("Zeit zum Lernen 📚", d.tasks.some((t) => !t.done) ? "Du hast noch offene Aufgaben – kurze Runde?" : "Wie wär’s mit einer Wiederholung?"));
   for (const b of d.plan.blocks) {

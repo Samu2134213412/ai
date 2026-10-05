@@ -31,7 +31,8 @@ MAX_BODY = 16 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 STATIC = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js",
           "/style.css": "style.css", "/icon.svg": "icon.svg", "/sw.js": "sw.js",
-          "/planner.js": "planner.js"}
+          "/planner.js": "planner.js", "/core.js": "core.js",
+          "/backend-local.js": "backend-local.js", "/native.js": "native.js"}
 EXT_ORIGINS = ("chrome-extension://", "moz-extension://", "safari-web-extension://")
 
 
