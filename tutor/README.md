@@ -128,6 +128,33 @@ habe ich nicht auf einem iPad durchgespielt, die Menünamen können abweichen.
 nativen App: Sie kann per ReplayKit den Bildschirm teilen, während GoodNotes
 läuft. Das steht auf der Liste unten.
 
+## Installation mit einem Befehl (PC)
+
+Legt den Ordner **Tutor** und das Programm (**Tutor.exe**) direkt auf den Desktop.
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Samu2134213412/ai/ccr-b87b8acb-etedpt/tutor/install.ps1 | iex
+```
+
+**macOS / Linux** (Terminal):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Samu2134213412/ai/ccr-b87b8acb-etedpt/tutor/install.sh | bash
+```
+
+Das Skript lädt den Tutor, kopiert den Ordner auf den Desktop und holt `Tutor.exe` (macOS: `Tutor.dmg`,
+Linux: `Tutor.AppImage`) aus dem GitHub-Release; gibt es dort noch keins, baut es die Datei selbst
+(installiert unter Windows bei Bedarf Node.js per `winget`, dauert einige Minuten). Schon heruntergeladen?
+Dann reicht ein Doppelklick auf `Tutor-installieren.cmd` (Windows) bzw. `bash install.sh`.
+Zusätzlich braucht der Tutor [Ollama](https://ollama.com/download) mit den Modellen (das Skript sagt, welche).
+
+Für den schnellen Weg ohne Selbstbauen einmal ein Release erzeugen:
+`git tag tutor-desktop-v0.1.0 && git push origin tutor-desktop-v0.1.0` (der Workflow baut und veröffentlicht).
+Wird der Branch umbenannt oder gemergt, `ccr-b87b8acb-etedpt` in den Befehlen ersetzen
+(Windows: `$env:TUTOR_BRANCH="main"` vor dem Befehl setzen).
+
 ## PC-Version (Windows, macOS, Linux)
 
 Desktop-App (Electron) ohne Python-Server: lokales Ollama, Fensterauswahl für GoodNotes,

@@ -9,7 +9,10 @@
     "build-www": "node ../scripts/build-www.mjs www",
     "start": "npm run build-www && electron .",
     "dist": "npm run build-www && electron-builder --publish never",
-    "test": "node --test test/lib.test.js"
+    "test": "node --test test/lib.test.js",
+    "dist:exe": "npm run build-www && electron-builder --win portable --publish never",
+    "dist:mac": "npm run build-www && electron-builder --mac dmg --publish never",
+    "dist:linux": "npm run build-www && electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {
     "electron": "^44.5.1",
@@ -18,11 +21,57 @@
   "build": {
     "appId": "de.tutor.desktop",
     "productName": "Tutor",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "lib/**", "www/**", "assets/**", "package.json"],
-    "win": { "target": ["nsis", "portable"], "icon": "assets/icon.ico" },
-    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true },
-    "mac": { "target": ["dmg"], "category": "public.app-category.education", "icon": "assets/icon.png" },
-    "linux": { "target": ["AppImage", "deb"], "category": "Education", "icon": "assets/icon.png" }
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "www/**",
+      "assets/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Tutor-Setup.exe"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education",
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education",
+      "icon": "assets/icon.png"
+    },
+    "portable": {
+      "artifactName": "Tutor.exe"
+    },
+    "dmg": {
+      "artifactName": "Tutor.dmg"
+    },
+    "appImage": {
+      "artifactName": "Tutor.AppImage"
+    },
+    "deb": {
+      "artifactName": "tutor-desktop.deb"
+    },
+    "publish": null
   }
 }

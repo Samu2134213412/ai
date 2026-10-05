@@ -1,7 +1,8 @@
 name: Tutor Desktop-App bauen
 
 # Baut die Installer für Windows, macOS und Linux. Start: Actions → „Tutor Desktop-App bauen“ → Run workflow
-# (oder ein Tag tutor-desktop-v*). Die Dateien liegen danach als Artefakte am Lauf.
+# (Dateien als Artefakte am Lauf) oder ein Tag tutor-desktop-v* pushen (zusätzlich ein GitHub-Release mit
+# Tutor.exe, Tutor.dmg, Tutor.AppImage – daraus laden install.ps1/install.sh die fertige Datei, ohne selbst zu bauen).
 on:
   workflow_dispatch:
   push:
@@ -38,3 +39,18 @@ jobs:
             tutor/desktop/dist/*.AppImage
             tutor/desktop/dist/*.deb
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/tutor-desktop-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
