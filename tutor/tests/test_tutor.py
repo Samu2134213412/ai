@@ -16,7 +16,8 @@ class FakeClient:
     """Ersetzt ollama.Client: merkt sich Anfragen, streamt feste Antworten."""
 
     def __init__(self, models=("qwen2.5:32b",), reply="Was hast du schon versucht?",
-                 fail=None):
+                 fail=None, replies=None):
+        self.replies = replies or {}          # Modell -> Text oder Liste (je Aufruf der nächste)
         self.models = list(models)
         self.reply = reply
         self.fail = fail
@@ -28,7 +29,7 @@ class FakeClient:
             raise ConnectionError("Failed to connect to Ollama")
         return {"models": [{"model": m} for m in self.models]}
 
-    def chat(self, model, messages, stream=False, options=None):
+    def chat(self, model, messages, stream=False, options=None, keep_alive=None):
         self.calls.append({"model": model, "messages": messages, "options": options})
         if self.fail == "connection":
             raise ConnectionError("Failed to connect to Ollama")
@@ -39,10 +40,13 @@ class FakeClient:
             if "JSON-Array" in prompt and getattr(self, "vision_reply", None):
                 return {"message": {"content": self.vision_reply}}
             return {"message": {"content": "Abschrift: 3x + 7 = 22"}}
-        return self._stream()
+        return self._stream(model)
 
-    def _stream(self):
-        for word in self.reply.split(" "):
+    def _stream(self, model=None):
+        reply = self.replies.get(model, self.reply)
+        if isinstance(reply, list):
+            reply = reply.pop(0) if len(reply) > 1 else reply[0]
+        for word in reply.split(" "):
             yield {"message": {"content": word + " "}}
 
 

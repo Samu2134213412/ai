@@ -63,6 +63,7 @@ class App:
         return {
             "model": s.model,
             "vision_model": self.config["vision_model"],
+            "light_model": self.config.get("light_model", ""),
             "subject": self.config["subject"],
             "stage": stage,               # 1–3, 4 = Lösung freigegeben
             "attempts": t.attempts,
@@ -363,10 +364,11 @@ class Handler(BaseHTTPRequestHandler):
         gen = session.stream_turn(text)
         try:
             for piece in gen:
-                if not self._sse({"t": piece}):
+                event = {"reset": True} if piece is core.RESET else {"t": piece}
+                if not self._sse(event):
                     break               # Client weg → Teilantwort bleibt im Verlauf
             else:
-                self._sse({"done": True, "state": app.state()})
+                self._sse({"done": True, "state": app.state(), "route": session.last_route})
         except core.TutorError as exc:
             self._sse({"error": str(exc), "state": app.state()})
         finally:
@@ -426,13 +428,14 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int)
     p.add_argument("-m", "--modell", dest="model")
     p.add_argument("--vision-modell", dest="vision_model")
+    p.add_argument("--schnell-modell", dest="light_model", help="schnelles Modell für einfache Fragen ('' = aus)")
     p.add_argument("-f", "--fach", dest="subject")
     p.add_argument("--kein-token", action="store_true",
                    help="Zugangs-Token auch bei Netzwerkzugriff abschalten")
     args = p.parse_args(argv)
 
     config = core.load_config(args.config)
-    for key in ("model", "vision_model", "subject"):
+    for key in ("model", "light_model", "vision_model", "subject"):
         if getattr(args, key) is not None:
             config[key] = getattr(args, key)
     host = args.host or config["web"]["host"]

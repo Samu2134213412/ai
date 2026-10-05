@@ -1,5 +1,7 @@
 /* Gibt JSON mit Ergebnissen des JS-Kerns aus; tests/test_parity.py vergleicht mit Python. */
 const C = require("../web/core.js");
+const fs = require("node:fs");
+const cases = process.argv[2] ? JSON.parse(fs.readFileSync(process.argv[2], "utf8")) : [];
 const tasks = [
   { id: "a1", title: "Mathe; Blatt, 4", subject: "Mathe", due: "2026-10-07", minutes: 100, done: false, created: "2026-10-01T10:00:00" },
   { id: "b2", title: "Vokabeln", subject: "", due: "", minutes: 30, done: false, created: "2026-10-02T10:00:00" },
@@ -25,6 +27,10 @@ const out = {
   parseBad: [C.parseTasksJson("kein json"), C.parseTasksJson("[kaputt")],
   blocklist: C.setBlocklist(["https://www.Foo.com/x", "kaputt", "foo.com", "a.b"]),
   ics: C.ics(tasks, { enabled: true, time: "17:30" }, "2026-10-05T15:00"),
+  patterns: Object.fromEntries(Object.entries(C.PATTERNS).map(([k, [src, fl]]) => [k, [src, fl]])),
+  route: cases.map(([text, ctx]) => C.classify(text, ctx)),
+  routerConsts: { ESCAPE: C.ESCAPE, LIGHT_BLOCK: C.LIGHT_BLOCK, STRICT_LANG: C.STRICT_LANG, KEEP_ALIVE: C.KEEP_ALIVE },
+  cjk: ["im Thema卡特尔", "、", "Müller äöü ß – „Zitat“ … 3×4", "한국어", "ひらがな", "ＡＢＣ"].map((t) => [C.hasCjk(t), C.stripCjk(t)]),
   icsNoRem: C.ics(tasks, { enabled: false, time: "17:30" }, "2026-10-05T23:30"),
 };
 process.stdout.write(JSON.stringify(out));

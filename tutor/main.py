@@ -25,11 +25,14 @@ except ImportError:  # Windows ohne pyreadline
 
 import ollama
 
+import router
+
 BASE_DIR = Path(__file__).resolve().parent
 
 DEFAULT_CONFIG = {
     "host": "http://localhost:11434",
     "model": "qwen2.5:32b",
+    "light_model": "qwen2.5:3b",        # schnelles Modell für einfache Fragen ("" = aus)
     "vision_model": "qwen2.5vl:7b",
     "temperature": 0.6,
     "subject": "",
@@ -252,11 +255,30 @@ def extract_tasks_text(client, model: str, image_b64: str, today: str) -> str:
     return _vision_call(client, model, prompt, image_b64)
 
 
+class _Escalate(Exception):
+    """Das schnelle Modell übergibt an das große."""
+
+
+class _BadLanguage(Exception):
+    """Die Antwort enthält chinesische/asiatische Zeichen (Modell ist abgerutscht)."""
+
+
+class _Reset:
+    """Signal an die Anzeige: bisherige Antwort verwerfen, es folgt ein neuer Versuch."""
+
+    def __repr__(self):
+        return "RESET"
+
+
+RESET = _Reset()
+KEEP_ALIVE = "30m"          # Modelle im Speicher halten → keine Ladezeit bei jeder Frage
+
+
 def stream_reply(client, model: str, messages: list, temperature: float):
     """Liefert die Antwort des Modells Stück für Stück."""
     try:
         for chunk in client.chat(model=model, messages=messages, stream=True,
-                                 options={"temperature": temperature}):
+                                 options={"temperature": temperature}, keep_alive=KEEP_ALIVE):
             piece = chunk["message"]["content"]
             if piece:
                 yield piece
@@ -266,6 +288,30 @@ def stream_reply(client, model: str, messages: list, temperature: float):
         raise TutorError(f"Ollama-Fehler: {exc.error}") from exc
     except (ConnectionError, OSError) as exc:
         raise TutorError(_connection_hint(client_host(client))) from exc
+
+
+def guarded_stream(client, model: str, messages: list, temperature: float, hold_for_escape: bool):
+    """stream_reply mit Sprach-Wächter und (für das schnelle Modell) Übergabe-Erkennung.
+
+    Wirft _BadLanguage bei CJK-Zeichen, _Escalate wenn die Antwort mit router.ESCAPE beginnt.
+    Beim schnellen Modell werden die ersten Zeichen kurz zurückgehalten, bis klar ist, ob es übergibt.
+    """
+    buf, released = "", not hold_for_escape
+    for piece in stream_reply(client, model, messages, temperature):
+        if router.has_cjk(piece):
+            raise _BadLanguage()
+        if released:
+            yield piece
+            continue
+        buf += piece
+        head = buf.lstrip()
+        if head.startswith(router.ESCAPE):
+            raise _Escalate()
+        if not router.ESCAPE.startswith(head):       # kein Präfix des Escape-Worts → freigeben
+            released = True
+            yield buf
+    if not released and buf:
+        yield buf
 
 
 # --------------------------------------------------------------------------- #
@@ -282,6 +328,9 @@ class Session:
         self.tasks: list[Task] = [Task()]
         self.confirm_give_up = False
         self.context_extra = lambda: ""      # z. B. Planer-Kontext (Web-UI)
+        self.light_ok = True                 # False, sobald das schnelle Modell fehlt
+        self.last_tier = None                # "light" | "main": womit zuletzt geantwortet wurde
+        self.last_route = {}                 # Modell/Grund der letzten Antwort (für die Anzeige)
         self.started = datetime.now()
         self.saved_to: Path | None = None
 
@@ -295,28 +344,75 @@ class Session:
 
     # -- Modell-Anfrage -----------------------------------------------------
 
-    def build_messages(self) -> list[dict]:
+    def build_messages(self, extra: str = "") -> list[dict]:
         system = (self.system_prompt + self.context_extra() + page_block(self.task)
-                  + status_block(self.task, self.turns_per_stage))
+                  + status_block(self.task, self.turns_per_stage) + extra)
         return [{"role": "system", "content": system}, *self.task.messages]
+
+    def light_model(self) -> str:
+        m = (self.config.get("light_model") or "").strip()
+        return m if m and self.light_ok and _full_name(m) != _full_name(self.model) else ""
+
+    def route(self, text: str, has_image: bool = False) -> tuple[str, str]:
+        t = self.task
+        return router.classify(text, {"attempts": t.attempts, "given_up": t.given_up,
+                                      "has_page": bool(t.page_notes), "has_image": has_image,
+                                      "last_tier": self.last_tier})
 
     def stream_turn(self, text: str):
         """Eine Runde: Nachricht des Lernenden → Antwort stückweise (Generator).
 
-        Bei TutorError wird die Runde zurückgenommen (zählt nicht als Versuch).
-        Bricht der Aufrufer den Generator ab, bleibt die Teilantwort im Verlauf.
+        Wählt selbst zwischen schnellem und großem Modell (router.py). Liefert Textstücke und
+        gegebenenfalls RESET (bisherige Anzeige verwerfen). Bei TutorError wird die Runde
+        zurückgenommen (zählt nicht als Versuch). Bricht der Aufrufer ab, bleibt die Teilantwort.
         """
         task = self.task
+        tier, reason = self.route(text)             # vor dem Zählen: „laufende Aufgabe“ nutzt den Stand davor
         if not task.title:
             task.title = text[:80]
         task.attempts += 1
         task.messages.append({"role": "user", "content": text})
+
+        light = self.light_model()
+        queue = [(light, "light")] if tier == "light" and light else []
+        queue.append((self.model, "main"))
+        notice = ""
+        strict: set[str] = set()
         parts: list[str] = []
+        success = False
         try:
-            for piece in stream_reply(self.client, self.model, self.build_messages(),
-                                      self.config["temperature"]):
-                parts.append(piece)
-                yield piece
+            while queue:
+                model, kind = queue.pop(0)
+                extra = (router.LIGHT_BLOCK if kind == "light" else "") + (router.STRICT_LANG if model in strict else "")
+                temp = min(self.config["temperature"], 0.3) if model in strict else self.config["temperature"]
+                try:
+                    for piece in guarded_stream(self.client, model, self.build_messages(extra), temp, kind == "light"):
+                        parts.append(piece)
+                        yield piece
+                    success = True
+                    self.last_tier = kind
+                    self.last_route = {"tier": kind, "model": model, "reason": reason, "notice": notice}
+                    break
+                except _Escalate:
+                    reason = "übergeben: braucht das große Modell"
+                except _BadLanguage:
+                    if parts:
+                        parts.clear()
+                        yield RESET
+                    if model not in strict:
+                        strict.add(model)
+                        queue.insert(0, (model, kind))   # gleicher Versuch, strenger Sprach-Hinweis
+                except TutorError as exc:
+                    if kind == "light" and not parts:    # schnelles Modell fehlt/streikt → still das große nehmen
+                        self.light_ok = False
+                        notice = (f"Schnelles Modell '{model}' nicht verfügbar – ich antworte mit dem großen. "
+                                  f"Mit `ollama pull {model}` werden einfache Antworten viel schneller.")
+                    else:
+                        raise
+            if not success:                               # alles abgerutscht: höflich aufgeben statt Kauderwelsch
+                parts[:] = ["Entschuldige, da ist bei mir etwas schiefgelaufen. Magst du deine Frage noch einmal stellen?"]
+                yield parts[0]
+                self.last_route = {"tier": "main", "model": self.model, "reason": "Sprachfehler", "notice": notice}
         except TutorError:
             task.messages.pop()
             task.attempts -= 1
@@ -332,6 +428,10 @@ class Session:
         parts: list[str] = []
         try:
             for piece in self.stream_turn(text):
+                if piece is RESET:
+                    parts.clear()
+                    self.out.write(_c("2", "\n[neuer Versuch]\n") + _c("36", "Tutor: "))
+                    continue
                 parts.append(piece)
                 self.out.write(piece)
                 self.out.flush()
@@ -341,7 +441,14 @@ class Session:
             return None
         except KeyboardInterrupt:
             self.out.write(_c("2", " [abgebrochen]"))
-        self.out.write("\n\n")
+        self.out.write("\n")
+        r = self.last_route
+        if r.get("model"):
+            self.out.write(_c("2", f"[{'⚡' if r['tier'] == 'light' else '🧠'} {r['model']}]") + "\n")
+            if r.get("notice") and not getattr(self, "_notice_shown", False):
+                self._notice_shown = True
+                info(r["notice"])
+        self.out.write("\n")
         return "".join(parts)
 
     # -- Befehle ------------------------------------------------------------
@@ -475,6 +582,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--prompt", type=Path, default=BASE_DIR / "prompts" / "tutor.md")
     p.add_argument("-m", "--modell", dest="model", help="Modellname, z. B. qwen2.5:14b")
     p.add_argument("-f", "--fach", dest="subject", help="Fach/Thema")
+    p.add_argument("--schnell-modell", dest="light_model", help="schnelles Modell für einfache Fragen ('' = aus)")
     p.add_argument("-t", "--temperature", type=float)
     p.add_argument("-s", "--speichern", dest="autosave", action="store_true",
                    help="Verlauf beim Beenden in sessions/ speichern")
@@ -490,7 +598,7 @@ def make_client(host: str):
 def main(argv=None) -> int:
     args = parse_args(argv)
     config = load_config(args.config)
-    for key in ("model", "subject", "temperature"):
+    for key in ("model", "light_model", "subject", "temperature"):
         if getattr(args, key) is not None:
             config[key] = getattr(args, key)
     if args.autosave:

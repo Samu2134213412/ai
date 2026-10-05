@@ -173,7 +173,7 @@ if (window.TutorBackend) {
   };
   $("settingsBtn").addEventListener("click", async () => {
     const c = await App.api("/api/settings");
-    $("sHost").value = c.host; $("sModel").value = c.model; $("sVision").value = c.vision_model;
+    $("sHost").value = c.host; $("sModel").value = c.model; $("sLight").value = c.light_model; $("sVision").value = c.vision_model;
     $("sTest").textContent = ""; nativeState();
     if (D) {
       const st = await D.getSettings();
@@ -182,7 +182,7 @@ if (window.TutorBackend) {
     }
     $("settingsDlg").showModal();
   });
-  const save = () => App.api("/api/settings", { host: $("sHost").value, model: $("sModel").value, vision_model: $("sVision").value });
+  const save = () => App.api("/api/settings", { host: $("sHost").value, model: $("sModel").value, light_model: $("sLight").value, vision_model: $("sVision").value });
   $("sTestBtn").addEventListener("click", async () => {
     $("sTest").textContent = "Teste …";
     try {

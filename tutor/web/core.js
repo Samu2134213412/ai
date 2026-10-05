@@ -39,6 +39,65 @@ function extractPrompt(today) {
     "Nichts erfinden; gibt es keine Aufgaben: [].";
 }
 
+/* ---------------- Modellwahl (Spiegel von router.py) ---------------- */
+
+const ESCAPE = "[[WEITER]]";
+const LIGHT_BLOCK = "\n\n# Schnell-Modus\n" +
+  "Du bist die schnelle Variante des Tutors. Beantworte nur Begrüßungen, Smalltalk, Organisatorisches " +
+  "und kurze Wissensfragen – kurz (1–3 Sätze), freundlich, auf Deutsch. Verlangt die Nachricht, eine " +
+  "Aufgabe zu lösen, zu rechnen, zu programmieren, einen Text zu schreiben, eine mehrschrittige " +
+  "Erklärung oder Hilfe bei einer Aufgabe, antworte AUSSCHLIESSLICH mit " + ESCAPE + " und sonst nichts.\n";
+const STRICT_LANG = "\n\n# Sprache (wichtig)\n" +
+  "Antworte ausschließlich auf Deutsch mit lateinischen Buchstaben. Verwende niemals chinesische " +
+  "oder andere asiatische Zeichen und erkläre nie, dass du etwas nicht beantworten kannst.\n";
+const KEEP_ALIVE = "30m";
+
+/* Python-Muster 1:1 übernehmen; \w und \b werden unicode-fest übersetzt (JS kennt keine Umlaute). */
+const UW = "[\\p{L}\\p{N}_]";
+const conv = (src) => src.split("\\w").join(UW)
+  .split("\\b").join(`(?:(?<=${UW})(?!${UW})|(?<!${UW})(?=${UW}))`);
+const rx = (src, flags) => new RegExp(conv(src), (flags || "") + "u");
+const P = {
+  MATH: [String.raw`\d\s*[-+*/=^×÷]|[=^]|\b\d+[a-zA-Z]\b|[²³√∫∑]|\b[a-z]\s*\(\s*[a-z0-9]\s*\)`, "i"],
+  CODE: ["`".repeat(3) + String.raw`|\bdef \w|\bfunction\b|\bclass \w|#include|\bprint\(|=>|[{};]\s*$|\bimport \w`, "im"],
+  TASK_WORDS: [String.raw`\b(löse\w*|löst|berechne\w*|rechne\w*|beweis\w*|beweise|herleit\w*|ableit\w*|integrier\w*|vereinfach\w*|` +
+    String.raw`umform\w*|übersetz\w*|programmier\w*|debug\w*|bug|fehler|aufgabe\w*|übung\w*|hausaufgabe\w*|lösung\w*|` +
+    String.raw`ergebnis\w*|schritt\w*|analysier\w*|interpretier\w*|erörter\w*|gleichung\w*|formel\w*|funktion\w*|` +
+    String.raw`aufsatz|essay|zusammenfassung|schreib\w*\s+(mir\s+)?(einen|ein|eine)|warum|wieso|weshalb|erklär\w*|` +
+    String.raw`verstehe?\s+nicht|hilf\w*|hilfe)\b`, "i"],
+  GREETING: [String.raw`^\s*(hi+|hallo+|hey+|moin|servus|huhu|yo|guten\s+(morgen|tag|abend)|danke\w*|thx|thanks|ok(ay)?|okey|` +
+    String.raw`ja|nein|jo|nö|cool|super|nice|top|alles\s+klar|passt|tschüss|tschau|bye|bis\s+(bald|später)|` +
+    String.raw`wie\s+geht'?s)\b[\s!.?,:)]*`, "i"],
+  ORGANIZE: [String.raw`\b(plan\w*|termin\w*|frist\w*|erinner\w*|zeitplan|stundenplan|pause\w*|pomodoro|fokus\w*|lernplan|` +
+    String.raw`wecker|motivier\w*|motivation|prüfungsphase)\b`, "i"],
+  SOCIAL: [String.raw`^\s*(hi+|hallo+|hey+|moin|servus|huhu|guten\s+(morgen|tag|abend)|danke\w*|thx|thanks|tschüss|tschau|bye|bis\s+(bald|später))\b`, "i"],
+  SHORT_FACT: [String.raw`^\s*(was|wer|wo|wann|wofür|wozu|welche[rsnm]?|wie\s+heißt)\b`, "i"],
+};
+const RX = Object.fromEntries(Object.entries(P).map(([k, [src, fl]]) => [k, rx(src, fl)]));
+const CJK = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef]/;
+const CJK_G = new RegExp(CJK.source, "g");
+const hasCjk = (t) => CJK.test(t);
+const stripCjk = (t) => t.replace(CJK_G, "");
+
+/* ctx: attempts, given_up, has_page, has_image, last_tier → ["light"|"main", Grund] */
+function classify(text, ctx) {
+  ctx = ctx || {};
+  const t = String(text).trim(), n = [...t].length;
+  const greeting = RX.GREETING.test(t) && n <= 50 && !RX.TASK_WORDS.test(t) && !RX.MATH.test(t);
+  if (ctx.given_up) return ["main", "Lösung erklären"];
+  if (ctx.has_image) return ["main", "Bild"];
+  if (RX.MATH.test(t) || RX.CODE.test(t) || RX.TASK_WORDS.test(t)) return ["main", "Aufgabe"];
+  if (n > 160) return ["main", "lange Nachricht"];
+  const social = greeting && RX.SOCIAL.test(t);
+  if ((ctx.attempts || 0) >= 1 && ctx.last_tier === "main" && !social) return ["main", "laufende Aufgabe"];
+  if (ctx.has_page && !social) return ["main", "Seite geladen"];
+  if (greeting) return ["light", "Smalltalk"];
+  if (RX.ORGANIZE.test(t)) return ["light", "Organisation"];
+  if (RX.SHORT_FACT.test(t) && n <= 90) return ["light", "kurze Frage"];
+  if (n <= 25 && (ctx.attempts || 0) === 0) return ["light", "kurz"];
+  return ["main", "Standard"];
+}
+
 /* ---------------- Hinweisstufen ---------------- */
 
 function stageOf(task, turnsPerStage) {
@@ -231,7 +290,8 @@ function buildNotifications(data, now) {
 
 const api = { GIVEN_UP, STAGE_TEXT, GIVE_UP_TEXT, HANDWRITING_PROMPT, extractPrompt, stageOf, statusBlock,
   pageBlock, buildPrompt, DEFAULT_BLOCKLIST, cleanTask, parseTasksJson, openTasks, plan, plannerBlock,
-  setBlocklist, ics, buildNotifications, addDays, isoDate };
+  setBlocklist, ics, buildNotifications, addDays, isoDate,
+  ESCAPE, LIGHT_BLOCK, STRICT_LANG, KEEP_ALIVE, classify, hasCjk, stripCjk, PATTERNS: P };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 root.TutorCore = api;
 })(typeof self !== "undefined" ? self : globalThis);

@@ -128,6 +128,26 @@ habe ich nicht auf einem iPad durchgespielt, die Menünamen können abweichen.
 nativen App: Sie kann per ReplayKit den Bildschirm teilen, während GoodNotes
 läuft. Das steht auf der Liste unten.
 
+## Schnell und groß: automatische Modellwahl
+
+Ein kleines Modell (`light_model`, Standard `qwen2.5:3b`) beantwortet Begrüßungen, Smalltalk,
+Organisatorisches und kurze Wissensfragen – in Sekunden. Alles, was nach Aufgabe aussieht (Rechnen,
+Code, „erkläre“, „hilf“, laufende Aufgabe, geladene Seite), geht an das große Modell. **Man schaltet nie
+um:** Regeln entscheiden vorab (`router.py`), und das kleine Modell übergibt selbst, wenn es merkt, dass
+es nicht reicht. Unter jeder Antwort steht, wer geantwortet hat (⚡ schnell / 🧠 groß).
+
+```bash
+ollama pull qwen2.5:3b        # einmalig; fehlt es, antwortet der Tutor einfach mit dem großen Modell
+```
+
+Abschalten: `light_model: ""` in `config.yaml` (oder in den App-Einstellungen leer lassen).
+Außerdem bleiben Modelle 30 Minuten im Speicher (`keep_alive`), das spart die Ladezeit bei jeder Frage.
+Ist es mit dem großen Modell trotzdem zäh: `ollama ps` prüfen (siehe AMD-Abschnitt) oder ein kleineres
+Hauptmodell wählen, z. B. `qwen2.5:14b`.
+
+**Sprach-Wächter:** Rutscht ein Modell mitten im Satz ins Chinesische ab, wird die Antwort verworfen und
+mit strengem Sprach-Hinweis neu angefordert (klappt es nie, kommt eine höfliche deutsche Meldung).
+
 ## Installation mit einem Befehl (PC)
 
 Legt den Ordner **Tutor** und das Programm (**Tutor.exe**) direkt auf den Desktop.

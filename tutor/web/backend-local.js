@@ -4,10 +4,12 @@
 "use strict";
 const C = root.TutorCore || (typeof require !== "undefined" ? require("./core.js") : null);
 
-const DEFAULT_CONFIG = { host: "", model: "qwen2.5:32b", vision_model: "qwen2.5vl:7b",
+const DEFAULT_CONFIG = { host: "", model: "qwen2.5:32b", light_model: "qwen2.5:3b", vision_model: "qwen2.5vl:7b",
   temperature: 0.6, subject: "", language: "Deutsch", turnsPerStage: 2, minAttempts: 2 };
 
 class TutorError extends Error {}
+class Escalate extends Error {}        // das schnelle Modell übergibt an das große
+class BadLanguage extends Error {}     // Antwort mit chinesischen/asiatischen Zeichen
 
 const fullName = (m) => (m.includes(":") ? m : m + ":latest");
 const stripData = (x) => String(x).replace(/^data:image\/[a-z+]+;base64,/, "");
@@ -26,7 +28,7 @@ function createBackend(env) {
   const getTemplate = () => (templatePromise = templatePromise || (env.template
     ? Promise.resolve(env.template) : F("prompts/tutor.md").then((r) => r.text())));
 
-  const S = { cfg: { ...DEFAULT_CONFIG, host: env.defaultHost || "" }, tasks: [], reminders: { enabled: false, time: "16:00" },
+  const S = { light_ok: true, last_tier: null, last_route: {}, cfg: { ...DEFAULT_CONFIG, host: env.defaultHost || "" }, tasks: [], reminders: { enabled: false, time: "16:00" },
     blocklist: [...C.DEFAULT_BLOCKLIST], focus: { ends_at: 0, minutes: 0 }, sessions: [],
     conv: [newTask()], confirm: false, started: clock().iso };
   let ready = null;
@@ -69,9 +71,10 @@ function createBackend(env) {
     const have = new Set((await installedModels()).map(fullName));
     if (!have.has(fullName(name))) throw new TutorError(missHint(name));
   }
-  async function* chatStream(model, messages) {
+  async function* chatStream(model, messages, temperature) {
     const r = await ollama("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, stream: true, options: { temperature: S.cfg.temperature } }) });
+      body: JSON.stringify({ model, messages, stream: true, keep_alive: C.KEEP_ALIVE,
+        options: { temperature: temperature === undefined ? S.cfg.temperature : temperature } }) });
     if (!r.ok) await failFromResponse(r, model);
     const reader = r.body.getReader(), dec = new TextDecoder();
     let buf = "";
@@ -91,9 +94,22 @@ function createBackend(env) {
         }
       }
     } catch (e) {
-      if (e instanceof TutorError) throw e;
+      if (e instanceof TutorError || e instanceof Escalate || e instanceof BadLanguage) throw e;
       throw new TutorError(connHint());
     }
+  }
+  /* chatStream + Sprach-Wächter + Übergabe-Erkennung (Spiegel von main.guarded_stream). */
+  async function* guardedStream(model, messages, temperature, holdForEscape) {
+    let buf = "", released = !holdForEscape;
+    for await (const piece of chatStream(model, messages, temperature)) {
+      if (C.hasCjk(piece)) throw new BadLanguage();
+      if (released) { yield piece; continue; }
+      buf += piece;
+      const head = buf.replace(/^\s+/, "");
+      if (head.startsWith(C.ESCAPE)) throw new Escalate();
+      if (!C.ESCAPE.startsWith(head)) { released = true; yield buf; }
+    }
+    if (!released && buf) yield buf;
   }
   async function vision(prompt, image) {
     const r = await ollama("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -109,23 +125,60 @@ function createBackend(env) {
   const stageNow = () => C.stageOf(cur(), S.cfg.turnsPerStage);
   function state() {
     const t = cur(), stage = stageNow();
-    return { model: S.cfg.model, vision_model: S.cfg.vision_model, subject: S.cfg.subject, stage,
+    return { model: S.cfg.model, light_model: S.cfg.light_model, vision_model: S.cfg.vision_model, subject: S.cfg.subject, stage,
       attempts: t.attempts, given_up: t.givenUp, title: t.title, has_page: t.pageNotes.length > 0 };
   }
-  async function messages() {
+  async function messages(extra) {
     const sys = C.buildPrompt(await getTemplate(), S.cfg.subject, S.cfg.language) +
       C.plannerBlock(C.openTasks(S.tasks), clock().iso.slice(0, 10)) + C.pageBlock(cur()) +
-      C.statusBlock(cur(), S.cfg.turnsPerStage);
+      C.statusBlock(cur(), S.cfg.turnsPerStage) + (extra || "");
     return [{ role: "system", content: sys }, ...cur().messages];
   }
-  /* Eine Runde; bei Fehler wird sie zurückgenommen (zählt nicht als Versuch). */
+  const fullName2 = (m) => (m.includes(":") ? m : m + ":latest");
+  const lightModel = () => {
+    const m = (S.cfg.light_model || "").trim();
+    return m && S.light_ok && fullName2(m) !== fullName2(S.cfg.model) ? m : "";
+  };
+  /* Eine Runde mit automatischer Modellwahl (Spiegel von Session.stream_turn in main.py).
+     onPiece(text) liefert Textstücke, onPiece(null) heißt „bisherige Anzeige verwerfen“.
+     Bei Fehler wird die Runde zurückgenommen (zählt nicht als Versuch). */
   async function streamTurn(text, onPiece) {
     const t = cur();
+    let [tier, reason] = C.classify(text, { attempts: t.attempts, given_up: t.givenUp,
+      has_page: t.pageNotes.length > 0, has_image: false, last_tier: S.last_tier });
     if (!t.title) t.title = text.slice(0, 80);
     t.attempts += 1; t.messages.push({ role: "user", content: text });
-    const parts = [];
+
+    const light = lightModel();
+    const queue = tier === "light" && light ? [[light, "light"]] : [];
+    queue.push([S.cfg.model, "main"]);
+    const strict = new Set(); let notice = "", parts = [], success = false;
     try {
-      for await (const piece of chatStream(S.cfg.model, await messages())) { parts.push(piece); onPiece(piece); }
+      while (queue.length) {
+        const [model, kind] = queue.shift();
+        const extra = (kind === "light" ? C.LIGHT_BLOCK : "") + (strict.has(model) ? C.STRICT_LANG : "");
+        const temp = strict.has(model) ? Math.min(S.cfg.temperature, 0.3) : S.cfg.temperature;
+        try {
+          for await (const piece of guardedStream(model, await messages(extra), temp, kind === "light")) { parts.push(piece); onPiece(piece); }
+          success = true; S.last_tier = kind;
+          S.last_route = { tier: kind, model, reason, notice };
+          break;
+        } catch (e) {
+          if (e instanceof Escalate) reason = "übergeben: braucht das große Modell";
+          else if (e instanceof BadLanguage) {
+            if (parts.length) { parts = []; onPiece(null); }
+            if (!strict.has(model)) { strict.add(model); queue.unshift([model, kind]); }
+          } else if (e instanceof TutorError && kind === "light" && !parts.length) {
+            S.light_ok = false;
+            notice = `Schnelles Modell '${model}' nicht verfügbar – ich antworte mit dem großen. Mit \`ollama pull ${model}\` werden einfache Antworten viel schneller.`;
+          } else throw e;
+        }
+      }
+      if (!success) {
+        parts = ["Entschuldige, da ist bei mir etwas schiefgelaufen. Magst du deine Frage noch einmal stellen?"];
+        onPiece(parts[0]);
+        S.last_route = { tier: "main", model: S.cfg.model, reason: "Sprachfehler", notice };
+      }
     } catch (e) {
       t.messages.pop(); t.attempts -= 1;
       if (e instanceof TutorError) e.state = state();
@@ -133,7 +186,7 @@ function createBackend(env) {
     } finally {
       if (parts.length) t.messages.push({ role: "assistant", content: parts.join("") });
     }
-    return { done: true, state: state() };
+    return { done: true, state: state(), route: S.last_route };
   }
   function requestGiveUp() {
     const t = cur();
@@ -214,10 +267,11 @@ function createBackend(env) {
         const host = String(body.host || "").trim().replace(/\/$/, "");
         if (host && !/^https?:\/\/[^\s/]+(:\d+)?$/.test(host)) throw new TutorError("Adresse bitte als http://IP:11434 angeben.");
         S.cfg = { ...S.cfg, host, model: String(body.model || S.cfg.model).trim(),
+          light_model: "light_model" in body ? String(body.light_model).trim() : S.cfg.light_model,
           vision_model: String(body.vision_model || S.cfg.vision_model).trim() };
         persist();
       }
-      return { host: S.cfg.host, model: S.cfg.model, vision_model: S.cfg.vision_model };
+      return { host: S.cfg.host, model: S.cfg.model, light_model: S.cfg.light_model, vision_model: S.cfg.vision_model };
     }
     if (path === "/api/planner") return plannerState();
     if (path === "/api/focus") return focusInfo();

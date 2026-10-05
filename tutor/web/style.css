@@ -71,6 +71,7 @@ body {
 .msg { max-width: 88%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; }
 .msg.me { align-self: flex-end; background: var(--user); border-bottom-right-radius: 6px; }
 .msg.tutor { align-self: flex-start; background: var(--tutor); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+.msg .route { display: block; margin-top: 4px; opacity: .55; font-size: 11px; }
 .msg.err { align-self: center; color: var(--err); border: 1px dashed var(--err); background: none; }
 .msg.sys { align-self: center; color: var(--muted); font-size: 14px; background: none; }
 

@@ -11,9 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import main  # noqa: E402
 import planner as pl  # noqa: E402
+from test_router import Classify  # noqa: E402
 
 TASKS = [
     {"id": "a1", "title": "Mathe; Blatt, 4", "subject": "Mathe", "due": "2026-10-07", "minutes": 100,
@@ -41,9 +43,22 @@ class Capture:
 
 @unittest.skipUnless(shutil.which("node"), "node nicht installiert")
 class Parity(unittest.TestCase):
+    CASES = [
+        *[(t, c) for t, c, _ in Classify.CASES],
+        ("Übung 3 bitte", {}), ("Erkläre mir die Ökologie", {}), ("Was ist ein Äquator?", {}),
+        ("Wie heißt die Hauptstadt von Österreich?", {}), ("Ich versteh das nicht", {}),
+        ("Hilfe!", {}), ("hi 😀", {}), ("😀" * 30, {}), ("Moin, wie löse ich das?", {}),
+        ("Guten Morgen", {"attempts": 3, "last_tier": "main"}), ("JA", {"attempts": 1, "last_tier": "main"}),
+        ("Ist 3 < 5?", {}), ("f(x) ableiten", {}), ("Wann ist die Frist für den Test?", {}),
+        ("Plan", {"has_page": True}), ("   ", {}), ("Tschüss!", {"attempts": 5, "last_tier": "main"}),
+    ]
+
     @classmethod
     def setUpClass(cls):
-        out = subprocess.run(["node", str(ROOT / "tests" / "parity.js")], capture_output=True,
+        import tempfile
+        cases = Path(tempfile.mkdtemp()) / "cases.json"
+        cases.write_text(json.dumps(cls.CASES))
+        out = subprocess.run(["node", str(ROOT / "tests" / "parity.js"), str(cases)], capture_output=True,
                              text=True, check=True).stdout
         cls.js = json.loads(out)
 
@@ -80,6 +95,20 @@ class Parity(unittest.TestCase):
         p = make_planner()
         self.assertEqual(self.js["blocklist"],
                          p.set_blocklist(["https://www.Foo.com/x", "kaputt", "foo.com", "a.b"]))
+
+    def test_router_patterns_and_decisions(self):
+        import router
+        for key, (src, flags) in self.js["patterns"].items():
+            self.assertEqual(getattr(router, key).pattern, src, key)
+            py_flags = "".join(f for f, bit in (("i", router.re.I), ("m", router.re.M)) if getattr(router, key).flags & bit)
+            self.assertEqual(flags, py_flags, key)
+        for (text, ctx), got in zip(self.CASES, self.js["route"]):
+            self.assertEqual(got, list(router.classify(text, ctx)), (text, ctx))
+        consts = self.js["routerConsts"]
+        self.assertEqual(consts, {"ESCAPE": router.ESCAPE, "LIGHT_BLOCK": router.LIGHT_BLOCK,
+                                  "STRICT_LANG": router.STRICT_LANG, "KEEP_ALIVE": main.KEEP_ALIVE})
+        for text, (has, stripped) in zip(["im Thema卡特尔", "、", "Müller äöü ß – „Zitat“ … 3×4", "한국어", "ひらがな", "ＡＢＣ"], self.js["cjk"]):
+            self.assertEqual((has, stripped), (router.has_cjk(text), router.strip_cjk(text)), text)
 
     def test_ics(self):
         p = make_planner()

@@ -65,6 +65,7 @@ async function stream(path, body, onPiece) {
       if (!line.startsWith("data:")) continue;
       const ev = JSON.parse(line.slice(5));
       if (ev.error) { const e = new Error(ev.error); e.state = ev.state; throw e; }
+      if (ev.reset) onPiece(null);
       if (ev.t !== undefined) onPiece(ev.t);
       if (ev.done) result = ev;
     }
@@ -163,6 +164,18 @@ function pickNote(reply) {
   return note;
 }
 
+/* Kleines Etikett unter der Antwort: welches Modell hat geantwortet (und warum). */
+let noticeShown = false;
+function showRoute(el, route) {
+  if (!route || !route.model) return;
+  const tag = document.createElement("small");
+  tag.className = "route";
+  tag.textContent = (route.tier === "light" ? "⚡ " : "🧠 ") + route.model;
+  tag.title = route.reason || "";
+  el.appendChild(tag);
+  if (route.notice && !noticeShown) { noticeShown = true; addMsg("sys", route.notice); }
+}
+
 async function run(path, payload, userText) {
   if (busy) return;
   busy = true;
@@ -173,12 +186,16 @@ async function run(path, payload, userText) {
   let full = "";
   try {
     const res = await stream(path, payload, (piece) => {
+      if (piece === null) {                       // Modell ist abgerutscht → Anzeige verwerfen, neuer Versuch
+        full = ""; el.textContent = "…"; setMood("think"); return;
+      }
       if (!full) { setMood("talk"); say(""); }
       full += piece; el.textContent = full;
       $("chat").scrollTop = $("chat").scrollHeight;
     });
     if (res.notice) { el.remove(); me && me.remove(); addMsg("sys", res.notice); applyState(res.state); setMood("idle"); say(""); return; }
     applyState(res.state);
+    showRoute(el, res.route);
     setMood("happy");
     if (perm && page && full) await annotate(full);
     else await sleep(900);

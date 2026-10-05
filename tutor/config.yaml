@@ -7,6 +7,11 @@ host: http://localhost:11434
 # Modell, das Ollama verwenden soll (vorher: ollama pull <modell>)
 model: qwen2.5:32b
 
+# Schnelles Modell: beantwortet einfache Fragen/Smalltalk/Organisatorisches automatisch (kein
+# manuelles Umschalten). Alles was nach Aufgabe aussieht, geht an das große Modell oben.
+# Vorher: ollama pull qwen2.5:3b   ("" = ausschalten)
+light_model: qwen2.5:3b
+
 # Vision-Modell: liest geteilte Notizseiten (Web-UI). Vorher: ollama pull qwen2.5vl:7b
 vision_model: qwen2.5vl:7b
 
