@@ -1,0 +1,30 @@
+# Konfiguration für den Tutor. Alle Werte lassen sich per CLI überschreiben
+# (siehe: python main.py --help).
+
+# Ollama-Server (lokal)
+host: http://localhost:11434
+
+# Modell, das Ollama verwenden soll (vorher: ollama pull <modell>)
+model: qwen2.5:32b
+
+# Kreativität: niedriger = fokussierter, höher = freier
+temperature: 0.6
+
+# Fach / Thema (optional, leer lassen für allgemein), z. B. "Mathematik Klasse 9"
+subject: ""
+
+# Antwortsprache
+language: Deutsch
+
+# Hinweisstufen-Logik
+hints:
+  # Wie viele Nachrichten des Lernenden pro Stufe, bevor die nächste Stufe
+  # (1 Leitfrage → 2 Denkanstoß → 3 Teilschritt) freigegeben wird.
+  turns_per_stage: 2
+  # Unter so vielen Versuchen muss /aufgeben ein zweites Mal bestätigt werden.
+  min_attempts_before_giving_up: 2
+
+# Gesprächsverlauf als JSON in sessions/ speichern
+sessions:
+  autosave: false        # true = beim Beenden automatisch speichern
+  directory: sessions

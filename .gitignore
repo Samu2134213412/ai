@@ -25,3 +25,6 @@ config.json
 .DS_Store
 .idea/
 .vscode/
+
+# Tutor: gespeicherte Sitzungen
+tutor/sessions/*.json
