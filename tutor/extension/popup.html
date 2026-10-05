@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  body{width:280px;margin:0;padding:14px;font:14px -apple-system,system-ui,sans-serif;background:#fff7ec;color:#2b2118}
+  h1{font-size:16px;margin:0 0 8px;display:flex;gap:8px;align-items:center}h1 img{width:26px}
+  button{font:inherit;padding:7px 12px;margin:2px 4px 2px 0;border-radius:999px;border:1.5px solid #f0c99a;background:#fff4e4;cursor:pointer}
+  button.go{background:#ff9f7a;border-color:#ff9f7a;color:#fff}
+  #status{margin:6px 0 10px}#parked{margin-top:10px;max-height:120px;overflow:auto;font-size:12px}
+  details{margin-top:10px}input{width:100%;box-sizing:border-box;margin:3px 0;padding:5px}
+  .err{color:#c92a2a}
+</style>
+<h1><img src="icon.svg" alt="">Tutor Fokus</h1>
+<div id="status">…</div>
+<div id="actions"></div>
+<div id="parked"></div>
+<details><summary>Verbindung</summary>
+  <input id="url" placeholder="http://127.0.0.1:8765"><input id="token" placeholder="Token (nur bei WLAN-Server)">
+  <button id="saveConn">Speichern</button></details>
+<script src="lib.js"></script><script src="popup.js"></script>

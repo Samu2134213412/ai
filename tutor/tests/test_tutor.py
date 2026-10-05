@@ -35,6 +35,9 @@ class FakeClient:
         if model not in self.models:
             raise ollama.ResponseError(f"model '{model}' not found", 404)
         if not stream:
+            prompt = messages[0]["content"]
+            if "JSON-Array" in prompt and getattr(self, "vision_reply", None):
+                return {"message": {"content": self.vision_reply}}
             return {"message": {"content": "Abschrift: 3x + 7 = 22"}}
         return self._stream()
 

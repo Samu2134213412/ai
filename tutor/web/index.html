@@ -34,7 +34,10 @@
     <label class="chip sel"><span>Modell</span><select id="model"></select></label>
     <div class="chip stage" id="stage" title="Hinweisstufe"><i></i><i></i><i></i><b id="stageLabel">–</b></div>
     <button class="chip toggle" id="perm" type="button" aria-pressed="false" title="Darf der Tutor die Seite ansehen und darauf schreiben?">👀 Darf zuschauen</button>
+    <button class="chip" id="focusChip" type="button" title="Fokus-Sitzung">🎯 Fokus</button>
+    <button class="chip" id="plannerBtn" type="button">📋 Planer</button>
     <button class="chip" id="share" type="button">📄 Seite</button>
+    <button class="chip" id="fixText" type="button" hidden>📝 Abschrift</button>
     <button class="chip" id="reread" type="button" hidden>🔍 Nochmal ansehen</button>
     <button class="chip" id="export" type="button" hidden>⬇︎ Als PNG</button>
     <button class="chip" id="giveup" type="button">🏳 Aufgeben</button>
@@ -91,7 +94,62 @@
   </svg>
 </div>
 
+<dialog id="fixDlg"><form method="dialog">
+  <h3>Abschrift prüfen</h3>
+  <p class="hint">So habe ich deine Seite gelesen. <b>[?]</b> = unsicher. Korrigiere, was nicht stimmt – ich arbeite dann mit deiner Version.</p>
+  <textarea id="fixArea" rows="10"></textarea>
+  <div class="actions"><button value="cancel">Abbrechen</button><button id="fixSave" value="ok" class="go">Übernehmen</button></div>
+</form></dialog>
+
+<dialog id="welcome"><form method="dialog">
+  <h3>Hi, ich bin dein Tutor 👋</h3>
+  <p>Ich frage nur nach dem, was ich wirklich brauche – und du entscheidest bei jedem Punkt:</p>
+  <ul class="perm">
+    <li><b>🔔 Benachrichtigungen</b><span>Erinnerungen ans Lernen und wenn eine Einheit startet.</span><button type="button" id="askNotif">Erlauben</button></li>
+    <li><b>📷 Kamera / Fotos</b><span>Das System fragt beim ersten Mal, wenn du eine Seite teilst.</span></li>
+    <li><b>👀 Seite ansehen</b><span>Nur wenn du „Darf zuschauen“ einschaltest.</span></li>
+    <li><b>📅 Kalender</b><span>Lernplan als .ics – dein Kalender erinnert zuverlässig, auch wenn die App zu ist.</span></li>
+    <li><b>🛡 Ablenkungen</b><span>Tabs schließen kann nur die Browser-Erweiterung <i>extension/</i>.</span></li>
+  </ul>
+  <div class="actions"><button value="later" class="go">Los geht’s</button></div>
+</form></dialog>
+
+<dialog id="plannerDlg"><div class="dlg">
+  <header><h3>📋 Planer</h3><button type="button" id="plannerClose" aria-label="Schließen">✕</button></header>
+
+  <section><h4>🎯 Fokus</h4>
+    <div id="focusState" class="hint"></div>
+    <div class="actions left" id="focusBtns"></div>
+    <details><summary>Ablenkungen (Blockliste)</summary>
+      <textarea id="blocklist" rows="3" placeholder="youtube.com instagram.com …"></textarea>
+      <button type="button" id="saveBlock">Speichern</button>
+      <p class="hint">Schließen/Sperren übernimmt die Browser-Erweiterung <i>extension/</i> (Chrome/Edge). Die Web-App allein kann keine Tabs oder Apps schließen.</p>
+    </details></section>
+
+  <section><h4>Aufgaben</h4>
+    <ul id="taskList" class="tasks"></ul>
+    <form id="taskForm" class="taskForm">
+      <input id="tTitle" placeholder="Neue Aufgabe …" required maxlength="120">
+      <input id="tSubject" placeholder="Fach" maxlength="40" list="subjects">
+      <input id="tDue" type="date" aria-label="Fällig am">
+      <input id="tMin" type="number" min="5" max="480" step="5" value="30" aria-label="Minuten">
+      <button class="go" type="submit">＋</button>
+    </form>
+    <div class="actions left"><button type="button" id="extractTasks" disabled>📷 Aus Seite lesen</button></div>
+    <div id="candidates"></div></section>
+
+  <section><h4>Plan</h4><div id="planView"></div>
+    <div class="actions left"><a id="icsLink" class="btn" href="/api/plan.ics" download="lernplan.ics">📅 In Kalender (.ics)</a></div></section>
+
+  <section><h4>🔔 Erinnerungen</h4>
+    <label class="row2"><input type="checkbox" id="remOn"> täglich um <input type="time" id="remTime" value="16:00"></label>
+    <div class="actions left"><button type="button" id="notifBtn">Benachrichtigungen erlauben</button><span id="notifState" class="hint"></span></div>
+    <p class="hint">Solange die App geöffnet ist, erinnert sie dich selbst. Für Erinnerungen bei geschlossener App nutze den Kalender-Export oder später die native App.</p></section>
+</div></dialog>
+<datalist id="subjects"><option>Mathe</option><option>Physik</option><option>Chemie</option><option>Biologie</option><option>Informatik</option><option>Deutsch</option><option>Englisch</option><option>Geschichte</option></datalist>
+
 <div id="drop" hidden>Seite hier ablegen</div>
 <script src="/app.js"></script>
+<script src="/planner.js"></script>
 </body>
 </html>

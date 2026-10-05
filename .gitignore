@@ -28,3 +28,4 @@ config.json
 
 # Tutor: gespeicherte Sitzungen
 tutor/sessions/*.json
+tutor/data/

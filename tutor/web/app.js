@@ -235,7 +235,7 @@ function setPage(source, w, h) {
   fitPage();
 }
 function clearPage() {
-  page = null; pointer = null; wrap.hidden = true; $("empty").hidden = false; $("pager").hidden = true;
+  page = null; pointer = null; wrap.hidden = true; $("fixText").hidden = true; $("empty").hidden = false; $("pager").hidden = true;
   $("reread").hidden = $("export").hidden = true;
   if (at !== "home") goHome();
 }
@@ -296,16 +296,56 @@ async function openFile(file) {
 
 /* ---------------- Seite lesen (Vision) ---------------- */
 
-function snapshot(srcRect, maxEdge = 1400) {
-  const { x, y, w, h } = srcRect || { x: 0, y: 0, w: pageCv.width, h: pageCv.height };
-  const k = Math.min(1, maxEdge / Math.max(w, h));
+/* Vorverarbeitung für schlechte Handschrift: Graustufen, automatischer Kontrast
+   (2–98 %-Perzentil), dunkle Seiten invertieren, kleine Bilder hochskalieren. */
+function enhance(cv) {
+  const c = cv.getContext("2d"), img = c.getImageData(0, 0, cv.width, cv.height), d = img.data;
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 4) {
+    const y = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+    d[i] = y; hist[y]++;
+  }
+  const n = d.length / 4;
+  let acc = 0, lo = 0, hi = 255, mean = 0;
+  for (let v = 0; v < 256; v++) mean += v * hist[v];
+  mean /= n;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * 0.02) { lo = v; break; } }
+  acc = 0;
+  for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= n * 0.02) { hi = v; break; } }
+  const span = Math.max(40, hi - lo), invert = mean < 110;
+  for (let i = 0; i < d.length; i += 4) {
+    let y = Math.max(0, Math.min(255, ((d[i] - lo) / span) * 255));
+    if (invert) y = 255 - y;
+    d[i] = d[i + 1] = d[i + 2] = y; d[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+  return cv;
+}
+
+function cropCanvas(x, y, w, h, minEdge, maxEdge) {
+  const k = Math.min(maxEdge / Math.max(w, h), Math.max(1, minEdge / Math.max(w, h)));
   const cv = document.createElement("canvas");
   cv.width = Math.round(w * k); cv.height = Math.round(h * k);
   const c = cv.getContext("2d");
   c.fillStyle = "#fff"; c.fillRect(0, 0, cv.width, cv.height);
+  c.imageSmoothingQuality = "high";
   c.drawImage(pageCv, x, y, w, h, 0, 0, cv.width, cv.height);
   c.drawImage(ink, x, y, w, h, 0, 0, cv.width, cv.height);
-  return cv.toDataURL("image/jpeg", 0.85);
+  return enhance(cv);
+}
+
+/* Hohe Seiten in 2–3 überlappende Bänder teilen: größere Schrift = bessere Lesung. */
+function pageTiles() {
+  const W = pageCv.width, H = pageCv.height, r = H / W;
+  const n = r > 2 ? 3 : r > 1.25 ? 2 : 1;
+  const th = n === 1 ? H : Math.round(H / n * 1.18);
+  return Array.from({ length: n }, (_, i) => {
+    const y = n === 1 ? 0 : Math.min(H - th, Math.round((H - th) * i / (n - 1)));
+    return cropCanvas(0, y, W, th, 1400, 1800).toDataURL("image/jpeg", 0.9);
+  });
+}
+function snapshot(rect, maxEdge = 900) {
+  return cropCanvas(rect.x, rect.y, rect.w, rect.h, 700, maxEdge).toDataURL("image/jpeg", 0.9);
 }
 
 async function readPage() {
@@ -315,11 +355,15 @@ async function readPage() {
   try {
     setMood("think"); say("Ich schau mal drauf …", 0);
     tipTo(ink.width * 0.5, ink.height * 0.12); await sleep(700);
-    const res = await api("/api/page", { image: snapshot() });
-    page.read = true; applyState(res.state);
+    const res = await api("/api/page", { images: pageTiles() });
+    page.read = true; page.transcript = res.summary; applyState(res.state);
+    $("fixText").hidden = false;
+    $("fixText").textContent = res.unsure ? `📝 Abschrift (${res.unsure}× unsicher)` : "📝 Abschrift";
     setChat(true);
     addMsg("sys", "👀 Gelesen: " + res.summary.replace(/\s+/g, " ").slice(0, 220) + (res.summary.length > 220 ? " …" : ""));
-    setMood("happy"); say("Hab sie gelesen! Was soll ich mir ansehen?"); hop();
+    setMood(res.unsure ? "think" : "happy");
+    say(res.unsure ? `Bei ${res.unsure} Stellen bin ich unsicher – schau bitte in die Abschrift ✏️` : "Hab sie gelesen! Was soll ich mir ansehen?", 6000);
+    hop();
     await sleep(1200);
   } catch (e) {
     setChat(true); addMsg("err", e.message); say("Das Lesen hat nicht geklappt.");
@@ -371,7 +415,7 @@ async function onTap(n) {
     setMood("think"); tipTo(n.x * W, n.y * H); hop(); say("Hier?", 0);
     const cw = W * 0.4, ch = H * 0.3;
     const x = Math.max(0, Math.min(W - cw, n.x * W - cw / 2)), y = Math.max(0, Math.min(H - ch, n.y * H - ch / 2));
-    const res = await api("/api/page", { image: snapshot({ x, y, w: cw, h: ch }, 900), focus: "stelle" });
+    const res = await api("/api/page", { image: snapshot({ x, y, w: cw, h: ch }), focus: "stelle" });
     applyState(res.state);
     setMood("idle"); say("Was ist hier unklar? Frag mich!", 4500);
     $("askInput").focus();
@@ -483,6 +527,20 @@ function syncPerm() { $("perm").setAttribute("aria-pressed", String(perm)); }
 $("share").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", (e) => { openFile(e.target.files[0]); e.target.value = ""; });
 $("reread").addEventListener("click", readPage);
+$("fixText").addEventListener("click", () => {
+  if (!page || !page.transcript) return;
+  $("fixArea").value = page.transcript;
+  $("fixDlg").showModal();
+});
+$("fixDlg").addEventListener("close", async () => {
+  if ($("fixDlg").returnValue !== "ok") return;
+  try {
+    const text = $("fixArea").value.trim();
+    applyState((await api("/api/page_text", { text })).state);
+    page.transcript = text; $("fixText").textContent = "📝 Abschrift";
+    say("Danke, jetzt hab ich’s richtig! 🙌"); hop();
+  } catch (e) { setChat(true); addMsg("err", e.message); }
+});
 $("export").addEventListener("click", exportPng);
 $("giveup").addEventListener("click", giveUp);
 $("newTask").addEventListener("click", () => newTask());
@@ -522,6 +580,13 @@ new ResizeObserver(() => { if (at === "home") goHome(true); }).observe($("bar"))
 new ResizeObserver(fitPage).observe(area);
 
 /* ---------------- Start ---------------- */
+
+window.TutorApp = {
+  api, say, hop, setChat, addMsg,
+  hasPage: () => !!page,
+  pageImages: () => pageTiles(),
+  busy: () => busy,
+};
 
 (async function init() {
   syncPerm();

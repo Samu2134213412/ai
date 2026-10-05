@@ -8,7 +8,9 @@ Teilschritt). Läuft komplett lokal über [Ollama](https://ollama.com).
 tutor/
 ├── main.py            # CLI, Hinweisstufen-Logik, Streaming, Befehle
 ├── web.py             # Web-Oberfläche (Server) – Blob-Leiste, Seiten-Ansicht
-├── web/               # index.html, style.css, app.js, icon.svg (PWA)
+├── web/               # index.html, style.css, app.js, planner.js, sw.js (PWA)
+├── planner.py         # Aufgaben, Wochenplan, Fokus-Sitzung, .ics-Export
+├── extension/         # Browser-Erweiterung "Tutor Fokus" (Chrome/Edge)
 ├── config.yaml        # Modell, temperature, Fach, Sprache, Stufen, Sessions
 ├── prompts/tutor.md   # System-Prompt mit Regeln + 2 Beispieldialogen
 ├── requirements.txt
@@ -93,6 +95,64 @@ Kopie der Seite in seinem eigenen Fenster; geänderte Seiten zeigst du ihm
 erneut (`🔍`). PDFs lädt das iPad über die pdf.js-Bibliothek von cdnjs
 (Internet nötig); PNG geht komplett offline. Auf einem echten iPad ist das
 Ganze bisher nicht getestet, nur im Desktop-Chromium.
+
+## Organisieren, Fokus, Erinnerungen
+
+Chip **📋 Planer** (Web-Oberfläche):
+
+- **Aufgaben** mit Fach, Frist und geschätzten Minuten. „📷 Aus Seite lesen“ holt
+  Hausaufgaben von einer geteilten Seite (du bestätigst jede einzeln).
+- **Wochenplan:** früheste Frist zuerst, Einheiten ≤ 45 min mit 10 min Pause,
+  höchstens 90 min pro Tag. Passt etwas nicht vor die Frist, wird das gemeldet.
+  Der Tutor kennt deine offenen Aufgaben und kann darauf eingehen.
+- **📅 Kalender-Export (.ics)** mit Alarmen (10 min vorher) und optional
+  täglicher Lern-Erinnerung. Das ist der zuverlässigste Weg zu Benachrichtigungen,
+  auch bei geschlossener App.
+- **🔔 Erinnerungen in der App:** täglich zur eingestellten Uhrzeit, kurz vor
+  geplanten Einheiten und wenn der Fokus endet – solange die App offen ist.
+- **🎯 Fokus:** startet eine 25/45-min-Sitzung (Timer in der Leiste).
+
+**Schlechte Handschrift:** Seiten werden vor dem Lesen aufbereitet (Graustufen,
+Auto-Kontrast, dunkle Seiten invertiert, hochskaliert) und bei hohen Seiten in
+überlappende Bänder geteilt. Unsichere Stellen markiert das Modell mit `[?]`;
+über **📝 Abschrift** korrigierst du sie, dann arbeitet der Tutor mit deiner
+Version. Erkennungsfehler lassen sich nicht ganz vermeiden, deshalb wird nichts
+stillschweigend geraten.
+
+### Ablenkungen: Browser-Erweiterung
+
+Eine Web-App kann keine Tabs oder Apps schließen, das kann nur eine Erweiterung:
+
+1. Chrome/Edge → `chrome://extensions` → Entwicklermodus → *Entpackte Erweiterung
+   laden* → Ordner `extension/`.
+2. `python web.py` laufen lassen (Server auf diesem Rechner), im Popup oder im
+   Planer einen Fokus starten.
+3. Solange er läuft, werden offene YouTube-/Instagram-/TikTok-… Tabs
+   **geschlossen und geparkt**, neue werden auf eine Fokus-Seite umgeleitet. Danach
+   gibt es eine Benachrichtigung, und das Popup öffnet die geparkten Tabs wieder.
+   Die Blockliste (auch für Lern-Videos anpassbar) steht im Planer.
+
+Die Erweiterung braucht nur die Rechte `tabs`, `storage`, `alarms`,
+`notifications` und Zugriff auf den lokalen Tutor-Server.
+
+### Berechtigungen und die spätere App
+
+Beim ersten Start erklärt ein Willkommens-Dialog, wofür der Tutor was braucht.
+„Alle Berechtigungen auf einmal“ gibt es weder bei iOS noch bei Android: Das
+System fragt jede einzeln, und der App Store lehnt Apps ab, die mehr verlangen,
+als sie brauchen. Deshalb fragt der Tutor gezielt und erst, wenn es nötig ist.
+
+Was erst eine native App (z. B. SwiftUI oder Capacitor) leisten kann:
+
+| Wunsch | Native Lösung |
+|---|---|
+| Apps wie Instagram/YouTube auf dem iPad sperren | Screen-Time-API (FamilyControls); Apple muss das Entitlement freigeben |
+| Erinnerungen bei geschlossener App | lokale Benachrichtigungen (UNUserNotificationCenter) |
+| Handschrift direkt vom Pencil | PencilKit + Texterkennung auf dem Gerät |
+| GoodNotes-Seite ohne Export | Share-Extension „An Tutor senden“ |
+
+Bis dahin laufen Server, Logik und Oberfläche unverändert weiter; die App würde
+dieselbe API und `web/` wiederverwenden.
 
 ## Wie die Hinweisstufen funktionieren
 

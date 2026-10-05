@@ -203,16 +203,7 @@ def check_model(client, model: str) -> None:
         raise TutorError(_missing_hint(model))
 
 
-def describe_image(client, model: str, image_b64: str, focus: str = "") -> str:
-    """Lässt ein Vision-Modell eine Notizseite lesen (Text, Formeln, Handschrift)."""
-    prompt = (
-        "Das Bild ist eine Notiz-/Arbeitsseite eines Lernenden (z. B. aus GoodNotes). "
-        "Schreibe ab, was darauf steht: Aufgabenstellung, Rechenschritte, Handschrift, "
-        "Formeln, Skizzen (kurz beschrieben). Keine Bewertung, keine Lösung, "
-        "nichts dazuerfinden. Antworte auf Deutsch, höchstens 200 Wörter."
-    )
-    if focus:
-        prompt += f" Konzentriere dich besonders auf: {focus}"
+def _vision_call(client, model: str, prompt: str, image_b64: str) -> str:
     try:
         resp = client.chat(model=model, messages=[
             {"role": "user", "content": prompt, "images": [image_b64]}],
@@ -226,6 +217,39 @@ def describe_image(client, model: str, image_b64: str, focus: str = "") -> str:
     msg = resp["message"] if isinstance(resp, dict) else resp.message
     content = msg["content"] if isinstance(msg, dict) else msg.content
     return (content or "").strip()
+
+
+HANDWRITING_PROMPT = (
+    "Das Bild ist ein Ausschnitt einer Notiz-/Arbeitsseite eines Lernenden (z. B. aus "
+    "GoodNotes), oft in unsauberer Handschrift. Schreibe ab, was darauf steht: "
+    "Aufgabenstellung, Rechenschritte, Formeln, Skizzen (kurz beschrieben). "
+    "Regeln: Nichts dazuerfinden, nichts korrigieren, nicht lösen. Ist ein Wort oder "
+    "Zeichen nicht sicher lesbar, schreibe deine beste Lesung und hänge [?] an, bei "
+    "zwei plausiblen Lesungen z. B. 3x[?8x]. Völlig Unleserliches: [unleserlich]. "
+    "Orangefarbene Randnotizen stammen vom Tutor und werden nicht abgeschrieben. "
+    "Antworte auf Deutsch, höchstens 200 Wörter."
+)
+
+
+def describe_image(client, model: str, image_b64: str, focus: str = "") -> str:
+    """Lässt ein Vision-Modell eine Notizseite lesen (Text, Formeln, Handschrift)."""
+    prompt = HANDWRITING_PROMPT
+    if focus:
+        prompt += f" Konzentriere dich besonders auf: {focus}"
+    return _vision_call(client, model, prompt, image_b64)
+
+
+def extract_tasks_text(client, model: str, image_b64: str, today: str) -> str:
+    """Rohantwort des Vision-Modells: JSON-Liste von Aufgaben/Hausaufgaben auf der Seite."""
+    prompt = (
+        f"Heute ist {today}. Das Bild zeigt Notizen/Hausaufgaben eines Lernenden. "
+        "Finde alle zu erledigenden Aufgaben (Hausaufgaben, Lernen für Tests, Abgaben). "
+        'Antworte NUR mit einem JSON-Array, Objekte mit "title" (kurz), "subject" '
+        '(Fach oder ""), "due" (YYYY-MM-DD oder "", relative Angaben wie "bis Freitag" '
+        'vom heutigen Datum aus umrechnen), "minutes" (grobe Schätzung, Ganzzahl). '
+        "Nichts erfinden; gibt es keine Aufgaben: []."
+    )
+    return _vision_call(client, model, prompt, image_b64)
 
 
 def stream_reply(client, model: str, messages: list, temperature: float):
@@ -257,6 +281,7 @@ class Session:
         self.out = out
         self.tasks: list[Task] = [Task()]
         self.confirm_give_up = False
+        self.context_extra = lambda: ""      # z. B. Planer-Kontext (Web-UI)
         self.started = datetime.now()
         self.saved_to: Path | None = None
 
@@ -271,7 +296,7 @@ class Session:
     # -- Modell-Anfrage -----------------------------------------------------
 
     def build_messages(self) -> list[dict]:
-        system = (self.system_prompt + page_block(self.task)
+        system = (self.system_prompt + self.context_extra() + page_block(self.task)
                   + status_block(self.task, self.turns_per_stage))
         return [{"role": "system", "content": system}, *self.task.messages]
 

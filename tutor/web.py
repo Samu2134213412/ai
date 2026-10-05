@@ -10,36 +10,45 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import mimetypes
 import re
 import secrets
 import socket
 import sys
 import threading
+from datetime import date, datetime
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import main as core
+import planner as pl
 
 WEB_DIR = core.BASE_DIR / "web"
 MAX_BODY = 16 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 STATIC = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js",
-          "/style.css": "style.css", "/icon.svg": "icon.svg"}
+          "/style.css": "style.css", "/icon.svg": "icon.svg", "/sw.js": "sw.js",
+          "/planner.js": "planner.js"}
+EXT_ORIGINS = ("chrome-extension://", "moz-extension://", "safari-web-extension://")
 
 
 class App:
     """Zustand der Web-Sitzung (ein Lernender, eine Sitzung)."""
 
-    def __init__(self, config: dict, client, prompt_template: str, token: str | None):
+    def __init__(self, config: dict, client, prompt_template: str, token: str | None,
+                 planner: pl.Planner | None = None):
         self.config = config
+        self.planner = planner or pl.Planner(core.BASE_DIR / "data" / "planner.json")
         self.client = client
         self.prompt_template = prompt_template
         self.token = token
         self.lock = threading.Lock()
         self.session = core.Session(config, client, self._prompt(config["subject"]))
+        self.session.context_extra = lambda: pl.planner_block(
+            self.planner.open_tasks(), date.today())
 
     def _prompt(self, subject: str) -> str:
         return (self.prompt_template
@@ -60,6 +69,12 @@ class App:
             "has_page": bool(t.page_notes),
         }
 
+    def planner_state(self) -> dict:
+        p = self.planner
+        return {"tasks": p.tasks(), "plan": p.plan(datetime.now()),
+                "reminders": p.data["reminders"], "blocklist": p.data["blocklist"],
+                "focus": p.focus(time.time())}
+
     def models(self) -> list[str]:
         try:
             return sorted(core.installed_models(self.client))
@@ -76,6 +91,10 @@ class App:
         self.session.model = name
 
 
+PLANNER_ROUTES = {"/api/tasks", "/api/tasks/update", "/api/tasks/delete", "/api/tasks/extract",
+                  "/api/reminders", "/api/blocklist", "/api/focus/start", "/api/focus/stop"}
+
+
 class Handler(BaseHTTPRequestHandler):
     app: App
     server_version = "tutor"
@@ -90,6 +109,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        origin = self.headers.get("Origin", "")
+        if origin.startswith(EXT_ORIGINS):
+            self.send_header("Access-Control-Allow-Origin", origin)
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -103,12 +125,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self.app.token:
             return True
         jar = cookies.SimpleCookie(self.headers.get("Cookie", ""))
-        got = jar["tutor_token"].value if "tutor_token" in jar else ""
+        got = self.headers.get("X-Tutor-Token") or (
+            jar["tutor_token"].value if "tutor_token" in jar else "")
         return secrets.compare_digest(got, self.app.token)
 
     def _origin_ok(self) -> bool:
         origin = self.headers.get("Origin")
         if not origin:
+            return True
+        if origin.startswith(EXT_ORIGINS):       # Browser-Erweiterung (Fokus-Modus)
             return True
         return urlparse(origin).netloc == self.headers.get("Host", "")
 
@@ -136,6 +161,16 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return False
 
+    def do_OPTIONS(self):
+        origin = self.headers.get("Origin", "")
+        self.send_response(204)
+        if origin.startswith(EXT_ORIGINS):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Tutor-Token")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     # -- GET -------------------------------------------------------------------
 
     def do_GET(self):
@@ -154,6 +189,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "Nicht autorisiert – URL mit ?t=… öffnen."}, 401)
             if url.path == "/api/state":
                 return self._json({**self.app.state(), "models": self.app.models()})
+            if url.path == "/api/planner":
+                return self._json(self.app.planner_state())
+            if url.path == "/api/focus":
+                return self._json(self.app.planner.focus(time.time()))
+            if url.path == "/api/plan.ics":
+                body = self.app.planner.ics(datetime.now()).encode()
+                return self._send(200, body, "text/calendar; charset=utf-8",
+                                  {"Content-Disposition": 'attachment; filename="lernplan.ics"'})
             return self._json({"error": "Unbekannt"}, 404)
         if url.path == "/manifest.webmanifest":
             start = "/" + (f"?t={self.app.token}" if self.app.token else "")
@@ -192,6 +235,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": f"Ungültige Anfrage: {exc}"}, 400)
 
         app = self.app
+        if path in PLANNER_ROUTES:
+            return self._planner_route(path, body)
         if not app.lock.acquire(blocking=False):
             return self._json({"error": "Der Tutor antwortet noch – kurz warten."}, 409)
         try:
@@ -234,10 +279,59 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"state": app.state()})
         if path == "/api/page":
             return self._page(body)
+        if path == "/api/page_text":
+            return self._page_text(body)
         if path == "/api/save":
             saved = session.save()
             return self._json({"saved": str(saved) if saved else None})
         return self._json({"error": "Unbekannt"}, 404)
+
+    def _planner_route(self, path: str, body: dict):
+        app = self.app
+        p = app.planner
+        if path == "/api/tasks":
+            if not p.add(body):
+                return self._json({"error": "Titel fehlt."}, 400)
+        elif path == "/api/tasks/update":
+            if not p.update(str(body.get("id", "")), body.get("fields") or {}):
+                return self._json({"error": "Aufgabe nicht gefunden."}, 404)
+        elif path == "/api/tasks/delete":
+            p.delete(str(body.get("id", "")))
+        elif path == "/api/tasks/extract":
+            return self._extract_tasks(body)
+        elif path == "/api/reminders":
+            p.set_reminders(bool(body.get("enabled")), str(body.get("time", "")))
+        elif path == "/api/blocklist":
+            p.set_blocklist(body.get("items", []))
+        elif path == "/api/focus/start":
+            try:
+                p.start_focus(int(body.get("minutes", 25)), time.time())
+            except (TypeError, ValueError):
+                return self._json({"error": "Ungültige Minuten."}, 400)
+        elif path == "/api/focus/stop":
+            p.stop_focus()
+        return self._json(app.planner_state())
+
+    def _extract_tasks(self, body: dict):
+        app = self.app
+        strip = lambda x: re.sub(r"^data:image/[a-z+]+;base64,", "", str(x))
+        images = [strip(x) for x in (body.get("images") or [body.get("image", "")])][:4]
+        images = [x for x in images if len(x) >= 100]
+        if not images:
+            return self._json({"error": "Kein Bild empfangen."}, 400)
+        found, seen = [], set()
+        try:
+            for img in images:
+                raw = core.extract_tasks_text(app.client, app.config["vision_model"], img,
+                                              date.today().isoformat())
+                for t in pl.parse_tasks_json(raw):
+                    key = (t["title"].lower(), t["due"])
+                    if key not in seen:       # Bänder überlappen → Duplikate
+                        seen.add(key)
+                        found.append(t)
+        except core.TutorError as exc:
+            return self._json({"error": str(exc)}, 400)
+        return self._json({"candidates": found})
 
     def _stream(self, text: str):
         app, session = self.app, self.app.session
@@ -256,21 +350,33 @@ class Handler(BaseHTTPRequestHandler):
 
     def _page(self, body: dict):
         app, session = self.app, self.app.session
-        image = str(body.get("image", ""))
-        image = re.sub(r"^data:image/[a-z+]+;base64,", "", image)
-        if len(image) < 100:
+        strip = lambda x: re.sub(r"^data:image/[a-z+]+;base64,", "", str(x))
+        images = [strip(x) for x in (body.get("images") or [body.get("image", "")])][:4]
+        images = [x for x in images if len(x) >= 100]
+        if not images:
             return self._json({"error": "Kein Bild empfangen."}, 400)
         focus = str(body.get("focus", ""))[:200]
         try:
-            summary = core.describe_image(app.client, app.config["vision_model"],
-                                          image, focus)
+            parts = [core.describe_image(app.client, app.config["vision_model"], img, focus)
+                     for img in images]
         except core.TutorError as exc:
             return self._json({"error": str(exc)}, 400)
+        summary = "\n".join(p for p in parts if p)
         if not summary:
             return self._json({"error": "Auf der Seite konnte ich nichts lesen."}, 422)
         note = f"Bereich: {summary}" if focus == "stelle" else summary
-        session.task.page_notes.append(note[:1500])
-        return self._json({"summary": summary, "state": app.state()})
+        session.task.page_notes.append(note[:2500])
+        return self._json({"summary": summary, "unsure": summary.count("[?"),
+                           "state": app.state()})
+
+    def _page_text(self, body: dict):
+        """Vom Lernenden korrigierte Abschrift ersetzt die automatische."""
+        text = str(body.get("text", "")).strip()[:2500]
+        notes = self.app.session.task.page_notes
+        notes.clear()
+        if text:
+            notes.append(text)
+        return self._json({"state": self.app.state()})
 
 
 def lan_ip() -> str:
@@ -283,8 +389,9 @@ def lan_ip() -> str:
 
 
 def make_server(config: dict, client, prompt_template: str, host: str, port: int,
-                token: str | None) -> ThreadingHTTPServer:
-    handler = type("BoundHandler", (Handler,), {"app": App(config, client, prompt_template, token)})
+                token: str | None, planner: pl.Planner | None = None) -> ThreadingHTTPServer:
+    handler = type("BoundHandler", (Handler,),
+                   {"app": App(config, client, prompt_template, token, planner)})
     return ThreadingHTTPServer((host, port), handler)
 
 

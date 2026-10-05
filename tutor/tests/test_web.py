@@ -3,6 +3,7 @@
 import base64
 import json
 import sys
+import tempfile
 import threading
 import unittest
 import urllib.error
@@ -13,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import main  # noqa: E402
+import planner as pl  # noqa: E402
 import web  # noqa: E402
 from test_tutor import FakeClient  # noqa: E402
 
@@ -22,7 +24,8 @@ PROMPT = "SYSTEM {{fach}} {{sprache}}"
 def start(token=None, client=None):
     config = main.load_config(Path("/nonexistent"))
     server = web.make_server(config, client or FakeClient(models=["qwen2.5:32b", "x:1b", "qwen2.5vl:7b"]),
-                             PROMPT, "127.0.0.1", 0, token)
+                             PROMPT, "127.0.0.1", 0, token,
+                             pl.Planner(Path(tempfile.mkdtemp()) / "p.json"))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
@@ -122,6 +125,78 @@ class WebTests(unittest.TestCase):
         call(self.base, "/api/subject", {"subject": "Physik"})
         call(self.base, "/api/chat", {"text": "hi"})
         self.assertIn("SYSTEM  für Physik Deutsch", self.client.calls[-1]["messages"][0]["content"])
+
+
+class PlannerWebTests(unittest.TestCase):
+    def setUp(self):
+        self.server, self.base = start()
+
+    def tearDown(self):
+        self.server.shutdown(); self.server.server_close()
+
+    def test_tasks_plan_ics(self):
+        _, _, raw = call(self.base, "/api/tasks", {"title": "Bio lernen", "subject": "Bio",
+                                                   "due": "2099-01-02", "minutes": 60})
+        state = json.loads(raw)
+        self.assertEqual(state["tasks"][0]["title"], "Bio lernen")
+        self.assertTrue(state["plan"]["blocks"])
+        tid = state["tasks"][0]["id"]
+        call(self.base, "/api/tasks/update", {"id": tid, "fields": {"done": True}})
+        _, _, raw = call(self.base, "/api/planner")
+        self.assertEqual(json.loads(raw)["plan"]["blocks"], [])
+        status, headers, body = call(self.base, "/api/plan.ics")
+        self.assertIn("text/calendar", headers["Content-Type"])
+        self.assertIn(b"BEGIN:VCALENDAR", body)
+        self.assertEqual(call(self.base, "/api/tasks", {"title": " "})[0], 400)
+
+    def test_tutor_sees_open_tasks(self):
+        call(self.base, "/api/tasks", {"title": "Vokabeltest", "due": "2099-01-02"})
+        call(self.base, "/api/chat", {"text": "hi"})
+        client = self.server.RequestHandlerClass.app.client
+        self.assertIn("Vokabeltest", client.calls[-1]["messages"][0]["content"])
+
+    def test_focus_and_blocklist(self):
+        _, _, raw = call(self.base, "/api/focus/start", {"minutes": 25})
+        self.assertTrue(json.loads(raw)["focus"]["active"])
+        _, _, raw = call(self.base, "/api/focus")
+        f = json.loads(raw)
+        self.assertTrue(f["active"])
+        self.assertIn("youtube.com", f["blocklist"])
+        call(self.base, "/api/blocklist", {"items": ["https://www.Foo.com/x", "kaputt", "foo.com"]})
+        _, _, raw = call(self.base, "/api/focus")
+        self.assertEqual(json.loads(raw)["blocklist"], ["foo.com"])
+        _, _, raw = call(self.base, "/api/focus/stop", {})
+        self.assertFalse(json.loads(raw)["focus"]["active"])
+
+    def test_extension_origin_allowed_and_token_header(self):
+        status, headers, _ = call(self.base, "/api/focus/start", {"minutes": 1},
+                                  {"Origin": "chrome-extension://abc"})
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "chrome-extension://abc")
+        server, base = start(token="geheim")
+        try:
+            self.assertEqual(call(base, "/api/focus", headers={"X-Tutor-Token": "geheim"})[0], 200)
+            self.assertEqual(call(base, "/api/focus")[0], 401)
+        finally:
+            server.shutdown(); server.server_close()
+
+    def test_extract_tasks(self):
+        client = self.server.RequestHandlerClass.app.client
+        client.vision_reply = '[{"title":"Mathe S. 12","due":"2099-03-04","minutes":20},{"x":1}]'
+        img = base64.b64encode(b"x" * 300).decode()
+        _, _, raw = call(self.base, "/api/tasks/extract", {"images": [img, img]})   # Überlappung
+        self.assertEqual(json.loads(raw)["candidates"][0]["title"], "Mathe S. 12")
+        self.assertEqual(len(json.loads(raw)["candidates"]), 1)
+
+    def test_multi_image_and_corrected_text(self):
+        img = base64.b64encode(b"x" * 300).decode()
+        _, _, raw = call(self.base, "/api/page", {"images": [img, img]})
+        self.assertEqual(json.loads(raw)["summary"].count("Abschrift"), 2)
+        call(self.base, "/api/page_text", {"text": "3x + 7 = 22"})
+        call(self.base, "/api/chat", {"text": "hilf"})
+        sys_prompt = self.server.RequestHandlerClass.app.client.calls[-1]["messages"][0]["content"]
+        self.assertIn("3x + 7 = 22", sys_prompt)
+        self.assertNotIn("Abschrift: 3x", sys_prompt)
 
 
 class TokenTests(unittest.TestCase):

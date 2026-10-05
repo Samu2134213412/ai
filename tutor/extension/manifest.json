@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Tutor Fokus",
+  "version": "0.1.0",
+  "description": "Schließt Ablenkungen (YouTube, Instagram …) während einer Fokus-Sitzung des Tutors und parkt die Tabs für später.",
+  "permissions": ["tabs", "storage", "alarms", "notifications"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Tutor Fokus" },
+  "icons": { "128": "icon.svg" }
+}
