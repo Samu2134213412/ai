@@ -68,6 +68,23 @@ class Bridge(unittest.TestCase):
         self.assertLess(capture.index("overlay.hide()"), capture.index("desktopCapturer.getSources"))   # Leiste nie im Foto
         self.assertIn("showInactive()", capture)                                                      # und danach ohne Fokusklau zurück
 
+    def test_goodnotes_automation_is_opt_in_and_read_only(self):
+        main = (DESK / "main.js").read_text()
+        cfg = (DESK / "lib" / "config.js").read_text()
+        self.assertIn("autoFocus: false, autoOverlay: false", cfg)                    # Voreinstellung: aus
+        self.assertIn("startWatching()", main)
+        for needle in ("desktopCapturer.getSources", "tasklist", '"ps"'):             # nur Fenster-/Prozessnamen lesen
+            self.assertIn(needle, main[main.index("function startWatching"):main.index("app.whenReady")], needle)
+
+    def test_no_os_input_control_in_the_project(self):
+        """Der Tutor steuert keine Maus/Tastatur anderer Programme (z. B. GoodNotes) – bewusst nicht gebaut."""
+        bad = ("nut-js", "robotjs", "SendInput", "CGEventPost", "xdotool", "pen:write", "setPosition(")
+        for f in [*DESK.glob("*.js"), *(DESK / "lib").glob("*.js"), *(ROOT / "web").glob("*.js"), *(ROOT / "server").glob("*.js")]:
+            src = f.read_text()
+            for needle in bad:
+                self.assertNotIn(needle, src, f"{f.name}: {needle}")
+        self.assertNotIn("nut-tree", (DESK / "package.json").read_text())
+
     def test_secure_window_settings(self):
         main = (DESK / "main.js").read_text()
         for needle in ("contextIsolation: true", "nodeIntegration: false", "sandbox: true"):

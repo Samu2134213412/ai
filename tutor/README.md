@@ -39,6 +39,26 @@ Alles andere sind Clients, die Fragen hinschicken und Antworten zurückbekommen:
 Kopplung ohne Passwort: Der PC zeigt einen Link/QR mit einem Einmal-Code (10 Min.), das Gerät bekommt ein
 langes Geräte-Token. Jede Person hat einen eigenen Verlauf. Nur der Besitzer koppelt weitere Geräte.
 
+## Ablenkungen fernhalten – auch wenn nur GoodNotes offen ist
+
+In der PC-App (⚙︎ → „Solange GoodNotes offen ist“, alles **standardmäßig aus**):
+
+- **Fokus automatisch:** Sobald GoodNotes läuft (App oder Browser-Tab), startet ein Fokus – Browser-Erweiterung
+  schließt YouTube/Instagram …, die von dir gelisteten Programme werden beendet. GoodNotes zu → Fokus aus.
+  Eine selbst gestartete Sitzung fasst die Automatik nie an; beendest du den Fokus von Hand, startet sie ihn nicht neu.
+- **Leiste automatisch:** Die GoodNotes-Leiste erscheint mit GoodNotes und verschwindet mit ihm.
+- **Ablenkungs-Blick:** Alle paar Minuten (nur bei Fokus und eingeschaltetem 👀 in der Leiste) prüft der Tutor den
+  Bildschirm lokal mit deinem Ollama auf Spiele (Tic-Tac-Toe …), Videos, Social Media, Chats, Kritzeleien und meldet
+  sie freundlich. Lernmaterial und Lernvideos zählen nicht. Es wird nichts gespeichert.
+- Damit das klappt, wenn nur GoodNotes geöffnet wird, läuft die App im Tray weiter: „Beim Anmelden starten“ einschalten.
+- **Aufräumen lässt Ablenkungen weg:** Spiele/Kritzeleien auf der Seite erscheinen nicht in der aufgeräumten Kopie
+  (der Dialog zeigt, was weggelassen wurde).
+
+**Nicht möglich: im GoodNotes-Dokument radieren oder zeichnen.** GoodNotes bietet dafür keine Schnittstelle; es ginge
+nur, indem die App Maus und Radierer fremd bedient – das ist bewusst nicht eingebaut (siehe Test
+`test_no_os_input_control_in_the_project`). Stattdessen: erkennen, melden, in der sauberen Kopie weglassen.
+Die Automatik gibt es nur am PC/Mac; auf iPad und Handy kann kein Programm andere Apps beobachten.
+
 ## Seite aufräumen (🧹)
 
 Nach dem Lesen einer Seite (👀) kann der Tutor sie **aufräumen**: Er ordnet die Abschrift in Titel, Abschnitte,

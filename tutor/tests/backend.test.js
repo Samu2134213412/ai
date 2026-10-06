@@ -23,6 +23,15 @@ function fakeOllama() {
         res.setHeader("Content-Type", "application/json");
         return res.end(JSON.stringify({ message: { content: t === undefined ? "# Mathe\n\n$ 3x + 7 = 22\n$ 3x = 15 [?]\n- 7 abziehen\n[ ] Übung 4" : t }, done: true }));
       }
+      if (!r.stream && r.messages[0].content.includes("vom Lernen ablenkt")) {
+        let t = replies.distraction; if (Array.isArray(t)) t = t.length > 1 ? t.shift() : t[0];
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ message: { content: t === undefined ? '[{"what":"Tic-Tac-Toe auf der Seite","kind":"Spiel"},{"what":"tic-tac-toe auf der seite"},{"what":"Video im Fenster","kind":"komisch"}]' : t }, done: true }));
+      }
+      if (!r.stream && replies.vision) {
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ message: { content: replies.vision }, done: true }));
+      }
       if (!r.stream) {
         const p = r.messages[0].content;
         const txt = p.includes("JSON-Array") ? '[{"title":"Mathe S. 12","due":"2099-03-04","minutes":20}]' : "Aufgabe: 3x[?8x] + 7 = 22";
@@ -289,4 +298,36 @@ test("Notiz-Format und PDF-Bau (notes.js)", () => {
   assert.ok(text.slice(start).startsWith("xref"));
   const xref = text.slice(start).split("\n"); const total = +xref[1].split(" ")[1];
   for (let n = 1; n < total; n++) { const off = +xref[2 + n].slice(0, 10); assert.ok(text.slice(off).startsWith(`${n} 0 obj`), `Objekt ${n}`); }
+});
+
+test("Ablenkungs-Blick: Spiele, Videos, Kritzeleien finden; Antwort robust lesen", async () => {
+  const C = require("../web/core.js");
+  assert.deepStrictEqual(C.parseDistractions('Hier: [{"what":" Spiel ","kind":"SPIEL"},{"nix":1},{"what":"","kind":"video"}] fertig'), [{ what: "Spiel", kind: "spiel" }]);
+  assert.deepStrictEqual(C.parseDistractions("kein json"), []);
+  assert.deepStrictEqual(C.parseDistractions("[kaputt"), []);
+  assert.strictEqual(C.parseDistractions(JSON.stringify(Array.from({ length: 9 }, (_, i) => ({ what: "x" + i })))).length, 6);
+  const { b, fo, done } = await setup({});
+  const r = await b.api("/api/distraction", { images: [IMG, IMG] });          // Duplikate aus mehreren Bildern entfallen
+  assert.deepStrictEqual(r.distractions, [{ what: "Tic-Tac-Toe auf der Seite", kind: "spiel" }, { what: "Video im Fenster", kind: "sonstiges" }]);
+  assert.match(fo.calls[0].messages[0].content, /Lernmaterial, Notizen, Aufgaben, Lernvideos/);     // Lernen zählt nicht als Ablenkung
+  fo.replies.distraction = "[]";
+  assert.deepStrictEqual((await b.api("/api/distraction", { image: IMG })).distractions, []);
+  await assert.rejects(b.api("/api/distraction", {}), /Kein Bild/);
+  done();
+});
+
+test("Aufräumen lässt Spiele/Kritzeleien weg und meldet sie", async () => {
+  const { b, fo, done } = await setup({});
+  fo.replies.vision = "Aufgabe 3: 3x + 7 = 22\n3x = 15\nAblenkung: Tic-Tac-Toe am Rand\nAblenkung: Tic-Tac-Toe am Rand\nAblenkung: Kritzelei unten";
+  await b.api("/api/page", { images: [IMG] });
+  const r = await b.api("/api/tidy", {});
+  assert.deepStrictEqual(r.dropped, ["Tic-Tac-Toe am Rand", "Kritzelei unten"]);
+  const user = fo.calls.at(-1).messages[1].content;
+  assert.doesNotMatch(user, /Tic-Tac-Toe|Kritzelei/); assert.match(user, /3x = 15/);               // gar nicht erst an das Modell geschickt
+  assert.match(fo.calls.at(-1).messages[0].content, /„Ablenkung:“ beginnen/);
+  fo.replies.vision = "Ablenkung: Tic-Tac-Toe";
+  await b.api("/api/page", { images: [IMG] });
+  await b.api("/api/page_text", { text: "Ablenkung: Tic-Tac-Toe\nAblenkung: Galgenmännchen" });
+  await assert.rejects(b.api("/api/tidy", {}), /nur Ablenkung/);
+  done();
 });

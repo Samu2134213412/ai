@@ -267,11 +267,27 @@ function createBackend(env) {
     return { summary, unsure: (summary.match(/\[\?/g) || []).length, state: state() };
   }
 
-  /* Seite aufräumen (oder per Zuruf ändern). Rückgabe: Notiz-Format (siehe notes.js). */
+  /* Ablenkungs-Blick: Spiele/Videos/Social Media/Kritzeleien im Bild finden. Rückgabe: { distractions: [{ what, kind }] }. */
+  async function distractionRoute(body) {
+    const imgs = (body.images || [body.image || ""]).map(stripData).filter((x) => x.length >= 100).slice(0, 2);
+    if (!imgs.length) throw new TutorError("Kein Bild empfangen.");
+    const found = [], seen = new Set();
+    for (const img of imgs) {
+      for (const d of C.parseDistractions(await vision(C.DISTRACTION_PROMPT, img))) {
+        const k = d.what.toLowerCase(); if (!seen.has(k)) { seen.add(k); found.push(d); }
+      }
+    }
+    return { distractions: found };
+  }
+
+  /* Seite aufräumen (oder per Zuruf ändern). Rückgabe: Notiz-Format (siehe notes.js) und weggelassene Ablenkungen. */
   async function tidyRoute(body) {
-    const source = String(body.text || "").trim() || cur().pageNotes.join("\n").trim();
+    const raw = String(body.text || "").trim() || cur().pageNotes.join("\n").trim();
+    const dropped = [...new Set(raw.split("\n").filter((l) => /^\s*Ablenkung:/i.test(l)).map((l) => l.replace(/^\s*Ablenkung:\s*/i, "").trim()).filter(Boolean))];
+    const source = raw.split("\n").filter((l) => !/^\s*Ablenkung:/i.test(l)).join("\n").trim();       // Spiele/Kritzeleien gar nicht erst mitschicken
     const current = String(body.markup || "").trim(), wish = String(body.instruction || "").trim().slice(0, 300);
-    if (!source && !current) throw new TutorError("Ich habe noch keine Seite gelesen. Lass den Tutor die Seite zuerst lesen (🔍 / 👀).");
+    if (!raw && !current) throw new TutorError("Ich habe noch keine Seite gelesen. Lass den Tutor die Seite zuerst lesen (🔍 / 👀).");
+    if (!source && !current) throw new TutorError("Auf der Seite steht nur Ablenkung (" + dropped.join(", ") + ") – es gibt nichts aufzuräumen.");
     const user = current && wish
       ? `Aktuelle aufgeräumte Seite:\n${current}\n\nÄnderungswunsch: ${wish}\n\nOriginal-Abschrift zur Kontrolle (nichts davon darf verloren gehen):\n${source}`
       : `Abschrift der Seite:\n${source}` + (wish ? `\n\nWunsch: ${wish}` : "");
@@ -282,12 +298,13 @@ function createBackend(env) {
     }
     out = C.stripCjk(out).replace(/^```[a-z]*\n?|```$/gim, "").trim();
     if (!/\S/.test(out)) throw new TutorError("Das Aufräumen hat nichts geliefert. Bitte nochmal versuchen.");
-    return { markup: out };
+    return { markup: out, dropped };
   }
 
   async function api(path, body) {
     await load();
     if (path === "/api/tidy") return tidyRoute(body || {});
+    if (path === "/api/distraction") return distractionRoute(body || {});
     if (path === "/api/state") {
       let models = [], problem = null;
       try { models = (await installedModels()).sort(); } catch (e) { problem = e.message; }

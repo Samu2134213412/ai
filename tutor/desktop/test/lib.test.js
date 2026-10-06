@@ -46,10 +46,62 @@ test("Wächter: Unix nutzt pkill -x mit exaktem Namen; Fehler beim Beenden brich
 test("Config: speichert validiert und lädt wieder", () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "cfg-")), "s", "settings.json");
   const c = createConfig(file);
-  assert.deepStrictEqual(c.get(), { blockedApps: [], autostart: false, trayOnClose: true, overlay: false });
+  assert.deepStrictEqual(c.get(), { blockedApps: [], autostart: false, trayOnClose: true, overlay: false, autoFocus: false, autoOverlay: false, autoMinutes: 120, watchScreen: false, watchMinutes: 3 });
   c.set({ blockedApps: "Discord.exe, explorer, ../x", autostart: 1, trayOnClose: false, overlay: 1, evil: "ignoriert" });
   const again = createConfig(file).get();
-  assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false, overlay: true });
+  assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false, overlay: true, autoFocus: false, autoOverlay: false, autoMinutes: 120, watchScreen: false, watchMinutes: 3 });
   assert.strictEqual(c.set(null).autostart, true);
 });
 
+
+/* ---------- GoodNotes-Wächter und Automatik ---------- */
+const { createWatcher, createAuto } = require("../lib/watch.js");
+
+test("Wächter: offen sofort, geschlossen erst nach zwei Fehlsichtungen; Ausfall der Quelle ändert nichts", async () => {
+  let names = [], fail = false; const events = [];
+  const w = createWatcher({ getNames: async () => { if (fail) throw new Error("x"); return names; }, onOpen: async () => events.push("open"), onClose: async () => events.push("close") });
+  assert.strictEqual(await w.tick(), false);
+  names = ["Chrome", "GoodNotes – Mathe"]; assert.strictEqual(await w.tick(), true);
+  assert.strictEqual(await w.tick(), true); assert.deepStrictEqual(events, ["open"]);          // nicht doppelt
+  names = ["Chrome"]; assert.strictEqual(await w.tick(), true);                                  // 1. Fehlsichtung: noch offen
+  names = ["goodnotes.exe"]; assert.strictEqual(await w.tick(), true);                           // wieder da → Zähler zurück
+  names = []; await w.tick(); fail = true; assert.strictEqual(await w.tick(), true);             // Quelle fällt aus → bleibt offen
+  fail = false; await w.tick(); assert.strictEqual(await w.tick(), false);
+  assert.deepStrictEqual(events, ["open", "close"]);
+});
+
+function autoFixture(cfg = {}) {
+  let t = 1000, f = { active: false }; const calls = [], notes = [];
+  const config = { autoFocus: true, autoOverlay: true, autoMinutes: 60, ...cfg };
+  const focus = { info: async () => ({ ...f, remaining: 1 }), start: async (m) => { calls.push(["start", m]); f = { active: true }; }, stop: async () => { calls.push(["stop"]); f = { active: false }; } };
+  const overlay = { show: () => { calls.push(["show"]); return true; }, hide: () => calls.push(["hide"]) };
+  const auto = createAuto({ getConfig: () => config, focus, overlay, notify: (a, b) => notes.push(a), now: () => t });
+  return { auto, calls, notes, setActive: (v) => (f = { active: v }), advance: (s) => (t += s), config };
+}
+
+test("Automatik: GoodNotes auf → Leiste + Fokus; zu → beides wieder aus", async () => {
+  const x = autoFixture();
+  await x.auto.onOpen();
+  assert.deepStrictEqual(x.calls, [["show"], ["start", 60]]); assert.match(x.notes[0], /Fokus läuft/);
+  await x.auto.onClose();
+  assert.deepStrictEqual(x.calls.slice(2), [["stop"], ["hide"]]); assert.strictEqual(x.auto.focusOn, false);
+});
+
+test("Automatik: greift nicht in selbst gestartete Sitzungen ein und tut nichts, wenn abgeschaltet", async () => {
+  const mine = autoFixture(); mine.setActive(true);
+  await mine.auto.onOpen(); await mine.auto.onClose();
+  assert.ok(!mine.calls.some((c) => c[0] === "start" || c[0] === "stop"));                       // eigene Sitzung bleibt
+  const off = autoFixture({ autoFocus: false, autoOverlay: false });
+  await off.auto.onOpen(); await off.auto.onClose();
+  assert.deepStrictEqual(off.calls, []);
+});
+
+test("Automatik: Verlängern vor Ablauf; manuelles Beenden wird respektiert", async () => {
+  const x = autoFixture(); await x.auto.onOpen(); x.calls.length = 0;
+  x.advance(20); await x.auto.keepAlive(); assert.deepStrictEqual(x.calls, []);                  // noch Zeit
+  x.advance(60 * 60); await x.auto.keepAlive(); assert.deepStrictEqual(x.calls, [["start", 60]]);  // kurz vor Ende → verlängert
+  const y = autoFixture(); await y.auto.onOpen(); y.calls.length = 0;
+  y.advance(30); y.setActive(false); await y.auto.keepAlive();                                   // Lernender beendet den Fokus
+  assert.strictEqual(y.auto.focusOn, false); y.advance(3600); await y.auto.keepAlive();
+  assert.deepStrictEqual(y.calls, []);                                                           // und nichts startet ihn wieder
+});

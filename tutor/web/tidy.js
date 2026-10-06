@@ -54,6 +54,7 @@ async function request(body) {
   try {
     const r = await cfg.api("/api/tidy", body);
     el.tidyText.value = r.markup; preview();
+    if (r.dropped && r.dropped.length) el.tidyStatus.textContent += " · weggelassen (Ablenkung): " + r.dropped.join(", ");
   } catch (e) { el.tidyStatus.textContent = "⚠ " + e.message; }
   finally { [el.tidyApply, el.tidyPdf, el.tidyPng, el.tidyShare].forEach((b) => (b.disabled = false)); }
 }

@@ -133,6 +133,11 @@
     <label class="row2"><input type="checkbox" id="dTray"> Beim Schließen im Tray weiterlaufen (Erinnerungen bleiben aktiv)</label>
     <label class="row2"><input type="checkbox" id="dAuto"> Beim Anmelden starten</label>
     <label class="row2"><input type="checkbox" id="dOverlay"> GoodNotes-Leiste beim Start einblenden</label>
+    <h4>Solange GoodNotes offen ist</h4>
+    <label class="row2"><input type="checkbox" id="dAutoFocus"> Fokus automatisch (Ablenkungen fernhalten)</label>
+    <label class="row2"><input type="checkbox" id="dAutoOverlay"> Leiste automatisch einblenden</label>
+    <label class="row2"><input type="checkbox" id="dWatch"> Ablenkungs-Blick: Bildschirm alle <input type="number" id="dWatchMin" min="1" max="30" value="3" style="width:64px"> Min. prüfen (nur bei Fokus und 👀 in der Leiste)</label>
+    <p class="hint">Die App läuft dafür im Tray weiter, auch wenn nur GoodNotes offen ist („Beim Anmelden starten“ empfohlen). Geprüft wird lokal mit deinem Ollama; es wird nichts gespeichert.</p>
     <div class="actions left"><button type="button" id="overlayBtn">🪄 GoodNotes-Leiste ein/aus (Strg+Alt+T)</button></div>
   </div>
   <div id="connectSettings" hidden>

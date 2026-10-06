@@ -230,6 +230,7 @@ HANDWRITING_PROMPT = (
     "Zeichen nicht sicher lesbar, schreibe deine beste Lesung und hänge [?] an, bei "
     "zwei plausiblen Lesungen z. B. 3x[?8x]. Völlig Unleserliches: [unleserlich]. "
     "Orangefarbene Randnotizen stammen vom Tutor und werden nicht abgeschrieben. "
+    "Spiele (z. B. Tic-Tac-Toe, Galgenmännchen), Kritzeleien und Comics schreibst du nicht ab, sondern nennst sie am Ende je in einer eigenen Zeile „Ablenkung: <kurze Beschreibung>“. "
     "Antworte auf Deutsch, höchstens 200 Wörter."
 )
 

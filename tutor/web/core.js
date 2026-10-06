@@ -28,6 +28,7 @@ const HANDWRITING_PROMPT =
   "Zeichen nicht sicher lesbar, schreibe deine beste Lesung und hänge [?] an, bei " +
   "zwei plausiblen Lesungen z. B. 3x[?8x]. Völlig Unleserliches: [unleserlich]. " +
   "Orangefarbene Randnotizen stammen vom Tutor und werden nicht abgeschrieben. " +
+  "Spiele (z. B. Tic-Tac-Toe, Galgenmännchen), Kritzeleien und Comics schreibst du nicht ab, sondern nennst sie am Ende je in einer eigenen Zeile „Ablenkung: <kurze Beschreibung>“. " +
   "Antworte auf Deutsch, höchstens 200 Wörter.";
 
 /* Aufräumen: Abschrift → gegliederte Seite (Format siehe notes.js). Der Tutor ordnet nur, er löst und korrigiert nichts. */
@@ -44,7 +45,16 @@ const TIDY_PROMPT =
   "4. Antworte NUR in diesem Format (Markdown-Auszug), ohne Einleitung und ohne Erklärung:\n" +
   "   # Titel (genau einmal, kurz)\n   ## Abschnitt\n   normaler Text\n   - Aufzählungspunkt\n   1. nummerierter Schritt\n" +
   "   $ Formel- oder Rechenzeile (eine pro Zeile, wie sie dasteht)\n   [ ] offene Aufgabe\n   > Merksatz/Hinweis\n" +
-  "5. Sprache: Deutsch, nur lateinische Buchstaben.";
+  "5. Zeilen, die mit „Ablenkung:“ beginnen, sind Spiele oder Kritzeleien – sie gehören nicht auf die Seite.\n" +
+  "6. Sprache: Deutsch, nur lateinische Buchstaben.";
+
+/* Ablenkungs-Blick: Was auf dem Bildschirm/der Seite lenkt vom Lernen ab? Antwort: JSON-Array. */
+const DISTRACTION_PROMPT =
+  "Das Bild zeigt den Bildschirm (oder eine Notizseite) einer lernenden Person. Finde alles, was vom Lernen ablenkt: " +
+  "Spiele (Tic-Tac-Toe, Galgenmännchen, Schiffe versenken, Handyspiele), Videos/Streams, Social Media, Chats, " +
+  "Shopping, Comics und Kritzeleien. Lernmaterial, Notizen, Aufgaben, Lernvideos und Nachschlagen zählen NICHT. " +
+  'Antworte NUR mit einem JSON-Array; Objekte mit "what" (kurz, deutsch) und "kind" ("spiel", "video", "social", "chat", ' +
+  '"kritzelei" oder "sonstiges"). Nichts erfinden; ohne Ablenkung: [].';
 
 function extractPrompt(today) {
   return `Heute ist ${today}. Das Bild zeigt Notizen/Hausaufgaben eines Lernenden. ` +
@@ -304,10 +314,20 @@ function buildNotifications(data, now) {
   return out;
 }
 
+/* Antwort des Ablenkungs-Blicks → [{ what, kind }] (robust gegen Fließtext drumherum). */
+function parseDistractions(text) {
+  const m = /\[[\s\S]*\]/.exec(String(text));
+  if (!m) return [];
+  let data; try { data = JSON.parse(m[0]); } catch (e) { return []; }
+  const kinds = new Set(["spiel", "video", "social", "chat", "kritzelei", "sonstiges"]);
+  return (Array.isArray(data) ? data : []).filter((x) => x && typeof x === "object" && typeof x.what === "string" && x.what.trim())
+    .map((x) => ({ what: x.what.trim().slice(0, 80), kind: kinds.has(String(x.kind).toLowerCase()) ? String(x.kind).toLowerCase() : "sonstiges" })).slice(0, 6);
+}
+
 const api = { GIVEN_UP, STAGE_TEXT, GIVE_UP_TEXT, HANDWRITING_PROMPT, extractPrompt, stageOf, statusBlock,
   pageBlock, buildPrompt, DEFAULT_BLOCKLIST, cleanTask, parseTasksJson, openTasks, plan, plannerBlock,
   setBlocklist, ics, buildNotifications, addDays, isoDate,
-  ESCAPE, LIGHT_BLOCK, STRICT_LANG, KEEP_ALIVE, classify, hasCjk, stripCjk, PATTERNS: P, TIDY_PROMPT };
+  ESCAPE, LIGHT_BLOCK, STRICT_LANG, KEEP_ALIVE, classify, hasCjk, stripCjk, PATTERNS: P, TIDY_PROMPT, DISTRACTION_PROMPT, parseDistractions };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 root.TutorCore = api;
 })(typeof self !== "undefined" ? self : globalThis);

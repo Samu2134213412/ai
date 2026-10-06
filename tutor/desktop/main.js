@@ -9,18 +9,17 @@ const path = require("node:path");
 const QRCode = require("qrcode");
 
 const { createTutorServer } = require("./server/server.js");
-const { createGuard } = require("./lib/guard.js");
+const { createGuard, parseProcessList } = require("./lib/guard.js");
+const { createWatcher, createAuto } = require("./lib/watch.js");
 const { createConfig } = require("./lib/config.js");
 
 const WANT_PORT = Number(process.env.TUTOR_PORT) || 8765;
 const LAN_PORT = Number(process.env.TUTOR_PHONE_PORT) || 8766;
 let overlay = null;
 let win = null, tray = null, quitting = false, origin = "", srv = null, config = null, chosenSource = null;
-const guard = createGuard({
-  selfNames: ["tutor", "electron", "node", path.basename(process.execPath)],
-  exec: (cmd, args) => new Promise((resolve, reject) =>
-    execFile(cmd, args, { windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (e, out) => (e ? reject(e) : resolve(out)))),
-});
+const run = (cmd, args) => new Promise((resolve, reject) =>
+  execFile(cmd, args, { windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (e, out) => (e ? reject(e) : resolve(out))));
+const guard = createGuard({ selfNames: ["tutor", "electron", "node", path.basename(process.execPath)], exec: run });
 
 app.setAppUserModelId("de.tutor.desktop");
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -66,6 +65,9 @@ function createOverlay() {
   overlay.once("ready-to-show", () => overlay.showInactive());
   overlay.on("closed", () => { overlay = null; });
 }
+const e2e = (m) => { if (process.env.TUTOR_E2E) console.log(m); };
+const overlayShow = () => { e2e("OVERLAY_SHOW"); if (!overlay) { createOverlay(); return true; } if (overlay.isVisible()) return false; overlay.showInactive(); return true; };
+const overlayHide = () => { e2e("OVERLAY_HIDE"); if (overlay && overlay.isVisible()) overlay.hide(); };
 function toggleOverlay() {
   if (!overlay) createOverlay();
   else if (overlay.isVisible()) overlay.hide();
@@ -185,6 +187,30 @@ function startGuardLoop() {
   }, 4000).unref();
 }
 
+/* GoodNotes beobachten (Fenstertitel + Prozessnamen): Solange es offen ist, laufen auf Wunsch Fokus und Leiste –
+   auch wenn nur GoodNotes geöffnet wurde und das Tutor-Fenster zu ist (die App läuft dann im Tray). */
+function startWatching() {
+  const notify = (title, body) => { if (Notification.isSupported()) new Notification({ title, body }).show(); };
+  const focus = {
+    info: () => owner().api("/api/focus"),
+    start: async (m) => { await owner().api("/api/focus/start", { minutes: m }); toRenderer({ type: "refresh" }); },
+    stop: async () => { await owner().api("/api/focus/stop", {}); toRenderer({ type: "refresh" }); },
+  };
+  const auto = createAuto({ getConfig: () => config.get(), focus, overlay: { show: overlayShow, hide: overlayHide }, notify });
+  const getNames = async () => {
+    const names = [];
+    try { names.push(...(await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } })).map((s) => s.name)); } catch (e) { /* Berechtigung fehlt */ }
+    try { names.push(...parseProcessList(process.platform, await (process.platform === "win32" ? run("tasklist", ["/FO", "CSV", "/NH"]) : run("ps", ["-A", "-o", "comm="])))); } catch (e) { /* ps nicht verfügbar */ }
+    return names;
+  };
+  const watcher = createWatcher({ getNames, onOpen: () => auto.onOpen(), onClose: () => auto.onClose() });
+  setInterval(async () => {
+    const c = config.get();
+    if (!c.autoFocus && !c.autoOverlay) return;
+    try { await watcher.tick(); if (watcher.open) await auto.keepAlive(); } catch (e) { /* nächster Takt */ }
+  }, Number(process.env.TUTOR_WATCH_MS) || 5000).unref();
+}
+
 app.whenReady().then(async () => {
   const dataDir = path.join(app.getPath("userData"), "server");
   config = createConfig(path.join(app.getPath("userData"), "settings.json"));
@@ -195,7 +221,7 @@ app.whenReady().then(async () => {
   origin = `http://127.0.0.1:${started.port}`;
   await setupSession(desktopToken(dataDir));
   setupIpc();
-  createWindow(process.argv.includes("--hidden")); createTray(); startGuardLoop();
+  createWindow(process.argv.includes("--hidden")); createTray(); startGuardLoop(); startWatching();
   globalShortcut.register("CommandOrControl+Alt+T", toggleOverlay);        // Leiste schnell ein-/ausblenden
   if (config.get().overlay || process.env.TUTOR_OVERLAY) createOverlay();
   if (process.env.TUTOR_E2E) console.log("TUTOR_E2E_READY " + origin);

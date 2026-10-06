@@ -253,6 +253,33 @@ async function ask(text) {
   finally { busy = false; setMood("idle"); if (at !== "home") goHome(); }
 }
 
+/* ---------------- Ablenkungs-Blick ---------------- */
+
+const KIND = { spiel: "🎮", video: "📺", social: "📱", chat: "💬", kritzelei: "✏️", sonstiges: "👀" };
+let wcfg = { watchScreen: false, watchMinutes: 3 }, cfgAt = 0, lastWatch = 0;
+const reported = new Map();                                   // Fund → Zeitpunkt (nicht ständig dasselbe melden)
+async function watchTick() {
+  if (!D || busy || !perm) return;
+  if (Date.now() - cfgAt > 60000) { cfgAt = Date.now(); try { wcfg = await D.getSettings(); } catch (e) { /* alte Werte */ } }
+  if (!wcfg.watchScreen || Date.now() - lastWatch < wcfg.watchMinutes * 60000) return;
+  try { if (!(await api("/api/focus")).active) return; } catch (e) { return; }      // nur während einer Fokus-Sitzung
+  lastWatch = Date.now(); busy = true;
+  try {
+    const cv = await grabScreen();
+    const { distractions } = await api("/api/distraction", { image: TutorVision.thumb([cv], cv.width, cv.height) });
+    const fresh = distractions.filter((d) => !(reported.get(d.what.toLowerCase()) > Date.now() - 10 * 60000));
+    fresh.forEach((d) => reported.set(d.what.toLowerCase(), Date.now()));
+    if (fresh.length) {
+      const d = fresh[0];
+      openPanel(true); addMsg("sys", `${KIND[d.kind] || "👀"} Ablenkung: ${fresh.map((x) => x.what).join(", ")}`);
+      setMood("think"); say(`${KIND[d.kind] || "👀"} ${d.what} – magst du zurück zur Aufgabe?`, 9000); hop();
+      await sleep(1500);
+    }
+  } catch (e) { /* stiller Blick: Fehler stören nicht */ }
+  finally { busy = false; setMood("idle"); }
+}
+setInterval(watchTick, 15000);
+
 /* ---------------- Verdrahtung ---------------- */
 
 $("oform").addEventListener("submit", (e) => { e.preventDefault(); const v = $("oinput").value; $("oinput").value = ""; ask(v); });

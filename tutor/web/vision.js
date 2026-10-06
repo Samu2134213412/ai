@@ -57,7 +57,16 @@ function bands(W, H) {
 const tiles = (layers, W, H) => bands(W, H).map((r) => crop(layers, r.x, r.y, r.w, r.h, 1400, 1800).toDataURL("image/jpeg", 0.9));
 const snapshot = (layers, rect, maxEdge = 900) => crop(layers, rect.x, rect.y, rect.w, rect.h, 700, maxEdge).toDataURL("image/jpeg", 0.9);
 
-const api = { enhance, crop, bands, tiles, snapshot };
+/* Verkleinertes Farbbild ohne Aufbereitung (für „Was ist auf dem Bildschirm?“ – Dunkelmodus nicht invertieren). */
+function thumb(layers, W, H, maxEdge = 1400) {
+  const k = Math.min(1, maxEdge / Math.max(W, H)), cv = document.createElement("canvas");
+  cv.width = Math.round(W * k); cv.height = Math.round(H * k);
+  const c = cv.getContext("2d"); c.imageSmoothingQuality = "high";
+  for (const layer of layers) c.drawImage(layer, 0, 0, W, H, 0, 0, cv.width, cv.height);
+  return cv.toDataURL("image/jpeg", 0.8);
+}
+
+const api = { enhance, crop, bands, tiles, snapshot, thumb };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 root.TutorVision = api;
 })(typeof self !== "undefined" ? self : globalThis);
