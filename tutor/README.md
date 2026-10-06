@@ -128,6 +128,22 @@ habe ich nicht auf einem iPad durchgespielt, die Menünamen können abweichen.
 nativen App: Sie kann per ReplayKit den Bildschirm teilen, während GoodNotes
 läuft. Das steht auf der Liste unten.
 
+## Testversion fürs Handy (iPhone und Android, ohne App-Store)
+
+Der Tutor läuft im Handy-Browser, die KI rechnet auf deinem PC. Handy und PC im **selben WLAN**.
+
+**Mit der PC-App** (`Tutor.exe`): ⚙︎ → **📱 Handy verbinden** → QR-Code mit der Kamera-App scannen →
+Link tippen. Die App leitet nur die zwei nötigen Ollama-Wege weiter, Ollama selbst muss nicht ins Netz.
+Der Zugang ist durch ein Zufalls-Token geschützt und gilt nur, bis du „Handy-Zugang beenden“ drückst.
+Beim ersten Mal fragt die Windows-Firewall: *Zugriff zulassen* (nur private Netzwerke).
+
+**Mit Python:** `python web.py --host 0.0.0.0` zeigt eine URL (mit `pip install segno` auch als
+QR-Code im Terminal); die läuft dann komplett auf dem PC.
+
+Am Handy: 📄 Seite → **Foto aufnehmen** (Heft, Arbeitsblatt) → 👀 an → der Tutor liest die Seite.
+iPhone: Teilen → *Zum Home-Bildschirm* legt ein App-Symbol an. Nicht möglich über die Browser-Version:
+Benachrichtigungen bei geschlossener Seite und Programme sperren – dafür gibt es die native iPad-App (`app/`).
+
 ## Schnell und groß: automatische Modellwahl
 
 Ein kleines Modell (`light_model`, Standard `qwen2.5:3b`) beantwortet Begrüßungen, Smalltalk,

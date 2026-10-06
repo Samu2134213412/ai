@@ -91,6 +91,8 @@ body {
   background: color-mix(in srgb, var(--chip-on) 35%, transparent); border: 6px dashed var(--chip-on); }
 #drop[hidden] { display: none; }
 
+.qrBox { display: grid; place-items: center; background: #fff; border-radius: 16px; padding: 8px; margin: 8px 0; }
+.qrBox img { image-rendering: pixelated; max-width: 100%; height: auto; }
 .winList { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 50vh; overflow-y: auto; }
 .winCard { display: grid; gap: 4px; text-align: left; padding: 6px; border-radius: 12px; }
 .winCard img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; background: var(--chip); }

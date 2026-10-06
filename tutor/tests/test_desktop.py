@@ -43,8 +43,15 @@ class Bridge(unittest.TestCase):
     def test_every_ipc_handler_checks_the_sender(self):
         main = (DESK / "main.js").read_text()
         handlers = re.findall(r'ipcMain\.(?:on|handle)\("([\w:]+)", (?:async )?\(e', main)
-        self.assertEqual(len(handlers), 5)
-        self.assertEqual(main.count("fromOurPage(e)"), 5)
+        self.assertGreaterEqual(len(handlers), 8)
+        self.assertEqual(main.count("fromOurPage(e)"), len(handlers))      # jeder Handler prüft den Absender
+
+    def test_phone_access_is_opt_in_and_protected(self):
+        main = (DESK / "main.js").read_text()
+        phone = (DESK / "lib" / "phone-server.js").read_text()
+        self.assertNotIn("phone.start()", main.split('ipcMain.handle("phone:start"')[0])   # startet nicht von selbst
+        for needle in ("randomBytes", "timingSafeEqual", "HttpOnly", "SameSite=Lax", '"GET /ollama/api/tags"', '"POST /ollama/api/chat"'):
+            self.assertIn(needle, phone, needle)
 
     def test_secure_window_settings(self):
         main = (DESK / "main.js").read_text()

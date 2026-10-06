@@ -192,6 +192,16 @@ if (window.TutorBackend) {
       if (!s.problem) App.applyState(s, s.models);
     } catch (e) { $("sTest").textContent = "⚠ " + e.message; }
   });
+  if (D) {                                                    // PC-App: Handy per QR-Code verbinden
+    $("phoneBtn").addEventListener("click", async () => {
+      try {
+        const r = await D.phoneStart();
+        $("phoneQr").src = r.qr; $("phoneUrl").textContent = r.url;
+        $("phoneDlg").showModal();
+      } catch (e) { $("sTest").textContent = "⚠ " + e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""); }
+    });
+    $("phoneStop").addEventListener("click", async () => { await D.phoneStop(); $("phoneDlg").close(); App.say("Handy-Zugang beendet."); });
+  }
   $("settingsDlg").addEventListener("close", async () => {
     if (D && !$("desktopSettings").hidden) await D.setSettings({ blockedApps: $("dApps").value.split(/[\n,]+/), trayOnClose: $("dTray").checked, autostart: $("dAuto").checked });
     try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });

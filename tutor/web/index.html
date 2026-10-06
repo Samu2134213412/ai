@@ -51,7 +51,7 @@
 <main id="area">
   <div id="empty">
     <h2>Zeig mir deine Seite</h2>
-    <p>Zieh eine Seite aus <b>GoodNotes</b> hierher, füge sie ein oder tippe <b>📄 Seite</b>.</p>
+    <p>Zieh eine Seite aus <b>GoodNotes</b> hierher, füge sie ein oder tippe <b>📄 Seite</b> (am Handy: Foto aufnehmen).</p>
     <ol>
       <li>GoodNotes: <i>Teilen → Seite exportieren → Bild (PNG)</i> oder Auswahl kopieren</li>
       <li>Hier: einfügen, ablegen oder aus „Dateien“ wählen (auch PDF)</li>
@@ -131,6 +131,7 @@
     <p class="hint">Nur wirklich eingetragene Programme, nur während einer Fokus-Sitzung. System-Programme werden nie beendet.</p>
     <label class="row2"><input type="checkbox" id="dTray"> Beim Schließen im Tray weiterlaufen (Erinnerungen bleiben aktiv)</label>
     <label class="row2"><input type="checkbox" id="dAuto"> Beim Anmelden starten</label>
+    <div class="actions left"><button type="button" id="phoneBtn">📱 Handy verbinden</button></div>
   </div>
   <div id="nativeSettings" hidden>
     <h4>iPad</h4>
@@ -141,6 +142,15 @@
     <div id="sNativeState" class="hint"></div>
   </div>
   <div class="actions"><button type="button" id="sTestBtn">Verbindung testen</button><button value="ok" class="go">Fertig</button></div>
+</form></dialog>
+
+<dialog id="phoneDlg"><form method="dialog">
+  <h3>📱 Handy verbinden</h3>
+  <p class="hint">Handy und PC im <b>selben WLAN</b>. Kamera-App öffnen, QR-Code scannen, Link tippen. Fertig – der Tutor läuft dann im Handy-Browser und nutzt das Ollama dieses PCs.</p>
+  <div class="qrBox"><img id="phoneQr" alt="QR-Code zum Verbinden" width="240" height="240"></div>
+  <p class="hint" id="phoneUrl" style="word-break:break-all"></p>
+  <p class="hint">Beim ersten Mal fragt die Windows-Firewall: <b>Zugriff zulassen</b> (nur „Private Netzwerke“). Auf dem iPhone: Teilen → <i>Zum Home-Bildschirm</i>. Der Link gilt nur, solange der Handy-Zugang an ist.</p>
+  <div class="actions"><button type="button" id="phoneStop">Handy-Zugang beenden</button><button value="ok" class="go">Schließen</button></div>
 </form></dialog>
 
 <dialog id="winDlg"><form method="dialog">

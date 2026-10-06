@@ -7,8 +7,12 @@ const Cap = root.Capacitor;
 const desktop = !!root.TutorDesktop;           // Electron-App (PC)
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const q = new URLSearchParams(root.location ? root.location.search : "");
-let forced = false;
-try { forced = q.get("local") === "1" || root.localStorage.getItem("tutor.local") === "1"; } catch (e) { /* privat */ }
+let forced = false, phone = false;
+try {
+  if (q.get("phone") === "1") { root.localStorage.setItem("tutor.local", "1"); root.localStorage.setItem("tutor.phone", "1"); }
+  forced = q.get("local") === "1" || root.localStorage.getItem("tutor.local") === "1";
+  phone = root.localStorage.getItem("tutor.phone") === "1";     // geöffnet über den QR-Code der PC-App
+} catch (e) { /* privat */ }
 
 const plugin = (name) => {
   try { return isNative ? (Cap.Plugins && Cap.Plugins[name]) || Cap.registerPlugin(name) : null; } catch (e) { return null; }
@@ -31,10 +35,10 @@ const storage = {
 
 const Local = root.TutorBackendLocal;
 root.TutorBackend = (isNative || forced || desktop) && Local
-  ? Local.createBackend({ storage, defaultHost: desktop ? "http://localhost:11434" : "" }) : null;
+  ? Local.createBackend({ storage, defaultHost: desktop ? "http://localhost:11434" : phone ? root.location.origin + "/ollama" : "" }) : null;
 
 const N = {
-  isNative, isDesktop: desktop,
+  isNative, isDesktop: desktop, isPhone: phone,
   hasNotifications: !!Notif, hasShield: !!Shield, hasScreenShare: !!Share,
 
   async notificationsStatus() {

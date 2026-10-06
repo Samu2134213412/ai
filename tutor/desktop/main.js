@@ -8,8 +8,11 @@ const { FocusState } = require("./lib/focus-state.js");
 const { createStaticServer } = require("./lib/static-server.js");
 const { createGuard } = require("./lib/guard.js");
 const { createConfig } = require("./lib/config.js");
+const { createPhoneServer } = require("./lib/phone-server.js");
+const QRCode = require("qrcode");
 
 const WANT_PORT = Number(process.env.TUTOR_PORT) || 8765;
+let phone = null;
 let win = null, tray = null, quitting = false, origin = "", server = null, config = null, chosenSource = null;
 const focus = new FocusState();
 const guard = createGuard({
@@ -83,6 +86,15 @@ function setupIpc() {
     chosenSource = sources.find((s) => s.id === id) || null;
     return !!chosenSource;
   });
+  // Handy-Zugang: zweiter Server im WLAN + QR-Code (nur auf ausdrücklichen Wunsch, mit Token)
+  ipcMain.handle("phone:start", async (e) => {
+    if (!fromOurPage(e)) return null;
+    const info = await phone.start();
+    const qr = await QRCode.toDataURL(info.url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    return { url: info.url, ip: info.ip, port: info.port, qr, all: info.all };
+  });
+  ipcMain.handle("phone:stop", async (e) => { if (fromOurPage(e)) await phone.stop(); return true; });
+  ipcMain.handle("phone:status", (e) => (fromOurPage(e) ? { running: phone.running } : null));
   ipcMain.handle("settings:get", (e) => (fromOurPage(e) ? config.get() : null));
   ipcMain.handle("settings:set", (e, partial) => {
     if (!fromOurPage(e)) return null;
@@ -109,6 +121,8 @@ app.whenReady().then(async () => {
   server = createStaticServer({ wwwDir: path.join(__dirname, "www"), focus, port: WANT_PORT, onCommand: toRenderer });
   const port = await server.listen();
   origin = `http://127.0.0.1:${port}`;
+  phone = createPhoneServer({ wwwDir: path.join(__dirname, "www"), port: Number(process.env.TUTOR_PHONE_PORT) || 8766,
+    ollamaTarget: process.env.TUTOR_OLLAMA || "http://127.0.0.1:11434" });
   setupSession(); setupIpc();
   createWindow(process.argv.includes("--hidden")); createTray(); startGuardLoop();
   if (process.env.TUTOR_E2E) console.log("TUTOR_E2E_READY " + origin);
@@ -117,4 +131,4 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => { quitting = true; });
 app.on("window-all-closed", () => { if (quitting || process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (win) showWindow(); });
-app.on("will-quit", () => { if (server) server.close(); });
+app.on("will-quit", () => { if (server) server.close(); if (phone) phone.stop(); });

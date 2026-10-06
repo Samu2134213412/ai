@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("TutorDesktop", {
   onFocusCommand: (cb) => ipcRenderer.on("focus:command", (_e, cmd) => cb(cmd)),
   listWindows: () => ipcRenderer.invoke("windows:list"),
   chooseWindow: (id) => ipcRenderer.invoke("windows:choose", id),
+  phoneStart: () => ipcRenderer.invoke("phone:start"),
+  phoneStop: () => ipcRenderer.invoke("phone:stop"),
+  phoneStatus: () => ipcRenderer.invoke("phone:status"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (partial) => ipcRenderer.invoke("settings:set", partial),
 });

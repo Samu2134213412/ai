@@ -124,3 +124,80 @@ test("Config: speichert validiert und lädt wieder", () => {
   assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false });
   assert.strictEqual(c.set(null).autostart, true);
 });
+
+/* ---------- Handy-Server ---------- */
+const http = require("node:http");
+const { createPhoneServer, lanAddresses } = require("../lib/phone-server.js");
+
+function fakeOllama() {
+  const seen = [];
+  const s = http.createServer((req, res) => {
+    let body = ""; req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      seen.push({ method: req.method, url: req.url, body });
+      if (req.url === "/api/tags") { res.setHeader("Content-Type", "application/json"); return res.end('{"models":[{"model":"qwen2.5:3b"}]}'); }
+      res.setHeader("Content-Type", "application/x-ndjson");
+      res.write('{"message":{"content":"Hallo "}}\n');
+      setTimeout(() => res.end('{"message":{"content":"Welt"},"done":true}\n'), 50);
+    });
+  });
+  return new Promise((ok) => s.listen(0, "127.0.0.1", () => ok({ s, seen, port: s.address().port })));
+}
+
+test("Handy-Server: Token/QR, Cookie, Oberfläche und nur zwei Ollama-Wege", async () => {
+  const www = fs.mkdtempSync(path.join(os.tmpdir(), "www-"));
+  fs.writeFileSync(path.join(www, "index.html"), "<title>handy</title>");
+  const fo = await fakeOllama();
+  const phone = createPhoneServer({ wwwDir: www, ollamaTarget: `http://127.0.0.1:${fo.port}`, port: 0, addresses: () => ["127.0.0.1"] });
+  const info = await phone.start();
+  try {
+    assert.strictEqual(phone.running, true); assert.strictEqual((await phone.start()).token, info.token);
+    const base = `http://127.0.0.1:${info.port}`;
+    assert.strictEqual((await fetch(base + "/")).status, 401);
+    assert.strictEqual((await fetch(base + "/?t=falsch")).status, 401);
+    assert.strictEqual((await fetch(base + "/ollama/api/tags")).status, 401);
+    // QR geöffnet: Cookie + Weiterleitung ohne Token, mit Handy-Flags
+    const open = await fetch(info.url, { redirect: "manual" });
+    assert.strictEqual(open.status, 302);
+    assert.match(open.headers.get("location"), /^\/index\.html\?(local=1&phone=1|phone=1&local=1)$/);
+    const cookie = open.headers.get("set-cookie").split(";")[0];
+    assert.doesNotMatch(open.headers.get("location"), /t=/);
+    const H = { headers: { Cookie: cookie } };
+    assert.match(await (await fetch(base + "/index.html", H)).text(), /handy/);
+    assert.strictEqual((await fetch(base + "/../x", H)).status, 404);
+    // Weiterleitung an Ollama
+    const tags = await (await fetch(base + "/ollama/api/tags", H)).json();
+    assert.strictEqual(tags.models[0].model, "qwen2.5:3b");
+    const chunks = [];
+    const r = await fetch(base + "/ollama/api/chat", { method: "POST", ...H, headers: { ...H.headers, "Content-Type": "application/json" }, body: '{"model":"x","stream":true}' });
+    for await (const c of r.body) chunks.push(Buffer.from(c).toString());
+    assert.match(chunks.join(""), /Hallo[\s\S]*Welt/);
+    assert.ok(chunks.length >= 2, "wird gestreamt, nicht gesammelt");
+    assert.deepStrictEqual(fo.seen.map((x) => x.url), ["/api/tags", "/api/chat"]);
+    assert.strictEqual(fo.seen[1].body, '{"model":"x","stream":true}');
+    // alles andere bei Ollama ist tabu
+    for (const [m, p] of [["POST", "/ollama/api/delete"], ["GET", "/ollama/api/chat"], ["POST", "/ollama/api/pull"], ["GET", "/ollama/"]]) {
+      assert.strictEqual((await fetch(base + p, { method: m, ...H, ...(m === "POST" ? { body: "{}" } : {}) })).status, 403, m + p);
+    }
+    assert.strictEqual((await fetch(base + "/api/focus", H)).status, 404);
+    assert.strictEqual((await fetch(base + "/index.html", { method: "POST", ...H })).status, 405);
+  } finally { await phone.stop(); fo.s.close(); fo.s.closeAllConnections(); }
+  assert.strictEqual(phone.running, false);
+  await assert.rejects(fetch(`http://127.0.0.1:${info.port}/`));
+});
+
+test("Handy-Server: Ollama aus → 502; kein Netz → verständlicher Fehler; Adressen sortiert", async () => {
+  const www = fs.mkdtempSync(path.join(os.tmpdir(), "www-"));
+  const phone = createPhoneServer({ wwwDir: www, ollamaTarget: "http://127.0.0.1:1", port: 0, addresses: () => ["127.0.0.1"] });
+  const info = await phone.start();
+  try {
+    const cookie = (await fetch(info.url, { redirect: "manual" })).headers.get("set-cookie").split(";")[0];
+    const r = await fetch(`http://127.0.0.1:${info.port}/ollama/api/tags`, { headers: { Cookie: cookie } });
+    assert.strictEqual(r.status, 502); assert.match((await r.json()).error, /Ollama/);
+  } finally { await phone.stop(); }
+  await assert.rejects(createPhoneServer({ wwwDir: www, addresses: () => [] }).start(), /Kein WLAN/);
+  const ifs = { lo: [{ family: "IPv4", address: "127.0.0.1", internal: true }],
+    a: [{ family: "IPv4", address: "100.64.1.2", internal: false }, { family: "IPv6", address: "fe80::1", internal: false }],
+    b: [{ family: "IPv4", address: "192.168.1.20", internal: false }], c: [{ family: "IPv4", address: "10.0.0.5", internal: false }] };
+  assert.deepStrictEqual(lanAddresses(ifs), ["192.168.1.20", "10.0.0.5", "100.64.1.2"]);
+});

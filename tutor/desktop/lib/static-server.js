@@ -9,6 +9,26 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
   ".webmanifest": "application/manifest+json", ".png": "image/png", ".json": "application/json" };
 const EXT_ORIGIN = /^(chrome|moz|safari-web)-extension:\/\//;
 
+/* Liefert eine Datei aus `root` (Pfad-Tricks werden abgewiesen). */
+function serveFile(root, pathname, req, res) {
+  const fail = (code, error) => {
+    const body = JSON.stringify({ error });
+    res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body) });
+    res.end(body);
+  };
+  let rel;
+  try { rel = decodeURIComponent(pathname); } catch (e) { return fail(400, "Ungültiger Pfad"); }
+  if (rel === "/") rel = "/index.html";
+  const file = path.resolve(root, "." + rel);
+  if (file !== root && !file.startsWith(root + path.sep)) return fail(403, "Verboten");
+  fs.readFile(file, (err, data) => {
+    if (err) return fail(404, "Nicht gefunden");
+    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream",
+      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+    res.end(req.method === "HEAD" ? undefined : data);
+  });
+}
+
 function createStaticServer({ wwwDir, focus, onCommand, port = 8765 }) {
   const root = path.resolve(wwwDir);
   let actualPort = port;
@@ -61,17 +81,7 @@ function createStaticServer({ wwwDir, focus, onCommand, port = 8765 }) {
     }
 
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "Nicht erlaubt" });
-    let rel;
-    try { rel = decodeURIComponent(url.pathname); } catch (e) { return json(res, 400, { error: "Ungültiger Pfad" }); }
-    if (rel === "/") rel = "/index.html";
-    const file = path.resolve(root, "." + rel);
-    if (file !== root && !file.startsWith(root + path.sep)) return json(res, 403, { error: "Verboten" });
-    fs.readFile(file, (err, data) => {
-      if (err) return json(res, 404, { error: "Nicht gefunden" });
-      res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream",
-        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
-      res.end(req.method === "HEAD" ? undefined : data);
-    });
+    serveFile(root, url.pathname, req, res);
   });
 
   return {
@@ -89,4 +99,4 @@ function createStaticServer({ wwwDir, focus, onCommand, port = 8765 }) {
     close: () => new Promise((r) => { server.close(r); server.closeAllConnections(); }),
   };
 }
-module.exports = { createStaticServer };
+module.exports = { createStaticServer, serveFile };

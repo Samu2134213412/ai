@@ -458,6 +458,12 @@ def main(argv=None) -> int:
     shown = lan_ip() if host in ("0.0.0.0", "::") else host
     url = f"http://{shown}:{port}/" + (f"?t={token}" if token else "")
     print(f"Tutor-Oberfläche: {url}")
+    if host not in LOOPBACK:                      # QR-Code zum Scannen mit dem Handy (falls `segno` installiert ist)
+        try:
+            import segno
+            segno.make(url, error="m").terminal(compact=True)
+        except ImportError:
+            core.info("Tipp: `pip install segno` zeigt hier einen QR-Code zum Scannen mit dem Handy.")
     if token:
         core.info("Auf dem iPad in Safari öffnen → Teilen → „Zum Home-Bildschirm“.\n"
                   "Die URL enthält den Zugangs-Token; nicht weitergeben.")

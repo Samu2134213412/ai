@@ -11,6 +11,9 @@ Desktop-App (Electron) mit derselben Oberfläche wie Web und iPad – **ohne Pyt
 - **Fokus:** Timer in der App; die **Browser-Erweiterung** (`../extension`) schließt YouTube/Instagram …
   und spricht dafür mit der App (`http://127.0.0.1:8765`) – Start/Stopp geht von beiden Seiten
   (App, Erweiterung, Tray-Menü).
+- **Handy verbinden:** ⚙︎ → „📱 Handy verbinden“ zeigt einen QR-Code. Das Handy öffnet damit den Tutor im
+  Browser (selbes WLAN); die KI läuft weiter auf dem PC. Zugang mit Token, nur auf Knopfdruck, die App
+  leitet ausschließlich `/api/tags` und `/api/chat` an Ollama weiter (Port 8766).
 - **Programme beenden:** In ⚙︎ → „PC“ trägst du Programmnamen ein (z. B. `discord`, `steam`).
   Nur diese werden beendet, nur während einer Fokus-Sitzung; System-Programme sind gesperrt.
   Auf Linux/macOS gilt der von `ps` gemeldete Name (Linux kürzt auf 15 Zeichen).

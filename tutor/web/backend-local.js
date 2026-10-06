@@ -44,9 +44,13 @@ function createBackend(env) {
 
   /* ---------- Ollama ---------- */
 
-  const connHint = () => S.cfg.host
-    ? `Ollama ist unter ${S.cfg.host} nicht erreichbar.\n→ Läuft Ollama auf dem Mac/PC (OLLAMA_HOST=0.0.0.0, OLLAMA_ORIGINS=*) und sind beide im selben WLAN?`
-    : "Noch keine Ollama-Adresse eingestellt. Öffne ⚙︎ und trage z. B. http://192.168.0.10:11434 ein.";
+  const connHint = () => {
+    const h = S.cfg.host;
+    if (!h) return "Noch keine Ollama-Adresse eingestellt. Öffne ⚙︎ und trage z. B. http://192.168.0.10:11434 ein.";
+    if (/\/ollama$/.test(h)) return `Ollama ist über den PC nicht erreichbar.\n→ Läuft die Tutor-App am PC noch, ist dort „Handy verbinden“ an, läuft Ollama, und seid ihr im selben WLAN? Sonst am PC den QR-Code neu scannen.`;
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(h)) return `Ollama ist unter ${h} nicht erreichbar.\n→ Ollama starten (App öffnen oder \`ollama serve\`) und erneut versuchen.`;
+    return `Ollama ist unter ${h} nicht erreichbar.\n→ Läuft Ollama auf dem anderen Rechner (OLLAMA_HOST=0.0.0.0, OLLAMA_ORIGINS=*) und sind beide im selben WLAN?`;
+  };
   const missHint = (m) => `Das Modell '${m}' ist nicht installiert.\n→ ollama pull ${m}`;
 
   async function ollama(path, init) {
