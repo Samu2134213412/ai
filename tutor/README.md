@@ -39,6 +39,19 @@ Alles andere sind Clients, die Fragen hinschicken und Antworten zurückbekommen:
 Kopplung ohne Passwort: Der PC zeigt einen Link/QR mit einem Einmal-Code (10 Min.), das Gerät bekommt ein
 langes Geräte-Token. Jede Person hat einen eigenen Verlauf. Nur der Besitzer koppelt weitere Geräte.
 
+## Seite aufräumen (🧹)
+
+Nach dem Lesen einer Seite (👀) kann der Tutor sie **aufräumen**: Er ordnet die Abschrift in Titel, Abschnitte,
+Stichpunkte, Rechenschritte, Merksätze und To-dos und setzt daraus eine **saubere A4-Seite** (Stil „Sauber“ oder
+„Heft“ mit Linien und Handschrift-Optik). Er ordnet nur: Inhalte bleiben, nichts wird gelöst oder inhaltlich
+korrigiert, unsichere Stellen bleiben mit `[?]` markiert.
+
+- Im Hauptfenster: **🧹 Aufräumen** (erscheint, sobald eine Seite gelesen ist). In der Leiste: **🧽**.
+- Vor dem Export bearbeitbar: Text direkt ändern (Vorschau aktualisiert sich) oder per **Zuruf** („mach das als Liste“).
+- **PDF/PNG** speichern oder **Teilen …** (iPad/Handy: direkt an GoodNotes). In GoodNotes: *Importieren → PDF*.
+- Das Ergebnis ist eine **neue Seite/ein neues Dokument**: Die Originalseite in GoodNotes bleibt unverändert, weil sich
+  ein GoodNotes-Dokument von außen nicht ändern lässt.
+
 ## Die Leiste über GoodNotes (Windows/Mac)
 
 In der PC-App: ⚙︎ → **„🪄 GoodNotes-Leiste ein/aus“** oder **Strg+Alt+T** (auch Tray-Menü). Eine schlanke Leiste

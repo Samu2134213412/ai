@@ -39,6 +39,7 @@
     <button class="chip" id="share" type="button">📄 Seite</button>
     <button class="chip" id="capture" type="button" hidden title="GoodNotes-Fenster live ansehen (Mac, Windows, Browser)">🖥 Fenster teilen</button>
     <button class="chip" id="fixText" type="button" hidden>📝 Abschrift</button>
+    <button class="chip" id="tidyBtn" type="button" hidden>🧹 Aufräumen</button>
     <button class="chip" id="reread" type="button" hidden>🔍 Nochmal ansehen</button>
     <button class="chip" id="export" type="button" hidden>⬇︎ Als PNG</button>
     <button class="chip" id="giveup" type="button">🏳 Aufgeben</button>
@@ -217,5 +218,8 @@
 <script src="/vision.js"></script>
 <script src="/app.js"></script>
 <script src="/planner.js"></script>
+<script src="/notes.js"></script>
+<script src="/tidy.js"></script>
+<script>TutorTidy.init({ api: TutorApp.api, say: TutorApp.say }); document.getElementById("tidyBtn").addEventListener("click", () => TutorTidy.open());</script>
 </body>
 </html>

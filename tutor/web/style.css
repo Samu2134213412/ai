@@ -93,6 +93,15 @@ body {
 
 .qrBox { display: grid; place-items: center; background: #fff; border-radius: 16px; padding: 8px; margin: 8px 0; }
 .qrBox img { image-rendering: pixelated; max-width: 100%; height: auto; }
+dialog.wide { max-width: min(1100px, 96vw); }
+.tidyGrid { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr); gap: 14px; margin: 10px 0; }
+@media (max-width: 760px) { .tidyGrid { grid-template-columns: 1fr; } }
+.tidyEdit { display: grid; gap: 8px; align-content: start; }
+.tidyEdit textarea { font: 14px/1.45 ui-monospace, Consolas, monospace; min-height: 260px; }
+.tidyEdit .row2 input { flex: 1; min-width: 0; }
+.tidyPreview { max-height: 62vh; overflow-y: auto; background: var(--chip); border-radius: 14px; padding: 8px; }
+.tidyPage { margin-bottom: 10px; box-shadow: var(--shadow); line-height: 0; }
+.tidyPage img { width: 100%; height: auto; display: block; }
 .winList { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 50vh; overflow-y: auto; }
 .winCard { display: grid; gap: 4px; text-align: left; padding: 6px; border-radius: 12px; }
 .winCard img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; background: var(--chip); }

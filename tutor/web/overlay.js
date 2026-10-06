@@ -60,7 +60,7 @@ function setInteractive(on) {
   if (D) D.overlayInteractive(on);
 }
 document.addEventListener("mousemove", (e) => {
-  setInteractive(pickMode || document.activeElement === $("oinput") || !!e.target.closest("[data-hit]"));
+  setInteractive(pickMode || !!document.querySelector("dialog[open]") || document.activeElement === $("oinput") || !!e.target.closest("[data-hit]"));
   const r = blob.getBoundingClientRect();                         // Augen folgen der Maus
   const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), dist = Math.hypot(dx, dy) || 1, k = Math.min(1, dist / 150);
   blob.style.setProperty("--px", (dx / dist) * 3 * k + "px"); blob.style.setProperty("--py", (dy / dist) * 3 * k + "px");
@@ -125,19 +125,38 @@ async function grabScreen() {
 }
 const needPerm = () => { if (perm) return false; say("Schalte 👀 ein, dann darf ich auf den Bildschirm schauen.", 5000); hop(); return true; };
 
+/* Bildschirm aufnehmen und von der KI lesen lassen; legt die Abschrift im Kontext des Tutors ab. */
+async function readScreen() {
+  setMood("think"); say("Ich schau mal …", 0);
+  tipTo(innerWidth * 0.5, 150); await sleep(500);
+  const cv = await grabScreen();
+  return api("/api/page", { images: TutorVision.tiles([cv], cv.width, cv.height) });
+}
+
 async function lookAtScreen() {
   if (busy || needPerm()) return;
   busy = true;
   try {
-    setMood("think"); say("Ich schau mal …", 0);
-    tipTo(innerWidth * 0.5, 150); await sleep(500);
-    const cv = await grabScreen();
-    const res = await api("/api/page", { images: TutorVision.tiles([cv], cv.width, cv.height) });
+    const res = await readScreen();
     openPanel(true);
     addMsg("sys", "👀 Gelesen: " + res.summary.replace(/\s+/g, " ").slice(0, 200) + (res.summary.length > 200 ? " …" : ""));
     setMood(res.unsure ? "think" : "happy");
     say(res.unsure ? `Bei ${res.unsure} Stellen bin ich unsicher – zeig sie mir mit 📍.` : "Hab gelesen! Frag mich oder zeig mir mit 📍 eine Stelle.", 6000); hop();
     await sleep(1200);
+  } catch (e) { openPanel(true); addMsg("err", e.message); say("Das hat nicht geklappt."); }
+  finally { busy = false; setMood("idle"); goHome(); }
+}
+
+/* 🧽 Seite lesen, aufräumen, als saubere Seite anbieten (PDF/PNG, Teilen → GoodNotes). */
+async function tidyScreen() {
+  if (busy || needPerm()) return;
+  busy = true;
+  try {
+    const res = await readScreen();
+    setMood("happy"); say("Ich räume auf …", 0); hop();
+    await sleep(300); goHome();
+    setInteractive(true); await TutorTidy.open();            // Dialog bleibt offen; Klicks gehen jetzt an die Leiste
+    void res;
   } catch (e) { openPanel(true); addMsg("err", e.message); say("Das hat nicht geklappt."); }
   finally { busy = false; setMood("idle"); goHome(); }
 }
@@ -243,6 +262,8 @@ $("operm").addEventListener("click", () => {
 });
 $("olook").addEventListener("click", lookAtScreen);
 $("opoint").addEventListener("click", startPick);
+$("otidy").addEventListener("click", tidyScreen);
+TutorTidy.init({ api, say, onOpen: () => { setInteractive(true); if (D) D.overlayFocus(); }, onClose: () => setInteractive(false) });
 $("onew").addEventListener("click", async () => { if (busy) return; try { await api("/api/new", {}); $("olist").replaceChildren(); clearNotes(); say("Neue Aufgabe! Worum geht’s?"); } catch (e) { addMsg("err", e.message); } });
 $("olog").addEventListener("click", () => openPanel(panel.hidden));
 $("oclear").addEventListener("click", () => { clearNotes(); say("Notizen weg. 🧹"); });

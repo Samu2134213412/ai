@@ -30,6 +30,22 @@ const HANDWRITING_PROMPT =
   "Orangefarbene Randnotizen stammen vom Tutor und werden nicht abgeschrieben. " +
   "Antworte auf Deutsch, höchstens 200 Wörter.";
 
+/* Aufräumen: Abschrift → gegliederte Seite (Format siehe notes.js). Der Tutor ordnet nur, er löst und korrigiert nichts. */
+const TIDY_PROMPT =
+  "# AUFRÄUMEN\n" +
+  "Du räumst handgeschriebene Notizen eines Lernenden auf. Du bekommst die Abschrift einer Seite " +
+  "(sie kann Lesefehler enthalten; [?] bedeutet: unsicher) und gibst sie als saubere, gegliederte Seite zurück.\n\n" +
+  "Regeln:\n" +
+  "1. Behalte ALLE Inhalte und Aussagen des Lernenden. Nichts weglassen, nichts dazuerfinden, nichts lösen, " +
+  "nichts inhaltlich korrigieren – auch falsche Rechenschritte bleiben so stehen.\n" +
+  "2. Unsichere Stellen mit [?] unverändert übernehmen.\n" +
+  "3. Ordne sinnvoll: ein Titel, Abschnitte, Aufzählungen, Rechenschritte untereinander, offene Aufgaben als To-dos. " +
+  "Doppelte Zeilen zusammenfassen, Tipp- und Schreibfehler in normalem Text glätten.\n" +
+  "4. Antworte NUR in diesem Format (Markdown-Auszug), ohne Einleitung und ohne Erklärung:\n" +
+  "   # Titel (genau einmal, kurz)\n   ## Abschnitt\n   normaler Text\n   - Aufzählungspunkt\n   1. nummerierter Schritt\n" +
+  "   $ Formel- oder Rechenzeile (eine pro Zeile, wie sie dasteht)\n   [ ] offene Aufgabe\n   > Merksatz/Hinweis\n" +
+  "5. Sprache: Deutsch, nur lateinische Buchstaben.";
+
 function extractPrompt(today) {
   return `Heute ist ${today}. Das Bild zeigt Notizen/Hausaufgaben eines Lernenden. ` +
     "Finde alle zu erledigenden Aufgaben (Hausaufgaben, Lernen für Tests, Abgaben). " +
@@ -291,7 +307,7 @@ function buildNotifications(data, now) {
 const api = { GIVEN_UP, STAGE_TEXT, GIVE_UP_TEXT, HANDWRITING_PROMPT, extractPrompt, stageOf, statusBlock,
   pageBlock, buildPrompt, DEFAULT_BLOCKLIST, cleanTask, parseTasksJson, openTasks, plan, plannerBlock,
   setBlocklist, ics, buildNotifications, addDays, isoDate,
-  ESCAPE, LIGHT_BLOCK, STRICT_LANG, KEEP_ALIVE, classify, hasCjk, stripCjk, PATTERNS: P };
+  ESCAPE, LIGHT_BLOCK, STRICT_LANG, KEEP_ALIVE, classify, hasCjk, stripCjk, PATTERNS: P, TIDY_PROMPT };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 root.TutorCore = api;
 })(typeof self !== "undefined" ? self : globalThis);

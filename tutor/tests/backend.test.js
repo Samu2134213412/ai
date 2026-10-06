@@ -18,6 +18,11 @@ function fakeOllama() {
       if (!["qwen2.5:32b", "qwen2.5vl:7b", "x:1b", ...(fakeOllama.withLight ? ["qwen2.5:3b"] : [])].includes(r.model)) {
         res.statusCode = 404; return res.end(JSON.stringify({ error: `model '${r.model}' not found` }));
       }
+      if (!r.stream && r.messages[0].content.includes("# AUFRÄUMEN")) {
+        let t = replies.tidy; if (Array.isArray(t)) t = t.length > 1 ? t.shift() : t[0];
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ message: { content: t === undefined ? "# Mathe\n\n$ 3x + 7 = 22\n$ 3x = 15 [?]\n- 7 abziehen\n[ ] Übung 4" : t }, done: true }));
+      }
       if (!r.stream) {
         const p = r.messages[0].content;
         const txt = p.includes("JSON-Array") ? '[{"title":"Mathe S. 12","due":"2099-03-04","minutes":20}]' : "Aufgabe: 3x[?8x] + 7 = 22";
@@ -240,4 +245,48 @@ test("Bild-Aufteilung (vision.js): Hochformat in Bänder, sehr Breites in Spalte
     assert.ok(bs.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h), "innerhalb des Bildes");
     assert.strictEqual(Math.min(...bs.map((b) => b.y)), 0); assert.strictEqual(Math.max(...bs.map((b) => b.y + b.h)), h);   // alles abgedeckt
   }
+});
+
+test("Aufräumen: Abschrift → geordnetes Notiz-Format; Regeln im Prompt; Zuruf-Änderung; Sprach-Wächter", async () => {
+  const { b, fo, done } = await setup({});
+  await assert.rejects(b.api("/api/tidy", {}), /noch keine Seite gelesen/);
+  await b.api("/api/page", { images: [IMG] });                                  // Abschrift liegt jetzt im Kontext
+  const r = await b.api("/api/tidy", {});
+  assert.match(r.markup, /^# Mathe/); assert.match(r.markup, /\$ 3x = 15 \[\?\]/);
+  const call = fo.calls.at(-1);
+  assert.match(call.messages[0].content, /nichts lösen/); assert.match(call.messages[0].content, /\[\?\]/);
+  assert.match(call.messages[1].content, /Abschrift der Seite:\n.*3x\[\?8x\]/s);
+  assert.strictEqual(call.options.temperature, 0.2);
+  // Änderungswunsch: aktuelle Seite + Wunsch + Original-Abschrift gehen mit
+  fo.replies.tidy = "# Mathe\n- als Liste";
+  const r2 = await b.api("/api/tidy", { markup: r.markup, instruction: "mach das als Liste" });
+  assert.match(r2.markup, /als Liste/);
+  const c2 = fo.calls.at(-1).messages[1].content;
+  assert.match(c2, /Änderungswunsch: mach das als Liste/); assert.match(c2, /Original-Abschrift/); assert.ok(c2.includes(r.markup));
+  // Chinesisch → streng neu; Code-Zaun wird entfernt
+  fo.replies.tidy = ["# Titel 卡特尔", "```markdown\n# Titel\n- Punkt\n```"];
+  const r3 = await b.api("/api/tidy", { text: "irgendwas" });
+  assert.strictEqual(r3.markup, "# Titel\n- Punkt");
+  assert.match(fo.calls.at(-1).messages[0].content, /Sprache \(wichtig\)/);
+  fo.replies.tidy = "   ";
+  await assert.rejects(b.api("/api/tidy", { text: "x" }), /nichts geliefert/);
+  done();
+});
+
+test("Notiz-Format und PDF-Bau (notes.js)", () => {
+  const N = require("../web/notes.js");
+  const blocks = N.parse("# Titel\n\n## Teil\nText\n$ 3x = 15 [?]\n- a\n1. b\n[ ] c\n[x] d\n> e\n```\n# Zaun\n```");
+  assert.deepStrictEqual(blocks.map((x) => x.t), ["h1", "gap", "h2", "p", "formula", "li", "ol", "todo", "todo", "note", "h1"]);
+  assert.strictEqual(blocks[4].text, "3x = 15 [?]"); assert.strictEqual(blocks[8].done, true);
+  assert.deepStrictEqual(N.parse(""), []);
+  // PDF: Struktur, Offsets und Seitenzahl stimmen
+  const jpeg = (n) => Uint8Array.from({ length: n }, (_, i) => (i * 7) % 256);
+  const pdf = N.buildPdf([{ jpeg: jpeg(300), width: 1240, height: 1754 }, { jpeg: jpeg(50), width: 1240, height: 1754 }]);
+  const text = Buffer.from(pdf).toString("latin1");
+  assert.ok(text.startsWith("%PDF-1.4")); assert.ok(text.trimEnd().endsWith("%%EOF"));
+  assert.match(text, /\/Count 2/);
+  const start = +/startxref\n(\d+)/.exec(text)[1];
+  assert.ok(text.slice(start).startsWith("xref"));
+  const xref = text.slice(start).split("\n"); const total = +xref[1].split(" ")[1];
+  for (let n = 1; n < total; n++) { const off = +xref[2 + n].slice(0, 10); assert.ok(text.slice(off).startsWith(`${n} 0 obj`), `Objekt ${n}`); }
 });

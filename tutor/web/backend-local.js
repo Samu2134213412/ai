@@ -116,6 +116,13 @@ function createBackend(env) {
     }
     if (!released && buf) yield buf;
   }
+  async function chatOnce(model, messages, temperature) {
+    const r = await ollama("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, stream: false, keep_alive: C.KEEP_ALIVE, options: { temperature } }) });
+    if (!r.ok) await failFromResponse(r, model);
+    const d = await r.json();
+    return ((d.message && d.message.content) || "").trim();
+  }
   async function vision(prompt, image) {
     const r = await ollama("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: S.cfg.vision_model, stream: false, options: { temperature: 0.1 },
@@ -260,8 +267,27 @@ function createBackend(env) {
     return { summary, unsure: (summary.match(/\[\?/g) || []).length, state: state() };
   }
 
+  /* Seite aufräumen (oder per Zuruf ändern). Rückgabe: Notiz-Format (siehe notes.js). */
+  async function tidyRoute(body) {
+    const source = String(body.text || "").trim() || cur().pageNotes.join("\n").trim();
+    const current = String(body.markup || "").trim(), wish = String(body.instruction || "").trim().slice(0, 300);
+    if (!source && !current) throw new TutorError("Ich habe noch keine Seite gelesen. Lass den Tutor die Seite zuerst lesen (🔍 / 👀).");
+    const user = current && wish
+      ? `Aktuelle aufgeräumte Seite:\n${current}\n\nÄnderungswunsch: ${wish}\n\nOriginal-Abschrift zur Kontrolle (nichts davon darf verloren gehen):\n${source}`
+      : `Abschrift der Seite:\n${source}` + (wish ? `\n\nWunsch: ${wish}` : "");
+    let out = "";
+    for (const strict of [false, true]) {
+      out = await chatOnce(S.cfg.model, [{ role: "system", content: C.TIDY_PROMPT + (strict ? C.STRICT_LANG : "") }, { role: "user", content: user }], strict ? 0.1 : 0.2);
+      if (!C.hasCjk(out)) break;
+    }
+    out = C.stripCjk(out).replace(/^```[a-z]*\n?|```$/gim, "").trim();
+    if (!/\S/.test(out)) throw new TutorError("Das Aufräumen hat nichts geliefert. Bitte nochmal versuchen.");
+    return { markup: out };
+  }
+
   async function api(path, body) {
     await load();
+    if (path === "/api/tidy") return tidyRoute(body || {});
     if (path === "/api/state") {
       let models = [], problem = null;
       try { models = (await installedModels()).sort(); } catch (e) { problem = e.message; }

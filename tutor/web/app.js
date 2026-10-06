@@ -261,7 +261,7 @@ function setPage(source, w, h) {
   fitPage();
 }
 function clearPage() {
-  page = null; pointer = null; wrap.hidden = true; $("fixText").hidden = true; $("empty").hidden = false; $("pager").hidden = true;
+  page = null; pointer = null; wrap.hidden = true; $("fixText").hidden = true; $("tidyBtn").hidden = true; $("empty").hidden = false; $("pager").hidden = true;
   $("reread").hidden = $("export").hidden = true;
   if (at !== "home") goHome();
 }
@@ -327,6 +327,98 @@ const pageLayers = () => [pageCv, ink];
 const pageTiles = () => TutorVision.tiles(pageLayers(), pageCv.width, pageCv.height);
 const snapshot = (rect, maxEdge = 900) => TutorVision.snapshot(pageLayers(), rect, maxEdge);
 
+/* ---------------- Live-Zugriff: Fenster teilen & Kurzbefehl-Screenshots ---------------- */
+
+let cap = null;                               // { stream, video } bei laufender Freigabe
+async function pickWindow() {
+  say("Suche Fenster …", 0);
+  const list = await TutorDesktop.listWindows();
+  say("");
+  if (!list.length) throw new Error("Keine Fenster gefunden.");
+  list.sort((a, b) => (/goodnotes/i.test(b.name) ? 1 : 0) - (/goodnotes/i.test(a.name) ? 1 : 0) || a.screen - b.screen);
+  const box = $("winList"), dlg = $("winDlg");
+  return new Promise((resolve) => {
+    let picked = null;
+    box.replaceChildren(...list.map((w) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "winCard" + (/goodnotes/i.test(w.name) ? " pick" : "");
+      const img = document.createElement("img"); img.alt = ""; if (w.thumb) img.src = w.thumb;
+      const t = document.createElement("span"); t.textContent = (w.screen ? "🖥 " : "") + w.name;
+      b.append(img, t);
+      b.onclick = () => { picked = w.id; dlg.close(); };
+      return b;
+    }));
+    dlg.addEventListener("close", () => resolve(picked), { once: true });
+    dlg.showModal();
+  });
+}
+async function grabFrame() {
+  const v = cap.video;
+  if (!v.videoWidth) await new Promise((r) => v.addEventListener("loadeddata", r, { once: true }));
+  const cv = document.createElement("canvas");
+  cv.width = v.videoWidth; cv.height = v.videoHeight;
+  cv.getContext("2d").drawImage(v, 0, 0);
+  page = null; $("pager").hidden = true;
+  setPage(cv, cv.width, cv.height);
+}
+function stopCapture() {
+  if (!cap) return;
+  cap.stream.getTracks().forEach((t) => t.stop());
+  cap = null; $("capture").textContent = "🖥 Fenster teilen";
+  say("Freigabe beendet.");
+}
+async function toggleCapture() {
+  if (window.TutorNative && TutorNative.hasScreenShare) {      // iPad: ReplayKit-Freigabe
+    try { await TutorNative.startBroadcast(); say("Wähle „Tutor“ und starte die Übertragung.", 6000); }
+    catch (e) { setChat(true); addMsg("err", "Freigabe nicht möglich: " + e.message); }
+    return;
+  }
+  if (cap) return stopCapture();
+  try {
+    if (window.TutorDesktop) {                                  // PC-App: Fenster in der App wählen
+      const id = await pickWindow();
+      if (!id) return;
+      if (!(await TutorDesktop.chooseWindow(id))) throw new Error("Fenster nicht mehr verfügbar.");
+    }
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    const video = document.createElement("video");
+    video.srcObject = stream; video.muted = true; await video.play();
+    cap = { stream, video };
+    stream.getVideoTracks()[0].addEventListener("ended", stopCapture);
+    $("capture").textContent = "⏹ Freigabe beenden";
+    await grabFrame();
+    if (perm) await readPage(); else say("Schalte „Darf zuschauen“ ein, dann lese ich mit.", 5000);
+  } catch (e) {
+    if (e.name !== "NotAllowedError") { setChat(true); addMsg("err", "Freigabe nicht möglich: " + e.message); }
+  }
+}
+if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) $("capture").hidden = false;
+if (window.TutorNative && TutorNative.hasScreenShare) { $("capture").hidden = false; $("capture").textContent = "📱 Bildschirm teilen"; }
+$("capture").addEventListener("click", toggleCapture);
+
+/* Neuer Screenshot: vom Server (Kurzbefehl) oder, in der App, von der ReplayKit-Freigabe. */
+let shotVersion = null;
+const b64Blob = (b64, type) => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type }); };
+async function pollShot() {
+  try {
+    let version, getBlob;
+    if (window.TutorNative && TutorNative.hasScreenShare) {
+      const f = await TutorNative.latestFrame();
+      if (!f) return;
+      version = f.version; getBlob = async () => b64Blob(f.data, "image/jpeg");
+    } else if (window.TutorBackend) return;
+    else { version = (await api("/api/shot")).version; getBlob = async () => (await fetch(REMOTE.base + "/api/shot.img", { headers: authHeaders() })).blob(); }
+    if (shotVersion === null) { shotVersion = version; return; }
+    if (version === shotVersion || busy) return;
+    shotVersion = version;
+    const blobData = await getBlob();
+    stopCapture();
+    await openFile(new File([blobData], "screenshot", { type: blobData.type }));
+    hop();
+  } catch { /* offline: nächster Versuch */ }
+}
+setInterval(pollShot, 2000);
+
 async function readPage() {
   if (cap && !busy) await grabFrame();      // frisches Bild direkt aus dem geteilten Fenster
   if (!page || busy) return;
@@ -337,7 +429,7 @@ async function readPage() {
     tipTo(ink.width * 0.5, ink.height * 0.12); await sleep(700);
     const res = await api("/api/page", { images: pageTiles() });
     page.read = true; page.transcript = res.summary; applyState(res.state);
-    $("fixText").hidden = false;
+    $("fixText").hidden = false; $("tidyBtn").hidden = false;
     $("fixText").textContent = res.unsure ? `📝 Abschrift (${res.unsure}× unsicher)` : "📝 Abschrift";
     setChat(true);
     addMsg("sys", "👀 Gelesen: " + res.summary.replace(/\s+/g, " ").slice(0, 220) + (res.summary.length > 220 ? " …" : ""));
