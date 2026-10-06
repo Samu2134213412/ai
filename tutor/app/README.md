@@ -71,6 +71,12 @@ Wer das Netz absichern will, nutzt statt `*` den Wert `capacitor://localhost`.
 
 Das iPad selbst kann ein 32B-Modell nicht ausführen; das Modell läuft immer auf dem Rechner.
 
+## Mit dem Tutor-Server verbinden (statt direkt mit Ollama)
+
+⚙︎ → **Tutor-Server**: Adresse (`http://<IP des PCs>:8766`) und den Kopplungs-Code eingeben, den die PC-App
+unter „Gerät koppeln“ zeigt (der QR-Code enthält ihn im Link `?pair=CODE`). Danach läuft die KI auf dem PC,
+Verlauf und Aufgaben liegen dort und sind mit Handy und PC geteilt. „Trennen“ geht zurück zum direkten Modus.
+
 ## Native Funktionen
 
 - **Benachrichtigungen:** Beim ersten Start fragt der Willkommens-Dialog; ⚙︎ → *Benachrichtigungen*.

@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { sanitizeNames } = require("./guard.js");
 
-const DEFAULTS = { blockedApps: [], autostart: false, trayOnClose: true };
+const DEFAULTS = { blockedApps: [], autostart: false, trayOnClose: true, overlay: false };
 
 function createConfig(file) {
   let data = { ...DEFAULTS };
@@ -21,6 +21,7 @@ function createConfig(file) {
       if ("blockedApps" in partial) data.blockedApps = sanitizeNames(partial.blockedApps);
       if ("autostart" in partial) data.autostart = !!partial.autostart;
       if ("trayOnClose" in partial) data.trayOnClose = !!partial.trayOnClose;
+      if ("overlay" in partial) data.overlay = !!partial.overlay;
       save();
       return this.get();
     },

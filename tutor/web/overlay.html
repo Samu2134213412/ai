@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutor Leiste</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/overlay.css">
+</head>
+<body class="overlay">
+
+<canvas id="notes" aria-hidden="true"></canvas>
+
+<div id="pick" hidden><div class="hintbar" data-hit>📍 Klick auf die Stelle, die ich mir ansehen soll · Esc bricht ab</div></div>
+
+<div id="obar" data-hit role="toolbar" aria-label="Tutor-Leiste">
+  <div id="ohome" class="home" aria-hidden="true"></div>
+  <form id="oform" autocomplete="off">
+    <input id="oinput" type="text" placeholder="Frag mich etwas …" aria-label="Nachricht an den Tutor">
+    <button class="send" type="submit" aria-label="Senden">➤</button>
+  </form>
+  <button class="chip toggle" id="operm" type="button" aria-pressed="false" title="Darf der Tutor auf den Bildschirm schauen und Notizen darüber schreiben?">👀</button>
+  <button class="chip" id="olook" type="button" title="Bildschirm ansehen und lesen">🔍</button>
+  <button class="chip" id="opoint" type="button" title="Auf eine Stelle zeigen">📍</button>
+  <button class="chip" id="onew" type="button" title="Neue Aufgabe">↺</button>
+  <button class="chip" id="olog" type="button" title="Verlauf">💬</button>
+  <button class="chip" id="oclear" type="button" title="Notizen vom Bildschirm löschen">🧹</button>
+  <button class="chip" id="ohide" type="button" title="Leiste verstecken (Strg+Alt+T bringt sie zurück)">✕</button>
+</div>
+
+<div id="opanel" data-hit hidden><div id="olist"></div></div>
+
+<div id="blob" class="blob" data-mood="idle" aria-hidden="true">
+  <div class="say" id="say"></div>
+  <svg viewBox="0 0 100 100" overflow="visible">
+    <defs><linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffdcae"/><stop offset="1" stop-color="#ffab98"/></linearGradient></defs>
+    <ellipse class="shadow" cx="50" cy="97" rx="30" ry="4" fill="#000" opacity=".12"/>
+    <g class="wobble">
+      <path d="M50 8C74 6 93 24 93 51C93 78 75 93 50 93C25 93 7 78 7 51C7 26 27 10 50 8Z" fill="url(#body)"/>
+      <ellipse cx="29" cy="62" rx="7" ry="4.5" fill="#ff7f9f" opacity=".5"/><ellipse cx="71" cy="62" rx="7" ry="4.5" fill="#ff7f9f" opacity=".5"/>
+      <g class="eyes">
+        <g class="eye" transform="translate(36 46)"><g class="blink"><circle r="7.5" fill="#2b2118"/><g class="pupil"><circle cx="2" cy="-2.2" r="2.5" fill="#fff"/></g></g></g>
+        <g class="eye" transform="translate(64 46)"><g class="blink"><circle r="7.5" fill="#2b2118"/><g class="pupil"><circle cx="2" cy="-2.2" r="2.5" fill="#fff"/></g></g></g>
+      </g>
+      <g class="happyEyes"><path d="M29 48Q36 39 43 48M57 48Q64 39 71 48" fill="none" stroke="#2b2118" stroke-width="3.4" stroke-linecap="round"/></g>
+      <path class="mouth smile" d="M42 63Q50 71 58 63" fill="none" stroke="#2b2118" stroke-width="3" stroke-linecap="round"/>
+      <ellipse class="mouth open" cx="50" cy="66" rx="5" ry="4.5" fill="#7a2e2e"/>
+      <ellipse class="mouth hmm" cx="50" cy="66" rx="3" ry="3" fill="none" stroke="#2b2118" stroke-width="2.6"/>
+      <g id="hand" class="hand">
+        <g transform="translate(86 70) rotate(40)"><rect x="-2.4" y="-4" width="4.8" height="30" rx="1.2" fill="#ffd43b"/><rect x="-2.4" y="-4" width="4.8" height="5" rx="1.2" fill="#ff8aa0"/><path d="M-2.4 26 L0 33 L2.4 26Z" fill="#f1c9a0"/><path d="M-1 30.4 L0 33 L1 30.4Z" fill="#37322d"/></g>
+        <circle cx="86" cy="70" r="6.5" fill="#ffbfa6" stroke="#f29c84" stroke-width="1.2"/>
+      </g>
+    </g>
+  </svg>
+</div>
+
+<script src="/vision.js"></script>
+<script src="/overlay.js"></script>
+</body>
+</html>

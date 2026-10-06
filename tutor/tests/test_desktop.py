@@ -24,7 +24,7 @@ class Bridge(unittest.TestCase):
         preload = (DESK / "preload.js").read_text()
         exposed = set(re.findall(r"^\s{2}(\w+):", preload.split("exposeInMainWorld")[1], re.M))
         used = set()
-        for f in ("app.js", "planner.js", "native.js"):
+        for f in ("app.js", "planner.js", "native.js", "overlay.js"):
             src = (ROOT / "web" / f).read_text()
             used |= set(re.findall(r"\b(?:TutorDesktop|D)\.(\w+)", src))
         self.assertTrue(used, "keine Desktop-Aufrufe gefunden")
@@ -54,6 +54,19 @@ class Bridge(unittest.TestCase):
         server = (ROOT / "server" / "server.js").read_text() + (ROOT / "server" / "store.js").read_text()
         for needle in ("randomBytes", "timingSafeEqual", "HttpOnly", "SameSite=Lax", "sha256", "0o600"):
             self.assertIn(needle, server, needle)
+
+    def test_overlay_window_is_transparent_click_through_and_on_top(self):
+        main = (DESK / "main.js").read_text()
+        overlay = main[main.index("function createOverlay"):main.index("function toggleOverlay")]
+        for needle in ("transparent: true", "frame: false", "alwaysOnTop: true", "setIgnoreMouseEvents(true, { forward: true })",
+                       "contextIsolation: true", "nodeIntegration: false", "sandbox: true", "overlay.html"):
+            self.assertIn(needle, overlay, needle)
+        html = (ROOT / "web" / "overlay.html").read_text()
+        for src in ("/vision.js", "/overlay.js", "/overlay.css", "/style.css"):
+            self.assertIn(src, html)
+        capture = main[main.index('ipcMain.handle("overlay:capture"'):main.index("// Weiteres Gerät koppeln")]
+        self.assertLess(capture.index("overlay.hide()"), capture.index("desktopCapturer.getSources"))   # Leiste nie im Foto
+        self.assertIn("showInactive()", capture)                                                      # und danach ohne Fokusklau zurück
 
     def test_secure_window_settings(self):
         main = (DESK / "main.js").read_text()

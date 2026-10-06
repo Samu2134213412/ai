@@ -175,7 +175,7 @@ function initSettings(st) {
     if (D) {
       const d = await D.getSettings();
       $("desktopSettings").hidden = false;
-      $("dApps").value = d.blockedApps.join("\n"); $("dTray").checked = d.trayOnClose; $("dAuto").checked = d.autostart;
+      $("dApps").value = d.blockedApps.join("\n"); $("dTray").checked = d.trayOnClose; $("dAuto").checked = d.autostart; $("dOverlay").checked = d.overlay;
     }
     $("settingsDlg").showModal();
   });
@@ -222,9 +222,10 @@ function initSettings(st) {
     } catch (e) { $("cState").textContent = "⚠ " + (e.message === "Failed to fetch" ? "Server nicht erreichbar (selbes WLAN? Adresse/Port richtig?)" : e.message); }
   });
   $("cDisconnect").addEventListener("click", () => { localStorage.removeItem("tutor.server"); localStorage.removeItem("tutor.token"); location.reload(); });
+  if (D) $("overlayBtn").addEventListener("click", () => D.overlayToggle());
   $("phoneStop").addEventListener("click", async () => { if (D) await D.phoneStop(); $("phoneDlg").close(); App.say("Handy-Zugang beendet."); });
   $("settingsDlg").addEventListener("close", async () => {
-    if (D && !$("desktopSettings").hidden) await D.setSettings({ blockedApps: $("dApps").value.split(/[\n,]+/), trayOnClose: $("dTray").checked, autostart: $("dAuto").checked });
+    if (D && !$("desktopSettings").hidden) await D.setSettings({ blockedApps: $("dApps").value.split(/[\n,]+/), trayOnClose: $("dTray").checked, autostart: $("dAuto").checked, overlay: $("dOverlay").checked });
     try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });
   $("sNotif").addEventListener("click", async () => { await askNotifications(); $("sNativeState").textContent = $("notifState").textContent; });
   $("sShield").addEventListener("click", async () => {

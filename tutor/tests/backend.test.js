@@ -228,3 +228,16 @@ test("Router: gleiches Modell oder leer → kein Routing; Einstellung speichert 
   assert.strictEqual((await b.api("/api/state")).light_model, "x:1b");
   done();
 });
+
+test("Bild-Aufteilung (vision.js): Hochformat in Bänder, sehr Breites in Spalten, sonst ein Stück", () => {
+  const V = require("../web/vision.js");
+  assert.strictEqual(V.bands(900, 1200).length, 2);
+  assert.strictEqual(V.bands(900, 2400).length, 3);
+  assert.strictEqual(V.bands(1920, 1080).length, 2);
+  assert.strictEqual(V.bands(1000, 1000).length, 1);
+  for (const [w, h] of [[900, 1200], [900, 2400], [1920, 1080], [1000, 1000]]) {
+    const bs = V.bands(w, h);
+    assert.ok(bs.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h), "innerhalb des Bildes");
+    assert.strictEqual(Math.min(...bs.map((b) => b.y)), 0); assert.strictEqual(Math.max(...bs.map((b) => b.y + b.h)), h);   // alles abgedeckt
+  }
+});

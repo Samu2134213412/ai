@@ -1,0 +1,26 @@
+/* GoodNotes-Leiste: durchsichtiges Vollbild-Fenster; nur die mit data-hit markierten Teile fangen Mausklicks. */
+html, body.overlay { background: transparent !important; margin: 0; padding: 0; height: 100%; overflow: hidden; display: block; }
+body.overlay { font: 15px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; }
+#notes { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 10; }
+#pick { position: fixed; inset: 0; z-index: 35; cursor: crosshair; background: rgba(255, 159, 122, .10); }
+#pick[hidden] { display: none; }
+.hintbar { position: fixed; top: 76px; left: 50%; transform: translateX(-50%); background: var(--tutor); color: var(--ink);
+  border: 2px solid var(--chip-on); border-radius: 999px; padding: 8px 18px; box-shadow: var(--shadow); cursor: default; }
+
+#obar { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 40; width: min(820px, 94vw);
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; border-radius: 999px;
+  background: linear-gradient(var(--bar2), var(--bar)); border: 2px solid var(--line); box-shadow: var(--shadow); }
+#obar .home { width: 56px; height: 56px; flex: none; }
+#oform { flex: 1; display: flex; gap: 6px; min-width: 0; }
+#oinput { flex: 1; min-width: 0; font: inherit; color: var(--ink); padding: 9px 14px; border-radius: 999px;
+  border: 2px solid var(--line); background: var(--chip); outline: none; }
+#oinput:focus { border-color: var(--chip-on); }
+#obar .chip { padding: 6px 10px; font-size: 15px; }
+#obar .send { width: 40px; }
+
+#opanel { position: fixed; top: 76px; left: 50%; transform: translateX(-50%); z-index: 39; width: min(820px, 94vw);
+  max-height: 46vh; overflow-y: auto; padding: 12px; border-radius: 22px; background: var(--bar);
+  border: 2px solid var(--line); box-shadow: var(--shadow); }
+#opanel[hidden] { display: none; }
+#olist { display: flex; flex-direction: column; gap: 8px; }
+body.overlay .blob { z-index: 50; }      /* Blob fliegt über Leiste und Verlauf */

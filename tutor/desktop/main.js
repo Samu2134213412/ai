@@ -2,7 +2,7 @@
    - der Server (../server) rechnet mit dem lokalen Ollama und speichert Verlauf/Aufgaben,
    - das Fenster (und die Handy-Oberfläche) sind nur Clients davon,
    - die Browser-Erweiterung „Tutor Fokus“ spricht ebenfalls mit ihm (Port 8765). */
-const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, shell, Notification } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, shell, Notification, screen, globalShortcut } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -14,6 +14,7 @@ const { createConfig } = require("./lib/config.js");
 
 const WANT_PORT = Number(process.env.TUTOR_PORT) || 8765;
 const LAN_PORT = Number(process.env.TUTOR_PHONE_PORT) || 8766;
+let overlay = null;
 let win = null, tray = null, quitting = false, origin = "", srv = null, config = null, chosenSource = null;
 const guard = createGuard({
   selfNames: ["tutor", "electron", "node", path.basename(process.execPath)],
@@ -46,11 +47,38 @@ function createWindow(hidden) {
   win.on("closed", () => { win = null; });
 }
 
+/* GoodNotes-Leiste: durchsichtiges Fenster über dem ganzen Bildschirm, immer oben. Mausklicks gehen durch,
+   außer über der Leiste (die Oberfläche meldet das per IPC). Wird bei Aufnahmen kurz ausgeblendet. */
+function createOverlay() {
+  const d = screen.getPrimaryDisplay();
+  overlay = new BrowserWindow({
+    x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
+    transparent: true, frame: false, resizable: false, movable: false, hasShadow: false, skipTaskbar: true,
+    alwaysOnTop: true, fullscreenable: false, focusable: true, show: false, title: "Tutor Leiste",
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false,
+      sandbox: true, backgroundThrottling: false },
+  });
+  overlay.setAlwaysOnTop(true, "screen-saver");
+  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlay.setIgnoreMouseEvents(true, { forward: true });
+  try { overlay.setContentProtection(true); } catch (e) { /* nicht überall unterstützt */ }
+  overlay.loadURL(`${origin}/overlay.html`);
+  overlay.once("ready-to-show", () => overlay.showInactive());
+  overlay.on("closed", () => { overlay = null; });
+}
+function toggleOverlay() {
+  if (!overlay) createOverlay();
+  else if (overlay.isVisible()) overlay.hide();
+  else overlay.showInactive();
+  return !!overlay && overlay.isVisible();
+}
+
 function createTray() {
   try { tray = new Tray(icon().resize({ width: 24, height: 24 })); } catch (e) { tray = null; return; }
   tray.setToolTip("Tutor");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Tutor öffnen", click: showWindow },
+    { label: "GoodNotes-Leiste ein/aus", click: toggleOverlay },
     { label: "Fokus 25 min starten", click: async () => { await owner().api("/api/focus/start", { minutes: 25 }); toRenderer({ type: "refresh" }); } },
     { label: "Fokus beenden", click: async () => { await owner().api("/api/focus/stop", {}); toRenderer({ type: "refresh" }); } },
     { type: "separator" },
@@ -98,6 +126,31 @@ function setupIpc() {
     chosenSource = sources.find((s) => s.id === id) || null;
     return !!chosenSource;
   });
+  // GoodNotes-Leiste
+  ipcMain.on("overlay:interactive", (e, on) => {
+    if (!fromOurPage(e) || !overlay) return;
+    overlay.setIgnoreMouseEvents(!on, { forward: true });
+    if (process.env.TUTOR_E2E) console.log("OVERLAY_INTERACTIVE " + !!on);
+  });
+  ipcMain.on("overlay:focus", (e) => { if (fromOurPage(e) && overlay) overlay.focus(); });
+  ipcMain.on("overlay:hide", (e) => { if (fromOurPage(e) && overlay) overlay.hide(); });
+  ipcMain.handle("overlay:toggle", (e) => (fromOurPage(e) ? toggleOverlay() : false));
+  ipcMain.handle("overlay:capture", async (e) => {                      // Bildschirm unter der Leiste als JPEG
+    if (!fromOurPage(e) || !overlay) return null;
+    const d = screen.getDisplayMatching(overlay.getBounds());
+    const wasVisible = overlay.isVisible();
+    overlay.hide();
+    await new Promise((r) => setTimeout(r, 150));                         // Fenster ist weg, bevor aufgenommen wird
+    try {
+      const size = { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
+      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: size });
+      const src = sources.find((s) => s.display_id === String(d.id)) || sources[0];
+      if (!src || src.thumbnail.isEmpty()) return null;
+      let img = src.thumbnail;
+      if (img.getSize().width > 2600) img = img.resize({ width: 2600 });
+      return { image: "data:image/jpeg;base64," + img.toJPEG(88).toString("base64"), width: img.getSize().width, height: img.getSize().height };
+    } finally { if (wasVisible && overlay) overlay.showInactive(); }
+  });
   // Weiteres Gerät koppeln: WLAN-Zugang einschalten, einmaligen Link + QR-Code erzeugen (nur auf Knopfdruck)
   ipcMain.handle("phone:start", async (e) => {
     if (!fromOurPage(e)) return null;
@@ -143,10 +196,12 @@ app.whenReady().then(async () => {
   await setupSession(desktopToken(dataDir));
   setupIpc();
   createWindow(process.argv.includes("--hidden")); createTray(); startGuardLoop();
+  globalShortcut.register("CommandOrControl+Alt+T", toggleOverlay);        // Leiste schnell ein-/ausblenden
+  if (config.get().overlay || process.env.TUTOR_OVERLAY) createOverlay();
   if (process.env.TUTOR_E2E) console.log("TUTOR_E2E_READY " + origin);
 });
 
 app.on("before-quit", () => { quitting = true; });
 app.on("window-all-closed", () => { if (quitting || process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (win) showWindow(); });
-app.on("will-quit", () => { if (srv) srv.stop(); });
+app.on("will-quit", () => { globalShortcut.unregisterAll(); if (srv) srv.stop(); });

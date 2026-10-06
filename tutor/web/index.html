@@ -131,6 +131,8 @@
     <p class="hint">Nur wirklich eingetragene Programme, nur während einer Fokus-Sitzung. System-Programme werden nie beendet.</p>
     <label class="row2"><input type="checkbox" id="dTray"> Beim Schließen im Tray weiterlaufen (Erinnerungen bleiben aktiv)</label>
     <label class="row2"><input type="checkbox" id="dAuto"> Beim Anmelden starten</label>
+    <label class="row2"><input type="checkbox" id="dOverlay"> GoodNotes-Leiste beim Start einblenden</label>
+    <div class="actions left"><button type="button" id="overlayBtn">🪄 GoodNotes-Leiste ein/aus (Strg+Alt+T)</button></div>
   </div>
   <div id="connectSettings" hidden>
     <h4>Tutor-Server</h4>
@@ -212,6 +214,7 @@
 <script src="/core.js"></script>
 <script src="/backend-local.js"></script>
 <script src="/native.js"></script>
+<script src="/vision.js"></script>
 <script src="/app.js"></script>
 <script src="/planner.js"></script>
 </body>

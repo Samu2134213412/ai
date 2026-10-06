@@ -18,6 +18,47 @@ tutor/
 └── tests/             # Offline-Tests + Live-Check gegen das echte Modell
 ```
 
+## Überblick: ein KI-Server, viele Geräte
+
+```
+ Handy ─┐                                   ┌─ Ollama (dein PC, später ein echter Server)
+ iPad  ─┼── WLAN ──►  Tutor-Server  ──────► ┤  großes Modell (Aufgaben)  +  kleines (Smalltalk)
+ PC-Fenster / GoodNotes-Leiste ─┘  (server/)  └─ Verlauf, Aufgaben, Einstellungen je Person
+```
+
+Die KI-Logik (Hinweisstufen, Modellwahl, Planer, Seiten lesen) läuft als **Server** ([server/README.md](server/README.md)).
+Alles andere sind Clients, die Fragen hinschicken und Antworten zurückbekommen:
+
+| Client | Zugang |
+|---|---|
+| **PC-App** (`Tutor.exe`) | enthält den Server; Fenster + **GoodNotes-Leiste** (siehe unten) |
+| **Handy / iPad im Browser** | PC-App → ⚙︎ → „Gerät koppeln“ → QR-Code scannen |
+| **iPad-App** (`app/`) | ⚙︎ → Server-Adresse + Kopplungs-Code (oder direkt mit Ollama) |
+| **Reiner Server** | `node server/index.js --host 0.0.0.0` (ohne Fenster, z. B. später auf einem Rechner im Keller/Netz) |
+
+Kopplung ohne Passwort: Der PC zeigt einen Link/QR mit einem Einmal-Code (10 Min.), das Gerät bekommt ein
+langes Geräte-Token. Jede Person hat einen eigenen Verlauf. Nur der Besitzer koppelt weitere Geräte.
+
+## Die Leiste über GoodNotes (Windows/Mac)
+
+In der PC-App: ⚙︎ → **„🪄 GoodNotes-Leiste ein/aus“** oder **Strg+Alt+T** (auch Tray-Menü). Eine schlanke Leiste
+liegt oben auf dem Bildschirm – **über jeder App**, also auch über GoodNotes (App für Windows/Mac oder im Browser).
+Mausklicks außerhalb der Leiste gehen normal an GoodNotes durch.
+
+- 💬 Frag etwas in die Leiste; der Blob antwortet (⚡ schnell / 🧠 groß, automatisch).
+- 👀 erlauben, dann **🔍 Bildschirm lesen**: Die App macht ein Bild des Bildschirms (die Leiste blendet sich dafür
+  kurz aus), bereitet Handschrift auf und liest sie.
+- **📍 Zeigen**: Auf eine Stelle klicken. Der Blob fliegt hin, liest genau dort und schreibt seine Randnotiz
+  **über** die Seite; 🧹 löscht sie wieder.
+- Wichtig: Die Notizen liegen als durchsichtige Schicht über dem Bildschirm, **nicht im GoodNotes-Dokument**
+  (GoodNotes erlaubt keinen Zugriff von außen). Sie verschwinden mit 🧹 oder beim Ausblenden.
+- macOS fragt einmal nach „Bildschirmaufnahme“ (Systemeinstellungen → Datenschutz).
+
+**Auf dem iPad geht eine Leiste über GoodNotes nicht** – iPadOS erlaubt anderen Apps keine Fenster über
+fremden Apps. Dort: Tutor im Browser/als App **neben GoodNotes** (Split View/Slide Over), Seite per
+Kurzbefehl-Screenshot (`POST /api/shot`) schicken, oder – mit der nativen App (`app/`) – per
+Bildschirm-Übertragung live mitlesen.
+
 ## Installation
 
 Voraussetzungen: Python 3.10+, Ollama installiert und gestartet.
@@ -132,16 +173,14 @@ läuft. Das steht auf der Liste unten.
 
 Der Tutor läuft im Handy-Browser, die KI rechnet auf deinem PC. Handy und PC im **selben WLAN**.
 
-**Mit der PC-App** (`Tutor.exe`): ⚙︎ → **📱 Handy verbinden** → QR-Code mit der Kamera-App scannen →
-Link tippen. Die App leitet nur die zwei nötigen Ollama-Wege weiter, Ollama selbst muss nicht ins Netz.
-Der Zugang ist durch ein Zufalls-Token geschützt und gilt nur, bis du „Handy-Zugang beenden“ drückst.
-Beim ersten Mal fragt die Windows-Firewall: *Zugriff zulassen* (nur private Netzwerke).
+1. PC-App (`Tutor.exe`) starten → ⚙︎ → **📱 Handy / Gerät koppeln** → QR-Code erscheint (schaltet den
+   WLAN-Zugang ein). Beim ersten Mal fragt die Windows-Firewall: *Zugriff zulassen* (nur private Netzwerke).
+2. Handy: Kamera-App → QR-Code scannen → Link tippen. Fertig: Das Handy ist gekoppelt und bleibt es.
+3. Am Handy: 📄 Seite → **Foto aufnehmen** (Heft, Arbeitsblatt) → 👀 an → der Tutor liest die Seite.
+   iPhone: Teilen → *Zum Home-Bildschirm* legt ein App-Symbol an.
 
-**Mit Python:** `python web.py --host 0.0.0.0` zeigt eine URL (mit `pip install segno` auch als
-QR-Code im Terminal); die läuft dann komplett auf dem PC.
-
-Am Handy: 📄 Seite → **Foto aufnehmen** (Heft, Arbeitsblatt) → 👀 an → der Tutor liest die Seite.
-iPhone: Teilen → *Zum Home-Bildschirm* legt ein App-Symbol an. Nicht möglich über die Browser-Version:
+Handy und PC teilen sich denselben Verlauf (gleiche Person). Ohne PC-App: `node server/index.js --host 0.0.0.0`
+zeigt den Kopplungs-Link (mit `npm i qrcode` auch als QR im Terminal). Nicht möglich über die Browser-Version:
 Benachrichtigungen bei geschlossener Seite und Programme sperren – dafür gibt es die native iPad-App (`app/`).
 
 ## Schnell und groß: automatische Modellwahl
@@ -193,8 +232,8 @@ Wird der Branch umbenannt oder gemergt, `ccr-b87b8acb-etedpt` in den Befehlen er
 
 ## PC-Version (Windows, macOS, Linux)
 
-Desktop-App (Electron) ohne Python-Server: lokales Ollama, Fensterauswahl für GoodNotes,
-Tray mit Erinnerungen, Fokus mit der Browser-Erweiterung und optionalem Beenden von
+Desktop-App (Electron): enthält den Tutor-Server, zeigt ihn in einem Fenster, hat den Tray mit Erinnerungen,
+die **GoodNotes-Leiste**, Fensterauswahl, Fokus mit der Browser-Erweiterung und optionalem Beenden von
 Ablenkungs-Programmen. Installer baut ein GitHub-Workflow. Details: [desktop/README.md](desktop/README.md).
 
 ## iPad-App

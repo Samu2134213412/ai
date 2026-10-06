@@ -46,10 +46,10 @@ test("Wächter: Unix nutzt pkill -x mit exaktem Namen; Fehler beim Beenden brich
 test("Config: speichert validiert und lädt wieder", () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "cfg-")), "s", "settings.json");
   const c = createConfig(file);
-  assert.deepStrictEqual(c.get(), { blockedApps: [], autostart: false, trayOnClose: true });
-  c.set({ blockedApps: "Discord.exe, explorer, ../x", autostart: 1, trayOnClose: false, evil: "ignoriert" });
+  assert.deepStrictEqual(c.get(), { blockedApps: [], autostart: false, trayOnClose: true, overlay: false });
+  c.set({ blockedApps: "Discord.exe, explorer, ../x", autostart: 1, trayOnClose: false, overlay: 1, evil: "ignoriert" });
   const again = createConfig(file).get();
-  assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false });
+  assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false, overlay: true });
   assert.strictEqual(c.set(null).autostart, true);
 });
 

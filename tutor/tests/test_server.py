@@ -28,7 +28,7 @@ class RouteCoverage(unittest.TestCase):
     def test_every_route_the_ui_calls_is_served(self):
         backend, server, groups = self.handled()
         used = set()
-        for f in ("app.js", "planner.js"):
+        for f in ("app.js", "planner.js", "overlay.js"):
             used |= set(re.findall(r"""["'`](/api/[\w./-]+)["'`]""", (WEB / f).read_text()))
         self.assertGreater(len(used), 15)
         missing = []
