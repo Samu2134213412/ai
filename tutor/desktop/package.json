@@ -6,7 +6,7 @@
   "author": "Tutor",
   "main": "main.js",
   "scripts": {
-    "build-www": "node ../scripts/build-www.mjs www",
+    "build-www": "node ../scripts/build-www.mjs www && node ../scripts/copy-server.mjs",
     "start": "npm run build-www && electron .",
     "dist": "npm run build-www && electron-builder --publish never",
     "test": "node --test test/lib.test.js",
@@ -28,6 +28,7 @@
       "main.js",
       "preload.js",
       "lib/**",
+      "server/**",
       "www/**",
       "assets/**",
       "package.json"

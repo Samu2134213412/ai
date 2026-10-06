@@ -1,20 +1,20 @@
-/* Tutor – Desktop-App (Electron). Zeigt die Web-Oberfläche in einem eigenen Fenster,
-   spricht direkt mit dem lokalen Ollama und bedient die Browser-Erweiterung „Tutor Fokus“. */
+/* Tutor – PC-App (Electron). Sie ist gleichzeitig der Tutor-Server dieses PCs:
+   - der Server (../server) rechnet mit dem lokalen Ollama und speichert Verlauf/Aufgaben,
+   - das Fenster (und die Handy-Oberfläche) sind nur Clients davon,
+   - die Browser-Erweiterung „Tutor Fokus“ spricht ebenfalls mit ihm (Port 8765). */
 const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, shell, Notification } = require("electron");
 const { execFile } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
-
-const { FocusState } = require("./lib/focus-state.js");
-const { createStaticServer } = require("./lib/static-server.js");
-const { createGuard } = require("./lib/guard.js");
-const { createConfig } = require("./lib/config.js");
-const { createPhoneServer } = require("./lib/phone-server.js");
 const QRCode = require("qrcode");
 
+const { createTutorServer } = require("./server/server.js");
+const { createGuard } = require("./lib/guard.js");
+const { createConfig } = require("./lib/config.js");
+
 const WANT_PORT = Number(process.env.TUTOR_PORT) || 8765;
-let phone = null;
-let win = null, tray = null, quitting = false, origin = "", server = null, config = null, chosenSource = null;
-const focus = new FocusState();
+const LAN_PORT = Number(process.env.TUTOR_PHONE_PORT) || 8766;
+let win = null, tray = null, quitting = false, origin = "", srv = null, config = null, chosenSource = null;
 const guard = createGuard({
   selfNames: ["tutor", "electron", "node", path.basename(process.execPath)],
   exec: (cmd, args) => new Promise((resolve, reject) =>
@@ -29,6 +29,7 @@ const icon = () => nativeImage.createFromPath(path.join(__dirname, "assets", "ic
 function showWindow() { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 const toRenderer = (cmd) => { if (win && !win.isDestroyed()) win.webContents.send("focus:command", cmd); };
 const fromOurPage = (e) => !!e.senderFrame && e.senderFrame.url.startsWith(origin + "/");
+const owner = () => srv.backendFor(srv.ownerId);
 
 function createWindow(hidden) {
   win = new BrowserWindow({
@@ -48,18 +49,17 @@ function createWindow(hidden) {
 function createTray() {
   try { tray = new Tray(icon().resize({ width: 24, height: 24 })); } catch (e) { tray = null; return; }
   tray.setToolTip("Tutor");
-  const menu = () => Menu.buildFromTemplate([
+  tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Tutor öffnen", click: showWindow },
-    { label: "Fokus 25 min starten", click: () => { focus.start(25); toRenderer({ type: "start", minutes: 25 }); } },
-    { label: "Fokus beenden", click: () => { focus.stop(); toRenderer({ type: "stop" }); } },
+    { label: "Fokus 25 min starten", click: async () => { await owner().api("/api/focus/start", { minutes: 25 }); toRenderer({ type: "refresh" }); } },
+    { label: "Fokus beenden", click: async () => { await owner().api("/api/focus/stop", {}); toRenderer({ type: "refresh" }); } },
     { type: "separator" },
     { label: "Beenden", click: () => { quitting = true; app.quit(); } },
-  ]);
-  tray.setContextMenu(menu());
+  ]));
   tray.on("click", showWindow);
 }
 
-function setupSession() {
+function setupSession(token) {
   const ses = session.defaultSession;
   const allowed = new Set(["notifications", "media", "display-capture", "clipboard-sanitized-write"]);
   ses.setPermissionRequestHandler((wc, permission, cb, details) => cb(allowed.has(permission) && (details.requestingUrl || "").startsWith(origin)));
@@ -69,10 +69,22 @@ function setupSession() {
     const src = chosenSource; chosenSource = null;
     callback(src ? { video: src } : {});
   }, { useSystemPicker: false });
+  // Dieses Fenster ist ein gekoppeltes Gerät des Besitzers: Token als Cookie setzen.
+  return ses.cookies.set({ url: origin, name: "tutor_token", value: token, httpOnly: true, sameSite: "lax",
+    expirationDate: Math.floor(Date.now() / 1000) + 365 * 24 * 3600 });
+}
+
+/* Geräte-Token dieses Fensters: einmal anlegen und in userData merken (sonst würde jeder Start ein Gerät mehr anlegen). */
+function desktopToken(dataDir) {
+  const file = path.join(dataDir, "desktop.token");
+  try { const t = fs.readFileSync(file, "utf8").trim(); if (srv.users.find(t)) return t; } catch (e) { /* neu */ }
+  const { token } = srv.redeem(srv.createPairing({ forOwner: true }));
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(file, token, { mode: 0o600 });
+  return token;
 }
 
 function setupIpc() {
-  ipcMain.on("focus:push", (e, state) => { if (fromOurPage(e)) focus.update(state); });
   ipcMain.handle("windows:list", async (e) => {
     if (!fromOurPage(e)) return [];
     const sources = await desktopCapturer.getSources({ types: ["window", "screen"], thumbnailSize: { width: 320, height: 200 },
@@ -86,15 +98,17 @@ function setupIpc() {
     chosenSource = sources.find((s) => s.id === id) || null;
     return !!chosenSource;
   });
-  // Handy-Zugang: zweiter Server im WLAN + QR-Code (nur auf ausdrücklichen Wunsch, mit Token)
+  // Weiteres Gerät koppeln: WLAN-Zugang einschalten, einmaligen Link + QR-Code erzeugen (nur auf Knopfdruck)
   ipcMain.handle("phone:start", async (e) => {
     if (!fromOurPage(e)) return null;
-    const info = await phone.start();
-    const qr = await QRCode.toDataURL(info.url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
-    return { url: info.url, ip: info.ip, port: info.port, qr, all: info.all };
+    const lan = await srv.enableLan(LAN_PORT);
+    const code = srv.createPairing({ forOwner: true });
+    const url = srv.pairingUrls(code).find((u) => !u.includes("127.0.0.1")) || srv.pairingUrls(code)[0];
+    const qr = await QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    return { url, qr, ip: lan.ips[0], port: lan.port, all: lan.ips };
   });
-  ipcMain.handle("phone:stop", async (e) => { if (fromOurPage(e)) await phone.stop(); return true; });
-  ipcMain.handle("phone:status", (e) => (fromOurPage(e) ? { running: phone.running } : null));
+  ipcMain.handle("phone:stop", async (e) => { if (fromOurPage(e)) await srv.disableLan(); return true; });
+  ipcMain.handle("phone:status", (e) => (fromOurPage(e) ? { running: srv.lanEnabled } : null));
   ipcMain.handle("settings:get", (e) => (fromOurPage(e) ? config.get() : null));
   ipcMain.handle("settings:set", (e, partial) => {
     if (!fromOurPage(e)) return null;
@@ -107,9 +121,11 @@ function setupIpc() {
 /* Alle paar Sekunden: während einer Fokus-Sitzung die vom Lernenden gelisteten Programme beenden. */
 function startGuardLoop() {
   setInterval(async () => {
-    const f = focus.info(), apps = config.get().blockedApps;
-    if (!f.active || !apps.length) return;
+    const apps = config.get().blockedApps;
+    if (!apps.length) return;
     try {
+      const f = await owner().api("/api/focus");
+      if (!f.active) return;
       const killed = await guard.tick(apps);
       if (killed.length && Notification.isSupported()) new Notification({ title: "Fokus 🎯", body: `Beendet: ${killed.join(", ")}` }).show();
     } catch (e) { /* ps/tasklist nicht verfügbar */ }
@@ -117,13 +133,15 @@ function startGuardLoop() {
 }
 
 app.whenReady().then(async () => {
+  const dataDir = path.join(app.getPath("userData"), "server");
   config = createConfig(path.join(app.getPath("userData"), "settings.json"));
-  server = createStaticServer({ wwwDir: path.join(__dirname, "www"), focus, port: WANT_PORT, onCommand: toRenderer });
-  const port = await server.listen();
-  origin = `http://127.0.0.1:${port}`;
-  phone = createPhoneServer({ wwwDir: path.join(__dirname, "www"), port: Number(process.env.TUTOR_PHONE_PORT) || 8766,
-    ollamaTarget: process.env.TUTOR_OLLAMA || "http://127.0.0.1:11434" });
-  setupSession(); setupIpc();
+  srv = createTutorServer({ wwwDir: path.join(__dirname, "www"), dataDir, host: "127.0.0.1", port: WANT_PORT,
+    ollama: process.env.TUTOR_OLLAMA || "http://127.0.0.1:11434" });
+  let started;
+  try { started = await srv.start(); } catch (e) { if (e.code !== "EADDRINUSE") throw e; started = await srv.start({ port: 0 }); }
+  origin = `http://127.0.0.1:${started.port}`;
+  await setupSession(desktopToken(dataDir));
+  setupIpc();
   createWindow(process.argv.includes("--hidden")); createTray(); startGuardLoop();
   if (process.env.TUTOR_E2E) console.log("TUTOR_E2E_READY " + origin);
 });
@@ -131,4 +149,4 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => { quitting = true; });
 app.on("window-all-closed", () => { if (quitting || process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (win) showWindow(); });
-app.on("will-quit", () => { if (server) server.close(); if (phone) phone.stop(); });
+app.on("will-quit", () => { if (srv) srv.stop(); });

@@ -131,7 +131,21 @@
     <p class="hint">Nur wirklich eingetragene Programme, nur während einer Fokus-Sitzung. System-Programme werden nie beendet.</p>
     <label class="row2"><input type="checkbox" id="dTray"> Beim Schließen im Tray weiterlaufen (Erinnerungen bleiben aktiv)</label>
     <label class="row2"><input type="checkbox" id="dAuto"> Beim Anmelden starten</label>
-    <div class="actions left"><button type="button" id="phoneBtn">📱 Handy verbinden</button></div>
+  </div>
+  <div id="connectSettings" hidden>
+    <h4>Tutor-Server</h4>
+    <div id="cState" class="hint"></div>
+    <div id="cForm">
+      <label class="hint">Server-Adresse<input id="cServer" placeholder="http://192.168.0.10:8780" inputmode="url" autocapitalize="off" autocorrect="off" style="width:100%"></label>
+      <label class="hint">Kopplungs-Code (am PC unter „Gerät koppeln“)<input id="cCode" placeholder="ABCD2345" autocapitalize="characters" style="width:100%"></label>
+      <div class="actions left"><button type="button" id="cConnect">Verbinden</button></div>
+    </div>
+    <div class="actions left"><button type="button" id="cDisconnect" hidden>Trennen</button></div>
+  </div>
+  <div id="pairSettings" hidden>
+    <h4>Geräte</h4>
+    <div class="actions left"><button type="button" id="phoneBtn">📱 Handy / Gerät koppeln</button></div>
+    <p class="hint">Zeigt einen QR-Code. Handy oder iPad im selben WLAN scannen ihn – danach sprechen sie mit diesem Tutor-Server.</p>
   </div>
   <div id="nativeSettings" hidden>
     <h4>iPad</h4>
@@ -145,8 +159,8 @@
 </form></dialog>
 
 <dialog id="phoneDlg"><form method="dialog">
-  <h3>📱 Handy verbinden</h3>
-  <p class="hint">Handy und PC im <b>selben WLAN</b>. Kamera-App öffnen, QR-Code scannen, Link tippen. Fertig – der Tutor läuft dann im Handy-Browser und nutzt das Ollama dieses PCs.</p>
+  <h3>📱 Gerät koppeln</h3>
+  <p class="hint">Handy/iPad und dieser PC im <b>selben WLAN</b>. Kamera-App öffnen, QR-Code scannen, Link tippen. Der Tutor läuft dann im Browser des Geräts, die KI rechnet hier. Der Link gilt <b>10 Minuten und nur einmal</b>.</p>
   <div class="qrBox"><img id="phoneQr" alt="QR-Code zum Verbinden" width="240" height="240"></div>
   <p class="hint" id="phoneUrl" style="word-break:break-all"></p>
   <p class="hint">Beim ersten Mal fragt die Windows-Firewall: <b>Zugriff zulassen</b> (nur „Private Netzwerke“). Auf dem iPhone: Teilen → <i>Zum Home-Bildschirm</i>. Der Link gilt nur, solange der Handy-Zugang an ist.</p>

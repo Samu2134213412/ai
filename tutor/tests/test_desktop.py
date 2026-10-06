@@ -43,15 +43,17 @@ class Bridge(unittest.TestCase):
     def test_every_ipc_handler_checks_the_sender(self):
         main = (DESK / "main.js").read_text()
         handlers = re.findall(r'ipcMain\.(?:on|handle)\("([\w:]+)", (?:async )?\(e', main)
-        self.assertGreaterEqual(len(handlers), 8)
+        self.assertGreaterEqual(len(handlers), 7)
         self.assertEqual(main.count("fromOurPage(e)"), len(handlers))      # jeder Handler prüft den Absender
 
-    def test_phone_access_is_opt_in_and_protected(self):
+    def test_lan_access_is_opt_in_and_server_is_protected(self):
         main = (DESK / "main.js").read_text()
-        phone = (DESK / "lib" / "phone-server.js").read_text()
-        self.assertNotIn("phone.start()", main.split('ipcMain.handle("phone:start"')[0])   # startet nicht von selbst
-        for needle in ("randomBytes", "timingSafeEqual", "HttpOnly", "SameSite=Lax", '"GET /ollama/api/tags"', '"POST /ollama/api/chat"'):
-            self.assertIn(needle, phone, needle)
+        self.assertEqual(main.count("srv.enableLan("), 1)                  # nur im „Gerät koppeln“-Handler
+        self.assertLess(main.index('ipcMain.handle("phone:start"'), main.index("srv.enableLan("))
+        self.assertIn('host: "127.0.0.1"', main)                           # Standard: nur dieser PC
+        server = (ROOT / "server" / "server.js").read_text() + (ROOT / "server" / "store.js").read_text()
+        for needle in ("randomBytes", "timingSafeEqual", "HttpOnly", "SameSite=Lax", "sha256", "0o600"):
+            self.assertIn(needle, server, needle)
 
     def test_secure_window_settings(self):
         main = (DESK / "main.js").read_text()
@@ -61,7 +63,7 @@ class Bridge(unittest.TestCase):
     def test_packaging_config(self):
         pkg = json.loads((DESK / "package.json").read_text())
         files = pkg["build"]["files"]
-        for need in ("main.js", "preload.js", "lib/**", "www/**", "assets/**"):
+        for need in ("main.js", "preload.js", "lib/**", "server/**", "www/**", "assets/**"):
             self.assertIn(need, files)
         for need in ("main.js", "preload.js", "assets/icon.png", "assets/icon.ico"):
             self.assertTrue((DESK / need).exists(), need)

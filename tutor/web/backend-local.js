@@ -40,6 +40,7 @@ function createBackend(env) {
   const load = () => (ready = ready || storage.get("tutor.data").then((d) => {
     if (d) { S.cfg = { ...DEFAULT_CONFIG, host: env.defaultHost || "", ...d.cfg }; S.tasks = d.tasks || []; S.reminders = d.reminders || S.reminders;
       S.blocklist = d.blocklist || S.blocklist; S.focus = d.focus || S.focus; S.sessions = d.sessions || []; }
+    if (env.lockHost) S.cfg.host = env.defaultHost || "";      // Server-Betrieb: der Server bestimmt, wo Ollama ist
   }));
 
   /* ---------- Ollama ---------- */
@@ -268,7 +269,7 @@ function createBackend(env) {
     }
     if (path === "/api/settings") {
       if (body) {
-        const host = String(body.host || "").trim().replace(/\/$/, "");
+        const host = env.lockHost ? S.cfg.host : String(body.host || "").trim().replace(/\/$/, "");
         if (host && !/^https?:\/\/[^\s/]+(:\d+)?$/.test(host)) throw new TutorError("Adresse bitte als http://IP:11434 angeben.");
         S.cfg = { ...S.cfg, host, model: String(body.model || S.cfg.model).trim(),
           light_model: "light_model" in body ? String(body.light_model).trim() : S.cfg.light_model,

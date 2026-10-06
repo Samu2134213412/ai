@@ -28,14 +28,18 @@ const pctx = pageCv.getContext("2d"), ictx = ink.getContext("2d");
 
 /* ---------------- API ---------------- */
 
+/* Verbindung zu einem Tutor-Server auf einem anderen Gerät (iPad-App → PC): Adresse + Geräte-Token. */
+const REMOTE = (() => { try { return { base: (localStorage.getItem("tutor.server") || "").replace(/\/$/, ""), token: localStorage.getItem("tutor.token") || "" }; } catch (e) { return { base: "", token: "" }; } })();
+const authHeaders = () => (REMOTE.token ? { "X-Tutor-Token": REMOTE.token } : {});
+
 async function api(path, body) {
   const B = window.TutorBackend;
-  if (B) {                                       // iPad-App: Logik läuft lokal
+  if (B) {                                       // iPad-App ohne Server: Logik läuft lokal
     try { return await B.api(path, body); } catch (e) { throw e; }
   }
-  const r = await fetch(path, {
+  const r = await fetch(REMOTE.base + path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const j = await r.json().catch(() => ({}));
@@ -45,8 +49,8 @@ async function api(path, body) {
 
 async function stream(path, body, onPiece) {
   if (window.TutorBackend) return window.TutorBackend.stream(path, body, onPiece);
-  const r = await fetch(path, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  const r = await fetch(REMOTE.base + path, {
+    method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body),
   });
   if (!(r.headers.get("content-type") || "").includes("event-stream")) {
     const j = await r.json().catch(() => ({}));
@@ -450,7 +454,7 @@ async function pollShot() {
       if (!f) return;
       version = f.version; getBlob = async () => b64Blob(f.data, "image/jpeg");
     } else if (window.TutorBackend) return;
-    else { version = (await api("/api/shot")).version; getBlob = async () => (await fetch("/api/shot.img")).blob(); }
+    else { version = (await api("/api/shot")).version; getBlob = async () => (await fetch(REMOTE.base + "/api/shot.img", { headers: authHeaders() })).blob(); }
     if (shotVersion === null) { shotVersion = version; return; }
     if (version === shotVersion || busy) return;
     shotVersion = version;
@@ -697,7 +701,7 @@ new ResizeObserver(fitPage).observe(area);
 /* ---------------- Start ---------------- */
 
 window.TutorApp = {
-  api, say, hop, setChat, addMsg, applyState,
+  api, say, hop, setChat, addMsg, applyState, remote: REMOTE, authHeaders,
   hasPage: () => !!page,
   pageImages: () => pageTiles(),
   busy: () => busy,
@@ -711,6 +715,7 @@ window.TutorApp = {
     const s = await api("/api/state");
     applyState(s, s.models);
     say("Hallo! Ich bin dein Tutor. 👋", 4500);
+    if (s.server && window.TutorApp.initSettings) window.TutorApp.initSettings(s);      // Server-Betrieb: Einstellungen/Koppeln
     if (s.problem) {
       setChat(true); addMsg("err", s.problem);
       if (window.TutorBackend) setTimeout(() => $("settingsBtn").click(), 600);

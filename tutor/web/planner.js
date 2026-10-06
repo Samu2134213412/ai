@@ -55,19 +55,10 @@ async function load() {
 async function post(path, body) { data = await App.api(path, body || {}); render(); }
 
 const D = window.TutorDesktop;                   // PC-App (Electron)
-function pushDesktop() {
-  if (D && data) D.pushFocus({ ends_at: data.focus.ends_at, minutes: data.focus.minutes, blocklist: data.blocklist });
-}
-if (D) D.onFocusCommand(async (cmd) => {         // Start/Stop aus der Browser-Erweiterung oder dem Tray
-  try {
-    if (cmd.type === "start") { await post("/api/focus/start", { minutes: cmd.minutes }); App.say("Fokus! 🛡", 3000); }
-    else if (cmd.type === "stop") await post("/api/focus/stop");
-  } catch (e) { App.addMsg("err", e.message); }
-});
+if (D) D.onFocusCommand(() => load().catch(() => {}));     // Tray/Erweiterung haben den Fokus geändert → neu laden
 
 function render() {
   if (!data) return;
-  pushDesktop();
   if (window.TutorNative && TutorNative.isNative) TutorNative.onPlannerState(data);
   // Aufgaben
   const today = new Date().toISOString().slice(0, 10);
@@ -102,7 +93,7 @@ function setFocus(f) {
   }
   if (!wasFocus && f.active && N && N.hasShield) N.shield(true).then((err) => err && App.say("Sperre nicht aktiv: " + err, 6000));
   wasFocus = f.active;
-  paintFocus(); pushDesktop();
+  paintFocus();
 }
 function paintFocus() {
   const chip = $("focusChip"), on = focusLeft > 0;
@@ -151,34 +142,40 @@ $("remOn").addEventListener("change", async () => { await saveRem(); if ($("remO
 $("remTime").addEventListener("change", saveRem);
 $("notifBtn").addEventListener("click", askNotifications);
 $("icsLink").addEventListener("click", async (e) => {
-  if (!window.TutorBackend) return;               // Server-Modus: normaler Download
+  if (!window.TutorBackend && !App.remote.base) return;     // Browser am eigenen Server: normaler Download
   e.preventDefault();
-  const { ics } = await App.api("/api/plan.ics");
+  const ics = window.TutorBackend ? (await App.api("/api/plan.ics")).ics
+    : await (await fetch(App.remote.base + "/api/plan.ics", { headers: App.authHeaders() })).text();
   const file = new File([ics], "lernplan.ics", { type: "text/calendar" });
   try { if (navigator.canShare && navigator.canShare({ files: [file] })) return await navigator.share({ files: [file], title: "Lernplan" }); }
   catch (err) { if (err.name === "AbortError") return; }
   const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = "lernplan.ics"; a.click();
 });
 
-/* ---------------- Einstellungen (iPad-App) ---------------- */
+/* ---------------- Einstellungen (App, PC-App und Server-Betrieb) ---------------- */
 
-if (window.TutorBackend) {
+let settingsReady = false;
+function initSettings(st) {
+  if (settingsReady) return; settingsReady = true;
   $("settingsBtn").hidden = false;
   const N = window.TutorNative;
+  const owner = !!(st && st.owner);
   const nativeState = async () => {
     if (!N || !N.isNative) return;
     $("nativeSettings").hidden = false;
-    const st = await N.shieldStatus();
-    $("sNativeState").textContent = st ? `Fokus-Sperre: ${st.authorized ? "freigegeben" : "nicht freigegeben"}, ${st.hasSelection ? "Apps gewählt" : "keine Apps gewählt"}` : "Fokus-Sperre auf diesem Gerät nicht verfügbar.";
+    const s2 = await N.shieldStatus();
+    $("sNativeState").textContent = s2 ? `Fokus-Sperre: ${s2.authorized ? "freigegeben" : "nicht freigegeben"}, ${s2.hasSelection ? "Apps gewählt" : "keine Apps gewählt"}` : "Fokus-Sperre auf diesem Gerät nicht verfügbar.";
   };
   $("settingsBtn").addEventListener("click", async () => {
     const c = await App.api("/api/settings");
-    $("sHost").value = c.host; $("sModel").value = c.model; $("sLight").value = c.light_model; $("sVision").value = c.vision_model;
+    $("sHost").value = c.host; $("sHost").readOnly = !!c.locked;           // im Server-Betrieb legt der Server Ollama fest
+    $("sModel").value = c.model; $("sLight").value = c.light_model; $("sVision").value = c.vision_model;
     $("sTest").textContent = ""; nativeState();
+    $("pairSettings").hidden = !(D || owner);
     if (D) {
-      const st = await D.getSettings();
+      const d = await D.getSettings();
       $("desktopSettings").hidden = false;
-      $("dApps").value = st.blockedApps.join("\n"); $("dTray").checked = st.trayOnClose; $("dAuto").checked = st.autostart;
+      $("dApps").value = d.blockedApps.join("\n"); $("dTray").checked = d.trayOnClose; $("dAuto").checked = d.autostart;
     }
     $("settingsDlg").showModal();
   });
@@ -187,21 +184,45 @@ if (window.TutorBackend) {
     $("sTest").textContent = "Teste …";
     try {
       await save();
-      const s = await App.api("/api/state");
-      $("sTest").textContent = s.problem ? "⚠ " + s.problem : `✅ verbunden · ${s.models.length} Modelle`;
-      if (!s.problem) App.applyState(s, s.models);
+      const s2 = await App.api("/api/state");
+      $("sTest").textContent = s2.problem ? "⚠ " + s2.problem : `✅ verbunden · ${s2.models.length} Modelle`;
+      if (!s2.problem) App.applyState(s2, s2.models);
     } catch (e) { $("sTest").textContent = "⚠ " + e.message; }
   });
-  if (D) {                                                    // PC-App: Handy per QR-Code verbinden
-    $("phoneBtn").addEventListener("click", async () => {
-      try {
-        const r = await D.phoneStart();
-        $("phoneQr").src = r.qr; $("phoneUrl").textContent = r.url;
-        $("phoneDlg").showModal();
-      } catch (e) { $("sTest").textContent = "⚠ " + e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""); }
-    });
-    $("phoneStop").addEventListener("click", async () => { await D.phoneStop(); $("phoneDlg").close(); App.say("Handy-Zugang beendet."); });
-  }
+  // Weiteres Gerät koppeln: QR-Code mit einmaligem Link (PC-App schaltet dafür den WLAN-Zugang ein)
+  $("phoneBtn").addEventListener("click", async () => {
+    try {
+      let r;
+      if (D) r = await D.phoneStart();
+      else {
+        const p = await App.api("/api/pairing", {});
+        if (!p.urls.length) throw new Error("Der Server ist nur auf diesem PC erreichbar. Mit --host 0.0.0.0 starten.");
+        r = { url: p.urls[0], qr: p.qr, lan: p.lan };
+      }
+      $("phoneQr").src = r.qr || ""; $("phoneQr").hidden = !r.qr;
+      $("phoneUrl").textContent = r.url;
+      $("phoneStop").hidden = !D;
+      $("phoneDlg").showModal();
+    } catch (e) { $("sTest").textContent = "⚠ " + e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""); }
+  });
+  // iPad-App: mit einem Tutor-Server (z. B. dem PC) verbinden statt direkt mit Ollama zu sprechen
+  const connected = !!App.remote.base;
+  $("connectSettings").hidden = !(N && N.isNative);
+  $("cState").textContent = connected ? `Verbunden mit ${App.remote.base}` : "Nicht verbunden – die App spricht direkt mit Ollama.";
+  $("cForm").hidden = connected; $("cDisconnect").hidden = !connected;
+  $("cConnect").addEventListener("click", async () => {
+    const base = $("cServer").value.trim().replace(/\/$/, "");
+    try {
+      if (!/^https?:\/\/[^\s/]+(:\d+)?$/.test(base)) throw new Error("Adresse bitte als http://IP:8780 angeben.");
+      const r = await fetch(base + "/api/pair", { method: "POST", body: JSON.stringify({ code: $("cCode").value.trim() }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Verbindung fehlgeschlagen.");
+      localStorage.setItem("tutor.server", base); localStorage.setItem("tutor.token", j.token);
+      location.reload();
+    } catch (e) { $("cState").textContent = "⚠ " + (e.message === "Failed to fetch" ? "Server nicht erreichbar (selbes WLAN? Adresse/Port richtig?)" : e.message); }
+  });
+  $("cDisconnect").addEventListener("click", () => { localStorage.removeItem("tutor.server"); localStorage.removeItem("tutor.token"); location.reload(); });
+  $("phoneStop").addEventListener("click", async () => { if (D) await D.phoneStop(); $("phoneDlg").close(); App.say("Handy-Zugang beendet."); });
   $("settingsDlg").addEventListener("close", async () => {
     if (D && !$("desktopSettings").hidden) await D.setSettings({ blockedApps: $("dApps").value.split(/[\n,]+/), trayOnClose: $("dTray").checked, autostart: $("dAuto").checked });
     try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });
@@ -211,6 +232,8 @@ if (window.TutorBackend) {
     nativeState();
   });
 }
+App.initSettings = initSettings;
+if (window.TutorBackend) initSettings({});
 
 $("extractTasks").addEventListener("click", async () => {
   const box = $("candidates"); box.textContent = "Lese …";
@@ -255,7 +278,7 @@ async function tick() {
 }
 const minutes = (hm) => +hm.slice(0, 2) * 60 + +hm.slice(3, 5);
 const addMin = (hm, m) => { const t = Math.min(1439, minutes(hm) + m); return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
-setInterval(tick, 30000); setTimeout(tick, 1500);
+setInterval(tick, 10000); setTimeout(tick, 1500);
 
 /* ---------------- Willkommen ---------------- */
 
