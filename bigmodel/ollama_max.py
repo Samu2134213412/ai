@@ -34,21 +34,25 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from stream_backend import LlamaServer, download_llama_server, find_llama_server, is_gguf, ollama_blob, sec_per_token
+
 GB = 1e9
 
 # Ranked best first. Sizes are fallbacks only (download GB at the default
 # quantisation); the real size is read from the registry at run time, and a tag
 # the registry does not know is skipped. kv_32k is a rough estimate of the KV
 # cache in GB for 32K context. Edit freely - the first entry that fits wins.
+# total/active are parameters in billions; active < total marks a MoE model,
+# which is what makes streaming from disk (--mode stream) practical.
 CATALOG: list[dict] = [
-    {"tag": "deepseek-v3.1:671b", "size": 404, "kv_32k": 8, "note": "671B MoE (37B aktiv)"},
-    {"tag": "qwen3:235b", "size": 142, "kv_32k": 6, "note": "235B MoE (22B aktiv)"},
-    {"tag": "gpt-oss:120b", "size": 65, "kv_32k": 3, "note": "117B MoE (5B aktiv)"},
-    {"tag": "qwen3.6:27b", "size": 17, "kv_32k": 4, "note": "27B dense"},
-    {"tag": "qwen3:32b", "size": 20, "kv_32k": 8, "note": "32B dense"},
-    {"tag": "gemma3:27b", "size": 17, "kv_32k": 8, "note": "27B dense"},
-    {"tag": "gpt-oss:20b", "size": 14, "kv_32k": 2, "note": "21B MoE"},
-    {"tag": "qwen3:14b", "size": 9, "kv_32k": 5, "note": "14B dense"},
+    {"tag": "deepseek-v3.1:671b", "size": 404, "kv_32k": 8, "total": 671, "active": 37, "note": "671B MoE (37B aktiv)"},
+    {"tag": "qwen3:235b", "size": 142, "kv_32k": 6, "total": 235, "active": 22, "note": "235B MoE (22B aktiv)"},
+    {"tag": "gpt-oss:120b", "size": 65, "kv_32k": 3, "total": 117, "active": 5.1, "note": "117B MoE (5B aktiv)"},
+    {"tag": "qwen3.6:27b", "size": 17, "kv_32k": 4, "total": 27, "active": 27, "note": "27B dense"},
+    {"tag": "qwen3:32b", "size": 20, "kv_32k": 8, "total": 32, "active": 32, "note": "32B dense"},
+    {"tag": "gemma3:27b", "size": 17, "kv_32k": 8, "total": 27, "active": 27, "note": "27B dense"},
+    {"tag": "gpt-oss:20b", "size": 14, "kv_32k": 2, "total": 21, "active": 3.6, "note": "21B MoE"},
+    {"tag": "qwen3:14b", "size": 9, "kv_32k": 5, "total": 14, "active": 14, "note": "14B dense"},
 ]
 
 REGISTRY = "https://registry.ollama.ai/v2/library"
@@ -149,6 +153,15 @@ class Choice:
     installed: bool
     note: str
     size_source: str
+    spt: float = 0.0  # estimated seconds per token when streaming from disk
+    moe: bool = False
+
+
+def rank(tag: str) -> int:
+    for i, e in enumerate(CATALOG):
+        if e["tag"] == tag:
+            return i
+    return len(CATALOG)
 
 
 def choose(
@@ -174,6 +187,37 @@ def choose(
             continue
         log(f"  + {tag:<22} {size:6.0f} GB  braucht ~{need:.0f} GB von {budget.total:.0f} GB  ({src})")
         return Choice(tag, size, need, is_installed, entry["note"], src)
+    return None
+
+
+def choose_stream(
+    budget: Budget, num_ctx: int, disk_free: float | None,
+    installed: dict[str, float], size_lookup, disk_gb_s: float, max_spt: float, log=print,
+) -> Choice | None:
+    """Best model that fits on disk and streams at <= max_spt seconds per token."""
+    for entry in CATALOG:
+        tag = entry["tag"]
+        if tag in installed:
+            size, src, is_installed = installed[tag], "installiert", True
+        else:
+            size, src = size_lookup(tag, entry["size"])
+            is_installed = False
+            if size is None:
+                log(f"  - {tag:<22} existiert nicht in der Registry, übersprungen")
+                continue
+        if entry["kv_32k"] * num_ctx / 32768 + 3 > budget.vram:
+            log(f"  - {tag:<22} Kontext passt nicht in den VRAM")
+            continue
+        if not is_installed and disk_free is not None and size * 1.02 > disk_free:
+            log(f"  - {tag:<22} {size:6.0f} GB  nur {disk_free:.0f} GB Platte frei")
+            continue
+        spt = sec_per_token(size, entry["total"], entry["active"], budget.total, disk_gb_s)
+        if spt > max_spt:
+            log(f"  - {tag:<22} {size:6.0f} GB  ca. {spt:.1f} s/Token > Limit {max_spt:g} (--max-spt)")
+            continue
+        log(f"  + {tag:<22} {size:6.0f} GB  ca. {spt:.1f} s/Token  ({src})")
+        return Choice(tag, size, required_gb(size, entry["kv_32k"], num_ctx), is_installed,
+                      entry["note"], src, spt, entry["active"] < entry["total"])
     return None
 
 
@@ -245,6 +289,17 @@ class Ollama:
             if name.endswith(":latest"):
                 out[name[: -len(":latest")]] = out[name]
         return out
+
+    def unload_all(self) -> None:
+        """Free the VRAM Ollama holds, so llama-server gets all of it."""
+        try:
+            with self._request("/api/ps") as resp:
+                running = json.load(resp).get("models", [])
+            for m in running:
+                with self._request("/api/generate", {"model": m["name"], "keep_alive": 0}):
+                    pass
+        except (OSError, ValueError, KeyError):
+            pass
 
     def capabilities(self, model: str) -> list[str]:
         try:
@@ -416,22 +471,38 @@ def write_report(path: Path, model: str, question: str, final: str, log: list[tu
 
 # ------------------------------------------------------------------------ main
 
+def confirm(question: str, yes: bool) -> bool:
+    if yes:
+        return True
+    return input(f"{question} [j/N] ").strip().lower() in ("j", "ja", "y", "yes")
+
+
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description="Bestes Ollama-Modell, das in VRAM + RAM passt, mit Qualitäts-Pipeline.")
+    ap = argparse.ArgumentParser(description="Bestes Ollama-Modell für deine Hardware, mit Qualitäts-Pipeline.")
     ap.add_argument("prompt", nargs="*", help="Frage (leer = interaktiv)")
     ap.add_argument("--file", type=Path, help="Frage aus Datei lesen")
     ap.add_argument("--out", type=Path, help="Antwort + Zwischenschritte als Markdown speichern")
     ap.add_argument("--model", help="Modell erzwingen statt automatisch wählen")
-    ap.add_argument("--quality", type=int, choices=[1, 2, 3], default=3,
-                    help="1 = eine Antwort, 2 = Antwort+Kritik+Revision, 3 = mehrere Entwürfe+Synthese+Kritik+Revision (Standard)")
+    ap.add_argument("--mode", choices=["auto", "ram", "stream"], default="auto",
+                    help="ram = nur was in VRAM+RAM passt (Ollama); stream = Modell von der SSD streamen "
+                         "(llama.cpp, mmap); auto = das bessere von beiden (Standard)")
+    ap.add_argument("--gguf", type=Path, help="Eigene GGUF-Datei im Stream-Modus verwenden (statt Ollama-Modell)")
+    ap.add_argument("--quality", type=int, choices=[1, 2, 3],
+                    help="1 = eine Antwort, 2 = Antwort+Kritik+Revision, 3 = mehrere Entwürfe+Synthese+Kritik+Revision "
+                         "(Standard: 3, im Stream-Modus 2)")
     ap.add_argument("--drafts", type=int, default=3, help="Anzahl Entwürfe bei --quality 3 (Standard 3)")
     ap.add_argument("--ctx", type=int, default=32768, help="Kontextfenster in Tokens (Standard 32768)")
     ap.add_argument("--vram", type=float, help="VRAM in GB überschreiben (Standard: nvidia-smi, sonst 24)")
     ap.add_argument("--ram", type=float, help="RAM in GB überschreiben")
     ap.add_argument("--reserve", type=float, help="RAM in GB, der frei bleiben soll (Standard max(6, 12%%))")
+    ap.add_argument("--disk-speed", type=float, default=2.5,
+                    help="Lesegeschwindigkeit der SSD in GB/s für die Zeitschätzung (Standard 2.5 = NVMe)")
+    ap.add_argument("--max-spt", type=float, default=10.0,
+                    help="Stream-Modus: höchstens so viele Sekunden pro Token (Standard 10)")
+    ap.add_argument("--llama-server", help="Pfad zu llama-server (sonst PATH oder automatischer Download)")
     ap.add_argument("--host", default=os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"))
     ap.add_argument("--check", action="store_true", help="Nur Hardware und Modellwahl anzeigen")
-    ap.add_argument("--yes", action="store_true", help="Download ohne Rückfrage")
+    ap.add_argument("--yes", action="store_true", help="Downloads ohne Rückfrage")
     ap.add_argument("--verbose", action="store_true", help="Denken und Zwischenschritte live anzeigen")
     args = ap.parse_args(argv)
 
@@ -452,43 +523,87 @@ def main(argv: list[str] | None = None) -> None:
           f"= {budget.total:.0f} GB für das Modell; Platte frei: "
           f"{'?' if disk is None else f'{disk:.0f} GB'}; Kontext {args.ctx} Tokens")
 
-    if not args.check:
-        api.ensure_running()
-    installed = api.installed() if api.alive() else {}
-
-    if args.model:
-        model = args.model
-        print(f"Modell (vorgegeben): {model}")
-        need_pull = model not in installed
+    gguf: Path | None = None
+    moe = False
+    if args.gguf:
+        if not is_gguf(args.gguf):
+            sys.exit(f"{args.gguf} ist keine GGUF-Datei.")
+        gguf, model, mode, need_pull = args.gguf, args.gguf.name, "stream", False
+        print(f"Eigene GGUF-Datei: {gguf} ({gguf.stat().st_size / GB:.0f} GB)")
     else:
-        print("Kandidaten (beste zuerst):")
-        choice = choose(budget, args.ctx, disk, installed, registry_size_gb)
-        if choice is None:
-            sys.exit("Kein Modell aus der Liste passt. Mehr RAM, kleineres --ctx oder --model angeben.")
-        model = choice.tag
-        on_gpu = min(1.0, vram / choice.need) * 100
-        print(f"\nGewählt: {model} ({choice.note}), ~{choice.size:.0f} GB, "
-              f"etwa {on_gpu:.0f}% auf der GPU, Rest im RAM.")
-        if on_gpu < 100:
-            print("Teile laufen auf der CPU - das ist langsam, aber die Antwortqualität ist dieselbe.")
-        need_pull = not choice.installed
+        if not args.check:
+            api.ensure_running()
+        installed = api.installed() if api.alive() else {}
+
+        if args.model:
+            model = args.model
+            entry = next((e for e in CATALOG if e["tag"] == model), None)
+            size = installed.get(model) or registry_size_gb(model, entry["size"] if entry else 0)[0] or 0
+            fits = size > 0 and required_gb(size, entry["kv_32k"] if entry else 6, args.ctx) <= budget.total
+            mode = args.mode if args.mode != "auto" else ("ram" if fits else "stream")
+            moe = bool(entry and entry["active"] < entry["total"])
+            print(f"Modell (vorgegeben): {model}, ~{size:.0f} GB, Modus {mode}")
+            need_pull = model not in installed
+        else:
+            ram_choice = stream_choice = None
+            if args.mode in ("auto", "ram"):
+                print("\nPasst komplett in VRAM + RAM (schnell, Ollama):")
+                ram_choice = choose(budget, args.ctx, disk, installed, registry_size_gb)
+            if args.mode in ("auto", "stream"):
+                print("\nVon der SSD gestreamt (langsam, llama.cpp):")
+                stream_choice = choose_stream(budget, args.ctx, disk, installed, registry_size_gb,
+                                              args.disk_speed, args.max_spt)
+            if stream_choice and (ram_choice is None or rank(stream_choice.tag) < rank(ram_choice.tag)):
+                choice, mode = stream_choice, "stream"
+            elif ram_choice:
+                choice, mode = ram_choice, "ram"
+            else:
+                sys.exit("Kein Modell aus der Liste passt. Mehr Plattenplatz, --max-spt erhöhen oder --model angeben.")
+            model, moe, need_pull = choice.tag, choice.moe, not choice.installed
+            print(f"\nGewählt: {model} ({choice.note}), ~{choice.size:.0f} GB, Modus {mode}.")
+            if mode == "ram":
+                on_gpu = min(1.0, vram / choice.need) * 100
+                print(f"Etwa {on_gpu:.0f}% auf der GPU, Rest im RAM.")
+            else:
+                print(f"Geschätzt {choice.spt:.1f} s pro Token = {choice.spt * 1000 / 3600:.1f} h pro 1000 Tokens. "
+                      "Denkende Modelle schreiben oft 2000-8000 Tokens pro Schritt.")
+                print("Die SSD liest dabei dauernd - eine NVMe-SSD ist Pflicht, auf einer HDD ist es hoffnungslos.")
+
+    quality = args.quality or (2 if mode == "stream" else 3)
 
     if args.check:
         return
 
     if need_pull:
-        if not args.yes:
-            ans = input(f"{model} ist nicht installiert. Jetzt herunterladen? [j/N] ").strip().lower()
-            if ans not in ("j", "ja", "y", "yes"):
-                sys.exit("Abgebrochen - nichts heruntergeladen.")
+        if not confirm(f"{model} ist nicht installiert. Jetzt herunterladen?", args.yes):
+            sys.exit("Abgebrochen - nichts heruntergeladen.")
         api.pull(model)
 
-    runner = Runner(api, model, args.ctx, args.verbose)
+    backend = api
+    if mode == "stream":
+        exe = find_llama_server(args.llama_server)
+        if exe is None:
+            if not confirm("llama.cpp (llama-server) fehlt. Offizielles Release von GitHub herunterladen?", args.yes):
+                sys.exit("Ohne llama-server kein Stream-Modus. Installieren: https://github.com/ggml-org/llama.cpp/releases "
+                         "oder --llama-server PFAD angeben.")
+            exe = download_llama_server()
+            if exe is None:
+                sys.exit("Download fehlgeschlagen. Bitte manuell installieren und --llama-server angeben.")
+        if gguf is None:
+            gguf = ollama_blob(model, models_dir())
+            if gguf is None or not is_gguf(gguf):
+                sys.exit(f"Modelldatei von {model} nicht gefunden. Mit --gguf PFAD direkt angeben.")
+        if api.alive():
+            api.unload_all()
+        backend = LlamaServer(exe, gguf, args.ctx, moe)
+        backend.start()
+
+    runner = Runner(backend, model, args.ctx, args.verbose)
     print(f"Thinking: {runner.think if runner.think is not None else 'nicht unterstützt'}; "
-          f"Qualitätsstufe {args.quality}. Das erste Laden kann Minuten dauern.\n")
+          f"Qualitätsstufe {quality}. Das erste Laden kann Minuten dauern.\n")
 
     def run_once(question: str, out: Path | None) -> None:
-        final, log = runner.solve(question, args.quality, max(1, args.drafts))
+        final, log = runner.solve(question, quality, max(1, args.drafts))
         if out:
             write_report(out, model, question, final, log)
 

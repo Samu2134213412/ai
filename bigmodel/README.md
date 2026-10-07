@@ -1,4 +1,4 @@
-# ollama_max – das größte Ollama-Modell, das auf deinen PC passt
+# ollama_max – das größte Modell, das dein PC ausführen kann
 
 Ein eigenständiges Programm (nur Python-Standardbibliothek), getrennt von CodePilot.
 Ziel ist die bestmögliche Antwort, die Geschwindigkeit spielt keine Rolle.
@@ -16,22 +16,68 @@ Ziel ist die bestmögliche Antwort, die Geschwindigkeit spielt keine Rolle.
    3 unabhängige Entwürfe mit maximalem „Thinking“ → Synthese der besten Teile
    → harte Selbstkritik → überarbeitete Endantwort.
 
-## Mit 24 GB VRAM entscheidet der RAM
+## Zwei Modi
+
+### `ram`: alles in VRAM + RAM (schnell, Ollama)
 
 | System-RAM | gewähltes Modell (ca.)       |
 |-----------:|------------------------------|
-| 32 GB      | `qwen3.6:27b` (komplett auf der GPU, schnell) |
+| 32 GB      | `qwen3.6:27b`                |
 | 64–96 GB   | `gpt-oss:120b`               |
 | 192 GB+    | `qwen3:235b`                 |
 | 512 GB+    | `deepseek-v3.1:671b`         |
 
-Ein Modell, das größer als VRAM + RAM ist, lädt Ollama gar nicht. Deshalb ist der
-RAM die Grenze und nicht die Geduld.
+### `stream`: größer als der RAM, direkt von der SSD (langsam, llama.cpp)
+
+Ollama lädt kein Modell, das größer ist als VRAM + RAM. Für diesen Fall startet
+das Programm **llama.cpp** mit derselben Modelldatei, die `ollama pull`
+heruntergeladen hat. llama.cpp blendet die Datei per mmap in den Speicher ein:
+
+- Was in die 24 GB passt (Attention, gemeinsame Gewichte, so viele Schichten bzw.
+  Experten wie möglich), liegt auf der GPU.
+- Der Rest bleibt auf der SSD. Das Betriebssystem liest pro Token nur die Teile,
+  die gerade gebraucht werden, und hält die häufig genutzten im RAM.
+
+Das funktioniert nur bei **Mixture-of-Experts-Modellen** gut. DeepSeek V3.1 nutzt pro
+Token nur 37 der 671 Milliarden Parameter, also muss auch nur dieser Teil gelesen
+werden. Ein „dichtes“ Modell braucht dagegen für jedes Token *alle* Gewichte.
+Gestreamt hieße das, pro Token die ganze Datei zu lesen, also Minuten pro Token.
+
+Grobe Schätzung bei 24 GB VRAM, 32 GB RAM und einer NVMe-SSD (2,5 GB/s):
+
+| Modell                | Download | ca. s/Token | 1000 Tokens |
+|-----------------------|---------:|------------:|------------:|
+| `deepseek-v3.1:671b`  | 404 GB   | ~8          | ~2,3 h      |
+| `qwen3:235b`          | 142 GB   | ~4          | ~1 h        |
+
+Denkende Modelle schreiben pro Schritt oft 2000–8000 Tokens. Eine Antwort dauert
+also Stunden bis Tage. Deshalb ist die Qualitätsstufe im Stream-Modus standardmäßig 2
+(eine Antwort, Kritik, Überarbeitung) statt 3.
+
+`--mode auto` (Standard) nimmt das beste Modell aus beiden Listen, das
+schneller als `--max-spt` Sekunden pro Token läuft (Standard 10). Mit
+`--max-spt 30` darf es noch langsamer werden.
+
+**Voraussetzungen:** genug freier Platz auf einer **NVMe-SSD** (bei einer HDD ist es
+hoffnungslos langsam) und `llama-server` aus llama.cpp. Fehlt er, bietet das Programm an,
+das offizielle Release von GitHub herunterzuladen (Windows: CUDA-Build), und legt es in
+`bigmodel/llama.cpp/` ab. Den Pfad kannst du auch mit `--llama-server` angeben. Statt einer
+Ollama-Datei geht auch jede GGUF-Datei mit `--gguf PFAD`, zum Beispiel eine stärker
+komprimierte Version von DeepSeek von Hugging Face.
+
+**Ungetestet:** Mit echter Hardware ist der Stream-Modus noch nicht gelaufen.
+Die Zeiten sind Schätzungen. In der Praxis werden häufig genutzte Experten im
+RAM zwischengespeichert, dann geht es schneller. Unter Windows kann das
+Einlagern der Seiten langsamer sein. Manche Ollama-Modelle (vor allem `gpt-oss`)
+speichert Ollama in einem Format, das llama.cpp nicht lädt. Dann zeigt das
+Programm den Fehler aus dem llama-server-Log; nimm dann `--gguf` mit einer
+Datei von Hugging Face.
 
 ## Benutzung
 
 ```powershell
 python ollama_max.py --check                        # nur anzeigen, was gewählt würde
+python ollama_max.py --mode stream --check          # was mit SSD-Streaming ginge
 python ollama_max.py "Deine Frage"                  # eine Frage
 python ollama_max.py                                # interaktiv
 python ollama_max.py --file frage.txt --out antwort.md   # inkl. aller Zwischenschritte
@@ -45,6 +91,7 @@ Wichtige Optionen:
 - `--drafts N`: Anzahl der Entwürfe bei Stufe 3
 - `--ctx 32768`: Kontextfenster. Mehr Kontext kostet Speicher und kann zu einem kleineren Modell führen.
 - `--model TAG`: ein bestimmtes Modell erzwingen
+- `--mode auto|ram|stream`, `--max-spt`, `--disk-speed`, `--gguf`, `--llama-server`: siehe oben
 - `--verbose`: das Denken des Modells live mitlesen
 - `--vram`, `--ram`, `--reserve`: die erkannte Hardware überschreiben
 

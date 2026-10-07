@@ -94,3 +94,86 @@ def test_pipeline_runs_all_stages(tmp_path, capsys):
     assert "REVIEW" in final and "ANSWER3" in final
     report = out.read_text(encoding="utf-8")
     assert "ANSWER5" in report and "### Kritik" in report
+
+
+# ------------------------------------------------------------- stream mode
+
+import stream_backend as sb
+
+
+def test_stream_with_32gb_ram_picks_deepseek_when_disk_allows():
+    budget = om.make_budget(24, 32)
+    c = om.choose_stream(budget, 32768, 2000, {}, sizes({}), 2.5, 10, log=lambda *_: None)
+    assert c.tag == "deepseek-v3.1:671b" and c.moe and 5 < c.spt < 10
+
+
+def test_stream_speed_limit_and_disk_limit():
+    budget = om.make_budget(24, 32)
+    c = om.choose_stream(budget, 32768, 2000, {}, sizes({}), 2.5, 5, log=lambda *_: None)
+    assert c.tag == "qwen3:235b"
+    c = om.choose_stream(budget, 32768, 300, {}, sizes({}), 2.5, 10, log=lambda *_: None)
+    assert c.tag == "qwen3:235b"
+
+
+def test_sec_per_token_no_disk_reads_when_model_fits():
+    assert sb.sec_per_token(20, 32, 32, 50, 2.5) == 20 / 50
+    # a dense model streamed from disk is far slower than a MoE of the same size
+    assert sb.sec_per_token(400, 400, 400, 50, 2.5) > 10 * sb.sec_per_token(400, 671, 37, 50, 2.5)
+
+
+def test_pick_assets_windows_cuda_with_runtime():
+    assets = [{"name": n} for n in (
+        "llama-b7000-bin-win-cpu-x64.zip", "llama-b7000-bin-win-cuda-12.4-x64.zip",
+        "llama-b7000-bin-win-cuda-13.1-x64.zip", "cudart-llama-bin-win-cuda-12.4-x64.zip",
+        "cudart-llama-bin-win-cuda-13.1-x64.zip", "llama-b7000-bin-ubuntu-vulkan-x64.zip")]
+    names = [a["name"] for a in sb.pick_assets(assets, "Windows", "amd64")]
+    assert names == ["llama-b7000-bin-win-cuda-13.1-x64.zip", "cudart-llama-bin-win-cuda-13.1-x64.zip"]
+    assert [a["name"] for a in sb.pick_assets(assets, "Linux", "x86_64")] == ["llama-b7000-bin-ubuntu-vulkan-x64.zip"]
+
+
+def test_ollama_blob_from_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb.shutil, "which", lambda _: None)
+    blob = tmp_path / "blobs" / "sha256-abc"
+    blob.parent.mkdir()
+    blob.write_bytes(b"GGUF....")
+    man = tmp_path / "manifests" / "registry.ollama.ai" / "library" / "qwen3" / "235b"
+    man.parent.mkdir(parents=True)
+    man.write_text(json.dumps({"layers": [
+        {"mediaType": "application/vnd.ollama.image.template", "digest": "sha256:zzz"},
+        {"mediaType": "application/vnd.ollama.image.model", "digest": "sha256:abc"}]}))
+    assert sb.ollama_blob("qwen3:235b", tmp_path) == blob and sb.is_gguf(blob)
+
+
+def test_llama_command_old_and_new_builds():
+    srv = sb.LlamaServer(sb.Path("llama-server"), sb.Path("m.gguf"), 32768, moe=True)
+    new = srv.command("--fit --cpu-moe --reasoning-format")
+    assert "-ngl" not in new and "--reasoning-format" in new
+    old = srv.command("--cpu-moe")
+    assert old[-3:] == ["-ngl", "999", "--cpu-moe"]
+
+
+class FakeLlama(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for d in ({"reasoning_content": "denk"}, {"content": "Hal"}, {"content": "lo"}):
+            self.wfile.write(f"data: {json.dumps({'choices': [{'delta': d}]})}\n\n".encode())
+        self.wfile.write(b"data: [DONE]\n\n")
+
+
+def test_llama_chat_parses_sse():
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), FakeLlama)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        srv = sb.LlamaServer(sb.Path("x"), sb.Path("m.gguf"), 4096, moe=False, port=httpd.server_port)
+        thinking = []
+        out = srv.chat("m", [{"role": "user", "content": "hi"}], {"temperature": 0.3}, True,
+                       on_thinking=thinking.append)
+    finally:
+        httpd.shutdown()
+    assert out == "Hallo" and thinking == ["denk"]
