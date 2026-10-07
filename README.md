@@ -202,6 +202,7 @@ server/                 FastAPI backend + web dashboard
   tests/                pytest suite, including a live Claude Code test
 mobile/                 Expo / React Native app (Android first)
 docs/                   OLLAMA, REMOTE_ACCESS, SECURITY, VERIFY, ARCHITECTURE
+bigmodel/               standalone: biggest Ollama model that fits VRAM+RAM, quality pipeline
 start.bat / start.sh    one command to start everything
 ```
 
