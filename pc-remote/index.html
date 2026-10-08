@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PC Remote</title>
+<style>
+:root{--bg:#111;--fg:#eee;--card:#222;--acc:#4f8cff;--bad:#e5484d}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui;display:flex;flex-direction:column;height:100dvh}
+nav{display:flex;background:var(--card)}nav button{flex:1;padding:12px 4px;background:none;border:0;color:var(--fg);font-size:14px}
+nav button.on{border-bottom:2px solid var(--acc);color:var(--acc)}
+main{flex:1;display:flex;flex-direction:column;min-height:0;padding:8px;gap:8px}
+section{display:none;flex:1;flex-direction:column;gap:8px;min-height:0}section.on{display:flex}
+#pad{flex:1;background:var(--card);border-radius:12px;touch-action:none}
+.row{display:flex;gap:8px}.row>*{flex:1}
+button.b,input,textarea{background:var(--card);color:var(--fg);border:1px solid #444;border-radius:10px;padding:14px;font-size:16px}
+button.b:active{background:var(--acc)}button.bad{border-color:var(--bad);color:var(--bad)}
+#screen{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+#screen img{max-width:100%;max-height:100%;border-radius:8px}
+#msg{position:fixed;bottom:8px;left:8px;right:8px;text-align:center;font-size:13px;color:#aaa;pointer-events:none}
+pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;margin:0;white-space:pre-wrap}
+</style></head><body>
+<nav id="tabs"></nav>
+<main>
+<section id="t-pad"><div id="pad"></div>
+ <div class="row"><button class="b" data-click="left">Links</button><button class="b" data-click="middle">Mitte</button><button class="b" data-click="right">Rechts</button></div></section>
+<section id="t-kb">
+ <textarea id="txt" rows="3" placeholder="Text eingeben…"></textarea>
+ <div class="row"><button class="b" id="send">Senden</button><button class="b" id="sendEnter">Senden + Enter</button></div>
+ <div class="row" id="keys"></div><div class="row" id="keys2"></div><div class="row" id="keys3"></div></section>
+<section id="t-media"><div class="row" id="media"></div><div class="row" id="apps"></div>
+ <input id="url" placeholder="https://… im PC-Browser öffnen"><button class="b" id="openUrl">Öffnen</button></section>
+<section id="t-screen"><div class="row"><button class="b" id="live">Live: aus</button><button class="b" id="tapmode">Tippen: bewegen</button></div><div id="screen"><img id="img" alt=""></div></section>
+<section id="t-power"><div class="row"><button class="b" data-p="lock">Sperren</button><button class="b" data-p="sleep">Standby</button></div>
+ <div class="row"><button class="b bad" data-p="restart">Neustart</button><button class="b bad" data-p="shutdown">Herunterfahren</button></div>
+ <button class="b" data-p="cancel">Abbrechen (30 s Frist)</button></section>
+<section id="t-sh"><pre id="out"></pre><div class="row"><input id="cmd" placeholder="Befehl"><button class="b" id="run" style="flex:0 0 90px">Los</button></div></section>
+</main><div id="msg"></div>
+<script>
+const $=s=>document.querySelector(s);
+let token=location.hash.slice(1);
+if(token){try{localStorage.tok=token}catch(e){} history.replaceState(null,"",location.pathname)}
+else{try{token=localStorage.tok||""}catch(e){}}
+const msg=t=>{$("#msg").textContent=t;clearTimeout(msg.t);msg.t=setTimeout(()=>$("#msg").textContent="",2500)};
+async function api(a,d={}){
+  try{const r=await fetch("/api/"+a,{method:"POST",headers:{"X-Token":token},body:JSON.stringify(d)});
+    const j=await r.json();if(!r.ok){msg(r.status==401?"Token ungültig – QR/URL vom PC neu öffnen":j.error);return null}return j}
+  catch(e){msg("Keine Verbindung");return null}}
+// tabs
+const T=[["pad","Touchpad"],["kb","Tastatur"],["media","Medien"],["screen","Bild"],["power","Power"]];
+let exec=false;
+fetch("/api/ping",{headers:{"X-Token":token}}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.exec){T.push(["sh","Shell"]);build()}}); 
+let cur="pad";function show(id){cur=id;document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id=="t-"+id));
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==id));if(id!="screen")setLive(false)}
+function build(){$("#tabs").innerHTML="";T.forEach(([id,n])=>{const b=document.createElement("button");b.textContent=n;b.dataset.t=id;b.onclick=()=>show(id);$("#tabs").append(b)});show(cur)}
+build();
+// touchpad: 1 finger move, tap = click, 2 fingers drag = scroll, 2-finger tap = right click
+const pad=$("#pad");let fs={x:0,y:0},acc={x:0,y:0,sx:0,sy:0},last=null,t0=0,moved=0,maxT=0,sending=false;
+async function flush(){if(sending)return;sending=true;
+  while(acc.x||acc.y||acc.sy||acc.sx){const a={...acc};acc={x:0,y:0,sx:0,sy:0};
+    if(a.x||a.y)await api("move",{dx:a.x,dy:a.y});
+    if(a.sy||a.sx)await api("scroll",{dx:a.sx,dy:a.sy})}
+  sending=false}
+const cen=e=>{const t=[...e.touches];return{x:t.reduce((s,p)=>s+p.clientX,0)/t.length,y:t.reduce((s,p)=>s+p.clientY,0)/t.length,n:t.length}};
+pad.addEventListener("touchstart",e=>{e.preventDefault();if(e.touches.length==1){t0=Date.now();moved=0;maxT=1}maxT=Math.max(maxT,e.touches.length);last=cen(e)},{passive:false});
+pad.addEventListener("touchmove",e=>{e.preventDefault();const c=cen(e);if(!last||c.n!=last.n){last=c;return}
+  const dx=c.x-last.x,dy=c.y-last.y;moved+=Math.abs(dx)+Math.abs(dy);last=c;
+  if(c.n==1){const g=1.4+Math.min(Math.hypot(dx,dy)/12,2);acc.x+=dx*g;acc.y+=dy*g}
+  else{fs.y+=-dy/12;fs.x+=dx/12;const iy=Math.trunc(fs.y),ix=Math.trunc(fs.x);fs.y-=iy;fs.x-=ix;acc.sy+=iy;acc.sx+=ix}
+  flush()},{passive:false});
+pad.addEventListener("touchend",e=>{e.preventDefault();
+  if(e.touches.length==0){if(Date.now()-t0<250&&moved<10)api("click",{button:maxT>=2?"right":"left"});last=null}else last=cen(e)},{passive:false});
+document.querySelectorAll("[data-click]").forEach(b=>b.onclick=()=>api("click",{button:b.dataset.click}));
+pad.addEventListener("dblclick",()=>api("click",{double:true}));
+// keyboard
+$("#send").onclick=async()=>{const t=$("#txt").value;if(t&&await api("type",{text:t}))$("#txt").value=""};
+$("#sendEnter").onclick=async()=>{const t=$("#txt").value;if(t)await api("type",{text:t});await api("key",{key:"enter"});$("#txt").value=""};
+const rows=[["#keys",[["Esc","esc"],["Tab","tab"],["⌫","backspace"],["Enter","enter"],["Entf","delete"]]],
+ ["#keys2",[["←","left"],["↑","up"],["↓","down"],["→","right"],["Space","space"]]],
+ ["#keys3",[["Strg+C",["ctrl","c"]],["Strg+V",["ctrl","v"]],["Alt+Tab",["alt","tab"]],["Win",["cmd"]],["Alt+F4",["alt","f4"]]]]];
+rows.forEach(([sel,ks])=>ks.forEach(([n,k])=>{const b=document.createElement("button");b.className="b";b.textContent=n;b.style.padding="12px 2px";
+  b.onclick=()=>Array.isArray(k)?api("hotkey",{keys:k}):api("key",{key:k});$(sel).append(b)}));
+// media
+[["⏮","prev"],["⏯","play_pause"],["⏭","next"],["🔇","mute"],["🔉","vol_down"],["🔊","vol_up"]].forEach(([n,k])=>{
+  const b=document.createElement("button");b.className="b";b.textContent=n;b.style.fontSize="22px";b.onclick=()=>api("media",{name:k});$("#media").append(b)});
+[["F11 Vollbild","f11"],["Leertaste","space"]].forEach(([n,k])=>{const b=document.createElement("button");b.className="b";b.textContent=n;b.onclick=()=>api("key",{key:k});$("#apps").append(b)});
+$("#openUrl").onclick=()=>{const u=$("#url").value.trim();if(u)api("open_url",{url:/^https?:/.test(u)?u:"https://"+u})};
+// screen
+let live=false,tapMove=true;const img=$("#img");
+function setLive(v){live=v;$("#live").textContent="Live: "+(v?"an":"aus");if(v)loop()}
+async function loop(){while(live){try{const r=await fetch("/api/screen?w="+Math.min(innerWidth*devicePixelRatio,1280),{headers:{"X-Token":token}});
+  if(!r.ok){msg("Bild-Fehler");setLive(false);break}const u=URL.createObjectURL(await r.blob());const o=img.src;img.src=u;if(o.startsWith("blob"))URL.revokeObjectURL(o)}catch(e){msg("Keine Verbindung");setLive(false)}
+  await new Promise(r=>setTimeout(r,150))}}
+$("#live").onclick=()=>setLive(!live);
+$("#tapmode").onclick=()=>{tapMove=!tapMove;$("#tapmode").textContent="Tippen: "+(tapMove?"bewegen":"klicken")};
+img.onclick=async e=>{const r=img.getBoundingClientRect();const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
+  await api("move_to",p);if(!tapMove)api("click",{})};
+// power
+document.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+  if(["shutdown","restart","sleep"].includes(b.dataset.p)&&!confirm(b.textContent+"?"))return;api("power",{name:b.dataset.p}).then(j=>j&&msg("OK"))});
+// shell
+$("#run").onclick=async()=>{const c=$("#cmd").value;if(!c)return;const j=await api("run",{cmd:c});if(j){$("#out").textContent+="> "+c+"\n"+j.output+"\n";$("#cmd").value="";$("#out").scrollTop=1e9}};
+</script></body></html>

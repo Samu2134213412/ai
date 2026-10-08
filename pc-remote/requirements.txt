@@ -1,0 +1,4 @@
+pynput>=1.7
+mss>=9
+Pillow>=10
+qrcode>=7  # optional, QR code at startup
