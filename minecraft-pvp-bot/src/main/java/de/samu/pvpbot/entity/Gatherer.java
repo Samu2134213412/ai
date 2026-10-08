@@ -736,8 +736,10 @@ final class Gatherer {
             }
             if (picks == 1 && pick.isDamageableItem() && pick.getDamageValue() > pick.getMaxDamage() * 0.75) {
                 // Worn: the next one now, while there is still a pickaxe to get the stuff with.
-                // (In the nether there is no iron ore: a stone pickaxe from cobble or blackstone.)
-                Item spare = this.inNether() ? Items.STONE_PICKAXE
+                // (In the nether: from the iron it carries if it can; otherwise stone, and with no
+                // stone to hand wood - not off searching the nether for stone, up onto its roof.)
+                Item spare = this.inNether() ? (ingots >= 3 ? Items.IRON_PICKAXE
+                        : kit.count(Res.COBBLE.match) >= 3 ? Items.STONE_PICKAXE : Items.WOODEN_PICKAXE)
                         : pick.is(Items.DIAMOND_PICKAXE) || pick.is(Items.NETHERITE_PICKAXE) ? Items.IRON_PICKAXE
                         : pick.is(Items.GOLDEN_PICKAXE) ? Items.STONE_PICKAXE : pick.getItem();
                 needs.add(0, new Need(spare, "eine Ersatz-Spitzhacke")); // (first: without one nothing else works)
@@ -3514,6 +3516,11 @@ final class Gatherer {
             || st.is(Items.BASALT) || st.is(Items.SOUL_SOIL);
 
     /** Puts a block (cobblestone, netherrack, dirt) into the gap in front of its feet. */
+    /** A block into the gap ahead (from the guard at an edge it cannot get past otherwise). */
+    boolean bridgeOver(ServerLevel level, BlockPos gap) {
+        return this.bridge(level, gap, true);
+    }
+
     private boolean bridge(ServerLevel level, BlockPos gap) {
         return this.bridge(level, gap, true);
     }

@@ -778,11 +778,19 @@ public class PvpBotEntity extends PathfinderMob {
             if (drop >= 3 && this.blockPosition().equals(this.edgeHeldAt)) {
                 this.edgeHeldTicks++;
             } else {
+                // (Bridging on over a wide gap: straight on with the next block.)
+                this.edgeHeldTicks = drop >= 3 && this.tickCount - this.lastEdgeBridge < 60 ? 95 : 0;
                 this.edgeHeldAt = drop >= 3 ? this.blockPosition() : null;
-                this.edgeHeldTicks = 0;
             }
-            boolean harmless = drop < 12 && drop - 3 < this.getHealth() - 8.0F && this.edgeHeldTicks > 60
+            boolean harmless = drop < 16 && drop - 3 < this.getHealth() - 8.0F && this.edgeHeldTicks > 60
                     && this.level().dimension() == net.minecraft.world.level.Level.OVERWORLD; // (deeper: unseen below)
+            if (drop >= 3 && !harmless && this.edgeHeldTicks > 100 && this.edgeHeldTicks % 10 == 0
+                    && (this.gatherer.isAutonomousMode() || this.gatherer.isSpeedrun())) {
+                // Too deep to jump and no other way on: bridge over it, like a player.
+                if (this.gatherer.bridgeOver(level, col.below())) {
+                    this.lastEdgeBridge = this.tickCount;
+                }
+            }
             if (drop >= 3 && !this.plannedDrop(drop) && !harmless) {
                 towardsEdge = true;
                 // Sneaking at the edge: the step over it is not taken.
@@ -815,6 +823,7 @@ public class PvpBotEntity extends PathfinderMob {
 
     private @Nullable BlockPos edgeHeldAt;
     private int edgeHeldTicks;
+    private int lastEdgeBridge = -1000;
 
     /** How far it would fall stepping into this column (99 for lava or the void). */
     private int dropAt(ServerLevel level, BlockPos feet) {
@@ -829,7 +838,7 @@ public class PvpBotEntity extends PathfinderMob {
         }
         int depth = 0;
         BlockPos p = feet.below();
-        while (depth < 12 && level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+        while (depth < 16 && level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
             if (level.getFluidState(p).is(net.minecraft.tags.FluidTags.LAVA)) {
                 return 99;
             }
