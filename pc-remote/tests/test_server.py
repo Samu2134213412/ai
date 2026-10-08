@@ -80,3 +80,11 @@ def test_exec_disabled_by_default(srv):
 def test_screen(srv):
     code, body = call(srv[1], "/api/screen?w=400")
     assert (code, body) == (200, b"jpg")
+
+
+def test_lockout_after_many_failures(srv):
+    be, url = srv
+    for _ in range(20):
+        assert call(url, "/api/ping", token="bad")[0] == 401
+    assert call(url, "/api/ping", token="bad")[0] == 429
+    assert call(url, "/api/ping", token="tok")[0] == 429  # global lockout (tunnel hides IPs)

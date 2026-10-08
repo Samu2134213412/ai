@@ -22,3 +22,8 @@ python wake.py --mac AA:BB:CC:DD:EE:FF
 URL aufs Handy → „PC anschalten“. (Fritz!Box: kann das auch direkt unter Heimnetz → Netzwerk → Gerät → „Computer starten“.)
 Voraussetzungen am PC: LAN-Kabel (WLAN-WoL klappt meist nicht), im BIOS „Wake on LAN/PCIe“ an, Windows: Netzwerkadapter → Energieverwaltung → „Magic Packet“ erlauben, Schnellstart aus. Von unterwegs: Relay + Tailscale auf dem Always-on-Gerät.
 Server nach dem Booten automatisch starten: Windows Aufgabenplanung („Bei Anmeldung“ → `python server.py`).
+
+## Von überall (nicht nur im WLAN)
+**Option A – Tunnel (am einfachsten):** `winget install Cloudflare.cloudflared`, neues Fenster, dann `py server.py --tunnel`. Es erscheint eine öffentliche `https://….trycloudflare.com/#TOKEN`-URL (ändert sich bei jedem Start). Kein Router-Setup nötig. `--allow-exec` dabei **nicht** verwenden.
+**Option B – Tailscale (sicherer, feste Adresse):** Tailscale auf PC und Handy installieren, dann die Tailscale-IP des PCs: `http://100.x.y.z:8765/#TOKEN`. Nicht öffentlich erreichbar.
+Der Token schützt den Zugang; nach 20 Fehlversuchen/Minute wird gesperrt.

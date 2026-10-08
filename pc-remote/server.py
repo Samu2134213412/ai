@@ -11,6 +11,7 @@ import hmac
 import io
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -202,6 +203,7 @@ def load_token():
 
 
 def make_handler(be, token, allow_exec):
+    fails = []
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -217,9 +219,15 @@ def make_handler(be, token, allow_exec):
             self.wfile.write(body)
 
         def _authed(self):
+            now = time.time()
+            fails[:] = [t for t in fails if now - t < 60]
+            if len(fails) >= 20:  # global lockout: tunnel hides client IPs
+                self._send(429, {"error": "too many attempts"})
+                return False
             got = self.headers.get("X-Token", "")
             ok = hmac.compare_digest(got.encode(), token.encode())
             if not ok:
+                fails.append(now)
                 time.sleep(0.5)  # slow down guessing
                 self._send(401, {"error": "unauthorized"})
             return ok
@@ -228,6 +236,8 @@ def make_handler(be, token, allow_exec):
             u = urlparse(self.path)
             if u.path == "/":  # page itself holds no secrets
                 return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if u.path == "/favicon.ico":
+                return self._send(404, b"", "text/plain")
             if not self._authed():
                 return
             if u.path == "/api/screen":
@@ -274,26 +284,54 @@ def lan_ip():
         s.close()
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--allow-exec", action="store_true", help="enable the shell-command tab")
-    ap.add_argument("--reset-token", action="store_true")
-    a = ap.parse_args()
-    if a.reset_token:
-        TOKEN_FILE.unlink(missing_ok=True)
-    token = load_token()
-    srv = ThreadingHTTPServer((a.host, a.port), make_handler(Backend(), token, a.allow_exec))
-    url = f"http://{lan_ip()}:{a.port}/#{token}"
-    print(f"\nPC Remote läuft. Auf dem Handy öffnen (selbes WLAN):\n\n  {url}\n")
+def start_tunnel(port, token):
+    """Public HTTPS URL via Cloudflare quick tunnel (outbound only, no port forwarding)."""
+    import shutil
+    import threading
+    exe = shutil.which("cloudflared")
+    if not exe:
+        sys.exit("cloudflared fehlt: Windows: 'winget install Cloudflare.cloudflared', dann neues Fenster öffnen.")
+    p = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"],
+                         stderr=subprocess.PIPE, text=True)
+
+    def watch():
+        shown = False
+        for line in p.stderr:
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+            if m and not shown:
+                shown = True
+                show(f"{m.group(0)}/#{token}", "Öffentliche URL (von überall, HTTPS)")
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def show(url, title):
+    print(f"\n{title}:\n\n  {url}\n")
     try:
         import qrcode
         q = qrcode.QRCode(border=1)
         q.add_data(url)
         q.print_ascii(invert=True)
     except ImportError:
-        print("(pip install qrcode für einen QR-Code)")
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--allow-exec", action="store_true", help="enable the shell-command tab")
+    ap.add_argument("--tunnel", action="store_true", help="öffentliche HTTPS-URL über Cloudflare Tunnel")
+    ap.add_argument("--reset-token", action="store_true")
+    a = ap.parse_args()
+    if a.reset_token:
+        TOKEN_FILE.unlink(missing_ok=True)
+    token = load_token()
+    srv = ThreadingHTTPServer((a.host, a.port), make_handler(Backend(), token, a.allow_exec))
+    show(f"http://{lan_ip()}:{a.port}/#{token}", "PC Remote läuft. Im selben WLAN öffnen")
+    if a.tunnel:
+        if a.allow_exec:
+            print("WARNUNG: --allow-exec zusammen mit --tunnel macht die Shell öffentlich erreichbar!")
+        start_tunnel(a.port, token)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

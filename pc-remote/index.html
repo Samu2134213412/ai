@@ -9,6 +9,9 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui;display:flex;flex-direction:column;height:100dvh}
 nav{display:flex;background:var(--card)}nav button{flex:1;padding:12px 4px;background:none;border:0;color:var(--fg);font-size:14px}
 nav button.on{border-bottom:2px solid var(--acc);color:var(--acc)}
+#view{flex:0 0 45%;min-height:0;background:#000;display:flex;align-items:center;justify-content:center;position:relative}
+#view img{max-width:100%;max-height:100%}
+#view small{position:absolute;top:4px;right:6px;color:#aaa;font-size:12px;background:#0008;padding:2px 6px;border-radius:6px}
 main{flex:1;display:flex;flex-direction:column;min-height:0;padding:8px;gap:8px}
 section{display:none;flex:1;flex-direction:column;gap:8px;min-height:0}section.on{display:flex}
 #pad{flex:1;background:var(--card);border-radius:12px;touch-action:none}
@@ -20,6 +23,7 @@ button.b:active{background:var(--acc)}button.bad{border-color:var(--bad);color:v
 #msg{position:fixed;bottom:8px;left:8px;right:8px;text-align:center;font-size:13px;color:#aaa;pointer-events:none}
 pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;margin:0;white-space:pre-wrap}
 </style></head><body>
+<div id="view"><img id="img" alt=""><small id="stat">verbinde…</small></div>
 <nav id="tabs"></nav>
 <main>
 <section id="t-pad"><div id="pad"></div>
@@ -30,7 +34,6 @@ pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;ma
  <div class="row" id="keys"></div><div class="row" id="keys2"></div><div class="row" id="keys3"></div></section>
 <section id="t-media"><div class="row" id="media"></div><div class="row" id="apps"></div>
  <input id="url" placeholder="https://… im PC-Browser öffnen"><button class="b" id="openUrl">Öffnen</button></section>
-<section id="t-screen"><div class="row"><button class="b" id="live">Live: aus</button><button class="b" id="tapmode">Tippen: bewegen</button></div><div id="screen"><img id="img" alt=""></div></section>
 <section id="t-power"><div class="row"><button class="b" data-p="lock">Sperren</button><button class="b" data-p="sleep">Standby</button></div>
  <div class="row"><button class="b bad" data-p="restart">Neustart</button><button class="b bad" data-p="shutdown">Herunterfahren</button></div>
  <button class="b" data-p="cancel">Abbrechen (30 s Frist)</button></section>
@@ -47,11 +50,11 @@ async function api(a,d={}){
     const j=await r.json();if(!r.ok){msg(r.status==401?"Token ungültig – QR/URL vom PC neu öffnen":j.error);return null}return j}
   catch(e){msg("Keine Verbindung");return null}}
 // tabs
-const T=[["pad","Touchpad"],["kb","Tastatur"],["media","Medien"],["screen","Bild"],["power","Power"]];
+const T=[["pad","Touchpad"],["kb","Tastatur"],["media","Medien"],["power","Power"]];
 let exec=false;
 fetch("/api/ping",{headers:{"X-Token":token}}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.exec){T.push(["sh","Shell"]);build()}}); 
 let cur="pad";function show(id){cur=id;document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id=="t-"+id));
-  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==id));if(id!="screen")setLive(false)}
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==id));}
 function build(){$("#tabs").innerHTML="";T.forEach(([id,n])=>{const b=document.createElement("button");b.textContent=n;b.dataset.t=id;b.onclick=()=>show(id);$("#tabs").append(b)});show(cur)}
 build();
 // touchpad: 1 finger move, tap = click, 2 fingers drag = scroll, 2-finger tap = right click
@@ -85,16 +88,19 @@ rows.forEach(([sel,ks])=>ks.forEach(([n,k])=>{const b=document.createElement("bu
   const b=document.createElement("button");b.className="b";b.textContent=n;b.style.fontSize="22px";b.onclick=()=>api("media",{name:k});$("#media").append(b)});
 [["F11 Vollbild","f11"],["Leertaste","space"]].forEach(([n,k])=>{const b=document.createElement("button");b.className="b";b.textContent=n;b.onclick=()=>api("key",{key:k});$("#apps").append(b)});
 $("#openUrl").onclick=()=>{const u=$("#url").value.trim();if(u)api("open_url",{url:/^https?:/.test(u)?u:"https://"+u})};
-// screen
-let live=false,tapMove=true;const img=$("#img");
-function setLive(v){live=v;$("#live").textContent="Live: "+(v?"an":"aus");if(v)loop()}
-async function loop(){while(live){try{const r=await fetch("/api/screen?w="+Math.min(innerWidth*devicePixelRatio,1280),{headers:{"X-Token":token}});
-  if(!r.ok){msg("Bild-Fehler");setLive(false);break}const u=URL.createObjectURL(await r.blob());const o=img.src;img.src=u;if(o.startsWith("blob"))URL.revokeObjectURL(o)}catch(e){msg("Keine Verbindung");setLive(false)}
-  await new Promise(r=>setTimeout(r,150))}}
-$("#live").onclick=()=>setLive(!live);
-$("#tapmode").onclick=()=>{tapMove=!tapMove;$("#tapmode").textContent="Tippen: "+(tapMove?"bewegen":"klicken")};
+// screen: always on in the top half; tap = move pointer (long press area = click via 2nd tap)
+const img=$("#img");let lastTap=0;
+async function loop(){let url=null;
+  while(true){
+    if(document.hidden||!token){await new Promise(r=>setTimeout(r,500));continue}
+    try{const r=await fetch("/api/screen?w="+Math.round(Math.min(innerWidth*devicePixelRatio,1280)),{headers:{"X-Token":token}});
+      if(!r.ok){$("#stat").textContent=r.status==401?"Token ungültig":"Bildfehler";await new Promise(r=>setTimeout(r,2000));continue}
+      const u=URL.createObjectURL(await r.blob());img.src=u;if(url)URL.revokeObjectURL(url);url=u;$("#stat").textContent="live"}
+    catch(e){$("#stat").textContent="keine Verbindung";await new Promise(r=>setTimeout(r,2000))}
+    await new Promise(r=>setTimeout(r,120))}}
 img.onclick=async e=>{const r=img.getBoundingClientRect();const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
-  await api("move_to",p);if(!tapMove)api("click",{})};
+  const dbl=Date.now()-lastTap<400;lastTap=Date.now();await api("move_to",p);if(dbl)api("click",{})};
+loop();
 // power
 document.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
   if(["shutdown","restart","sleep"].includes(b.dataset.p)&&!confirm(b.textContent+"?"))return;api("power",{name:b.dataset.p}).then(j=>j&&msg("OK"))});
