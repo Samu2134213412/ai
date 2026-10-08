@@ -59,6 +59,12 @@ class Backend:
     """Talks to the real OS. Tests replace this with a fake."""
 
     def __init__(self):
+        if sys.platform == "win32":  # make pynput + mss use the same physical pixels
+            import ctypes
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
         from pynput.keyboard import Controller as Kb, Key
         from pynput.mouse import Button, Controller as Ms
         self.kb, self.ms, self.Key, self.Button = Kb(), Ms(), Key, Button
@@ -74,12 +80,17 @@ class Backend:
     def move(self, dx, dy):
         self.ms.move(int(dx), int(dy))
 
-    def move_to(self, fx, fy):
+    def monitor_count(self):
         import mss
         with mss.mss() as s:
-            m = s.monitors[1]
-        self.ms.position = (m["left"] + int(fx * m["width"]),
-                            m["top"] + int(fy * m["height"]))
+            return len(s.monitors) - 1
+
+    def move_to(self, fx, fy, mon=0):
+        import mss
+        with mss.mss() as s:
+            m = s.monitors[1 + min(max(int(mon), 0), len(s.monitors) - 2)]
+        self.ms.position = (m["left"] + int(fx * (m["width"] - 1)),
+                            m["top"] + int(fy * (m["height"] - 1)))
 
     def click(self, button, count):
         self.ms.click(getattr(self.Button, button), count)
@@ -107,11 +118,11 @@ class Backend:
     def media(self, name):
         self.kb.tap(getattr(self.Key, MEDIA_KEYS[name]))
 
-    def screenshot(self, width, quality):
+    def screenshot(self, width, quality, mon=0):
         import mss
         from PIL import Image
         with mss.mss() as s:
-            raw = s.grab(s.monitors[1])
+            raw = s.grab(s.monitors[1 + min(max(int(mon), 0), len(s.monitors) - 2)])
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
         if img.width > width:
             img = img.resize((width, round(img.height * width / img.width)))
@@ -144,7 +155,7 @@ def dispatch(be, action, d, allow_exec=False):
     if action == "move":
         be.move(num(d, "dx"), num(d, "dy"))
     elif action == "move_to":
-        be.move_to(num(d, "x", 0, 1), num(d, "y", 0, 1))
+        be.move_to(num(d, "x", 0, 1), num(d, "y", 0, 1), int(d.get("mon", 0)))
     elif action == "click":
         btn = d.get("button", "left")
         if btn not in MOUSE_BUTTONS:
@@ -244,11 +255,13 @@ def make_handler(be, token, allow_exec):
                 q = parse_qs(u.query)
                 w = min(max(int(q.get("w", ["800"])[0]), 200), 1920)
                 try:
-                    return self._send(200, be.screenshot(w, 55), "image/jpeg")
+                    mon = int(q.get("mon", ["0"])[0])
+                    return self._send(200, be.screenshot(w, 55, mon), "image/jpeg")
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
             if u.path == "/api/ping":
-                return self._send(200, {"host": socket.gethostname(), "exec": allow_exec})
+                return self._send(200, {"host": socket.gethostname(), "exec": allow_exec,
+                                             "monitors": be.monitor_count()})
             self._send(404, {"error": "not found"})
 
         def do_POST(self):
@@ -291,16 +304,21 @@ def start_tunnel(port, token):
     exe = shutil.which("cloudflared")
     if not exe:
         sys.exit("cloudflared fehlt: Windows: 'winget install Cloudflare.cloudflared', dann neues Fenster öffnen.")
-    p = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"],
+    p = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--protocol", "http2", "--url", f"http://127.0.0.1:{port}"],
                          stderr=subprocess.PIPE, text=True)
 
     def watch():
         shown = False
+        print("Tunnel wird aufgebaut … (bis ~20 s)")
         for line in p.stderr:
+            if "ERR" in line or "error" in line.lower():
+                print("[cloudflared]", line.strip()[:200])
             m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
             if m and not shown:
                 shown = True
                 show(f"{m.group(0)}/#{token}", "Öffentliche URL (von überall, HTTPS)")
+        if not shown:
+            print("Tunnel beendet, keine URL erhalten. Ausgabe oben prüfen / Internetverbindung?")
     threading.Thread(target=watch, daemon=True).start()
 
 

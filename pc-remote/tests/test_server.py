@@ -88,3 +88,11 @@ def test_lockout_after_many_failures(srv):
         assert call(url, "/api/ping", token="bad")[0] == 401
     assert call(url, "/api/ping", token="bad")[0] == 429
     assert call(url, "/api/ping", token="tok")[0] == 429  # global lockout (tunnel hides IPs)
+
+
+def test_ping_and_monitor_args(srv):
+    be, url = srv
+    assert call(url, "/api/screen?w=400&mon=1")[0] == 200
+    assert call(url, "/api/move_to", {"x": 0.5, "y": 0.5, "mon": 1})[0] == 200
+    assert ("screenshot", (400, 55, 1)) in be.calls
+    assert ("move_to", (0.5, 0.5, 1)) in be.calls

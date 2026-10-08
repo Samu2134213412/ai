@@ -6,26 +6,34 @@
 <style>
 :root{--bg:#111;--fg:#eee;--card:#222;--acc:#4f8cff;--bad:#e5484d}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui;display:flex;flex-direction:column;height:100dvh}
+html,body{margin:0;height:100%;overscroll-behavior:none}
+body{background:var(--bg);color:var(--fg);font:16px system-ui;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+#view{flex:0 0 45%;min-height:0;background:#000;position:relative;touch-action:none;user-select:none;-webkit-user-select:none}
+#img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+.chip{position:absolute;top:6px;background:#000a;color:#ddd;border:1px solid #555;border-radius:14px;padding:5px 10px;font-size:13px;z-index:3}
+#modeBtn{left:6px}#sheetBtn{left:110px;display:none}#stat{right:6px;border:0;pointer-events:none}
+#panel{flex:1;display:flex;flex-direction:column;min-height:0}
 nav{display:flex;background:var(--card)}nav button{flex:1;padding:12px 4px;background:none;border:0;color:var(--fg);font-size:14px}
 nav button.on{border-bottom:2px solid var(--acc);color:var(--acc)}
-#view{flex:0 0 45%;min-height:0;background:#000;display:flex;align-items:center;justify-content:center;position:relative}
-#view img{max-width:100%;max-height:100%}
-#view small{position:absolute;top:4px;right:6px;color:#aaa;font-size:12px;background:#0008;padding:2px 6px;border-radius:6px}
 main{flex:1;display:flex;flex-direction:column;min-height:0;padding:8px;gap:8px}
 section{display:none;flex:1;flex-direction:column;gap:8px;min-height:0}section.on{display:flex}
 #pad{flex:1;background:var(--card);border-radius:12px;touch-action:none}
 .row{display:flex;gap:8px}.row>*{flex:1}
 button.b,input,textarea{background:var(--card);color:var(--fg);border:1px solid #444;border-radius:10px;padding:14px;font-size:16px}
 button.b:active{background:var(--acc)}button.bad{border-color:var(--bad);color:var(--bad)}
-#screen{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
-#screen img{max-width:100%;max-height:100%;border-radius:8px}
-#msg{position:fixed;bottom:8px;left:8px;right:8px;text-align:center;font-size:13px;color:#aaa;pointer-events:none}
+#msg{position:fixed;bottom:8px;left:8px;right:8px;text-align:center;font-size:13px;color:#aaa;pointer-events:none;z-index:9}
+#toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000c;padding:10px 18px;border-radius:12px;font-size:20px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:3}
 pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;margin:0;white-space:pre-wrap}
+/* Touch mode: the phone screen IS the PC screen */
+body.m-touch #view{position:fixed;inset:0;flex:none;z-index:1}
+body.m-touch #panel{position:fixed;left:0;right:0;bottom:0;height:52%;z-index:5;background:var(--bg);display:none;border-top:1px solid #555}
+body.m-touch.sheet #panel{display:flex}
+body.m-touch #sheetBtn{display:block}
 </style></head><body>
-<div id="view"><img id="img" alt=""><small id="stat">verbinde…</small></div>
-<nav id="tabs"></nav>
-<main>
+<div id="view"><img id="img" alt="">
+ <button class="chip" id="modeBtn">Modus: Tasten</button><button class="chip" id="sheetBtn">⌨ Menü</button>
+ <span class="chip" id="stat">verbinde…</span><div id="toast"></div></div>
+<div id="panel"><nav id="tabs"></nav><main>
 <section id="t-pad"><div id="pad"></div>
  <div class="row"><button class="b" data-click="left">Links</button><button class="b" data-click="middle">Mitte</button><button class="b" data-click="right">Rechts</button></div></section>
 <section id="t-kb">
@@ -38,44 +46,101 @@ pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;ma
  <div class="row"><button class="b bad" data-p="restart">Neustart</button><button class="b bad" data-p="shutdown">Herunterfahren</button></div>
  <button class="b" data-p="cancel">Abbrechen (30 s Frist)</button></section>
 <section id="t-sh"><pre id="out"></pre><div class="row"><input id="cmd" placeholder="Befehl"><button class="b" id="run" style="flex:0 0 90px">Los</button></div></section>
-</main><div id="msg"></div>
+</main></div><div id="msg"></div>
 <script>
 const $=s=>document.querySelector(s);
-let token=location.hash.slice(1);
+// ---- all state first (no use-before-init) ----
+let token=location.hash.slice(1),mon=0,monCount=1,cur="pad",mode="keys",lastTap={t:0,x:0,y:0};
+const T=[["pad","Touchpad"],["kb","Tastatur"],["media","Medien"],["power","Power"]];
 if(token){try{localStorage.tok=token}catch(e){} history.replaceState(null,"",location.pathname)}
 else{try{token=localStorage.tok||""}catch(e){}}
+try{mode=localStorage.mode==="touch"?"touch":"keys"}catch(e){}
 const msg=t=>{$("#msg").textContent=t;clearTimeout(msg.t);msg.t=setTimeout(()=>$("#msg").textContent="",2500)};
+function toast(t){const e=$("#toast");e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,900)}
 async function api(a,d={}){
   try{const r=await fetch("/api/"+a,{method:"POST",headers:{"X-Token":token},body:JSON.stringify(d)});
     const j=await r.json();if(!r.ok){msg(r.status==401?"Token ungültig – QR/URL vom PC neu öffnen":j.error);return null}return j}
   catch(e){msg("Keine Verbindung");return null}}
-// tabs
-const T=[["pad","Touchpad"],["kb","Tastatur"],["media","Medien"],["power","Power"]];
-let exec=false;
-fetch("/api/ping",{headers:{"X-Token":token}}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.exec){T.push(["sh","Shell"]);build()}}); 
-let cur="pad";function show(id){cur=id;document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id=="t-"+id));
-  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==id));}
+// ---- tabs ----
+function show(id){cur=id;document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id=="t-"+id));
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==id))}
 function build(){$("#tabs").innerHTML="";T.forEach(([id,n])=>{const b=document.createElement("button");b.textContent=n;b.dataset.t=id;b.onclick=()=>show(id);$("#tabs").append(b)});show(cur)}
+fetch("/api/ping",{headers:{"X-Token":token}}).then(r=>r.ok?r.json():null).then(j=>{if(!j)return;monCount=j.monitors||1;if(j.exec){T.push(["sh","Shell"]);build()}});
 build();
-// touchpad: 1 finger move, tap = click, 2 fingers drag = scroll, 2-finger tap = right click
-const pad=$("#pad");let fs={x:0,y:0},acc={x:0,y:0,sx:0,sy:0},last=null,t0=0,moved=0,maxT=0,sending=false;
-async function flush(){if(sending)return;sending=true;
+// ---- mode ----
+function setMode(m){mode=m;document.body.classList.toggle("m-touch",m==="touch");if(m!=="touch")document.body.classList.remove("sheet");
+  $("#modeBtn").textContent="Modus: "+(m==="touch"?"Touch":"Tasten");try{localStorage.mode=m}catch(e){}}
+$("#modeBtn").onclick=e=>{e.stopPropagation();setMode(mode==="touch"?"keys":"touch")};
+$("#sheetBtn").onclick=e=>{e.stopPropagation();document.body.classList.toggle("sheet");if(document.body.classList.contains("sheet"))show("kb")};
+for(const b of ["#modeBtn","#sheetBtn"])for(const ev of ["touchstart","touchend"])$(b).addEventListener(ev,e=>e.stopPropagation());
+setMode(mode);
+// ---- screen stream (always on); mon is read each frame ----
+const img=$("#img");
+async function loop(){let url=null;
+  while(true){
+    if(document.hidden||!token){await new Promise(r=>setTimeout(r,500));continue}
+    try{const r=await fetch("/api/screen?mon="+mon+"&w="+Math.round(Math.min(innerWidth*devicePixelRatio,1280)),{headers:{"X-Token":token}});
+      if(!r.ok){$("#stat").textContent=r.status==401?"Token ungültig":"Bildfehler";await new Promise(r=>setTimeout(r,2000));continue}
+      const u=URL.createObjectURL(await r.blob());img.src=u;if(url)URL.revokeObjectURL(url);url=u;
+      $("#stat").textContent=(monCount>1?"Monitor "+(mon+1)+"/"+monCount+" · ":"")+"live"}
+    catch(e){$("#stat").textContent="keine Verbindung";await new Promise(r=>setTimeout(r,2000))}
+    await new Promise(r=>setTimeout(r,120))}}
+function switchMon(dir){if(monCount<2){toast("Nur 1 Monitor");return}mon=(mon+dir+monCount)%monCount;toast("Monitor "+(mon+1)+"/"+monCount)}
+// client point -> fraction of the displayed picture (object-fit: contain), null if on the black bars
+function pos(cx,cy){const r=img.getBoundingClientRect(),nw=img.naturalWidth,nh=img.naturalHeight;if(!nw)return null;
+  const sc=Math.min(r.width/nw,r.height/nh),w=nw*sc,h=nh*sc,l=r.left+(r.width-w)/2,t=r.top+(r.height-h)/2;
+  const x=(cx-l)/w,y=(cy-t)/h;return x<0||x>1||y<0||y>1?null:{x,y}}
+const at=(p,extra={})=>api("move_to",{x:p.x,y:p.y,mon,...extra});
+// ---- gestures on the screen view ----
+// Touch mode (like Android): tap=left click, long press=right click, double tap=double click,
+//   tap+hold+move=drag, swipe up/down=scroll. Both modes: swipe left/right=switch monitor.
+// Keys mode: tap=move pointer, double tap=click.
+const view=$("#view");let g=null,scrollAcc=0,sending=false;
+view.addEventListener("touchstart",e=>{e.preventDefault();if(e.touches.length>1){g=null;return}
+  const t=e.touches[0],now=Date.now();
+  g={x0:t.clientX,y0:t.clientY,x:t.clientX,y:t.clientY,t0:now,moved:false,axis:null,scrolled:false,long:false,drag:false,
+     second:mode==="touch"&&now-lastTap.t<300&&Math.hypot(t.clientX-lastTap.x,t.clientY-lastTap.y)<40};
+  if(mode==="touch"&&!g.second)g.timer=setTimeout(async()=>{if(!g||g.moved)return;const p=pos(g.x0,g.y0);if(!p)return;
+    g.long=true;if(navigator.vibrate)navigator.vibrate(30);await at(p);api("click",{button:"right"})},500)},{passive:false});
+view.addEventListener("touchmove",e=>{e.preventDefault();if(!g||e.touches.length>1)return;const t=e.touches[0];
+  const dx=t.clientX-g.x,dy=t.clientY-g.y;g.x=t.clientX;g.y=t.clientY;
+  const tx=g.x-g.x0,ty=g.y-g.y0;
+  if(!g.moved&&Math.hypot(tx,ty)<12)return;
+  if(!g.moved){g.moved=true;clearTimeout(g.timer);
+    if(g.second){g.drag=true;g.busy=true;const p=pos(g.x0,g.y0);if(p)at(p).then(()=>api("press",{button:"left",down:true})).finally(()=>g.busy=false);else g.busy=false}
+    else g.axis=Math.abs(tx)>Math.abs(ty)*1.5?"h":"v"}
+  if(g.drag){const p=pos(g.x,g.y);if(p&&!g.busy){g.busy=true;at(p).finally(()=>g.busy=false)}return}
+  if(mode==="touch"&&g.axis==="v"){g.scrolled=true;scrollAcc+=dy/14;const n=Math.trunc(scrollAcc);scrollAcc-=n;
+    if(n&&!sending){sending=true;api("scroll",{dx:0,dy:n}).finally(()=>sending=false)}}},{passive:false});
+view.addEventListener("touchend",e=>{e.preventDefault();if(!g||e.touches.length)return;const h=g;g=null;clearTimeout(h.timer);
+  if(h.drag){api("press",{button:"left",down:false});return}
+  if(h.long||h.scrolled)return;
+  const tx=h.x-h.x0;
+  if(h.moved){if(h.axis==="h"&&Math.abs(tx)>50)switchMon(tx<0?1:-1);return}
+  if(Date.now()-h.t0>500)return;
+  const p=pos(h.x0,h.y0);if(!p)return;
+  if(mode==="touch"){at(p,{}).then(()=>api("click",{}));lastTap={t:h.second?0:Date.now(),x:h.x0,y:h.y0}}
+  else{const dbl=Date.now()-lastTap.t<400;lastTap={t:Date.now(),x:h.x0,y:h.y0};at(p).then(()=>dbl&&api("click",{}))}},{passive:false});
+view.addEventListener("touchcancel",()=>{if(g){clearTimeout(g.timer);if(g.drag)api("press",{button:"left",down:false})}g=null});
+loop();
+// ---- touchpad tab ----
+const pad=$("#pad");let acc={x:0,y:0,sx:0,sy:0},fs={x:0,y:0},last=null,t0=0,moved=0,maxT=0,sendingPad=false;
+async function flush(){if(sendingPad)return;sendingPad=true;
   while(acc.x||acc.y||acc.sy||acc.sx){const a={...acc};acc={x:0,y:0,sx:0,sy:0};
     if(a.x||a.y)await api("move",{dx:a.x,dy:a.y});
     if(a.sy||a.sx)await api("scroll",{dx:a.sx,dy:a.sy})}
-  sending=false}
+  sendingPad=false}
 const cen=e=>{const t=[...e.touches];return{x:t.reduce((s,p)=>s+p.clientX,0)/t.length,y:t.reduce((s,p)=>s+p.clientY,0)/t.length,n:t.length}};
 pad.addEventListener("touchstart",e=>{e.preventDefault();if(e.touches.length==1){t0=Date.now();moved=0;maxT=1}maxT=Math.max(maxT,e.touches.length);last=cen(e)},{passive:false});
 pad.addEventListener("touchmove",e=>{e.preventDefault();const c=cen(e);if(!last||c.n!=last.n){last=c;return}
   const dx=c.x-last.x,dy=c.y-last.y;moved+=Math.abs(dx)+Math.abs(dy);last=c;
   if(c.n==1){const g=1.4+Math.min(Math.hypot(dx,dy)/12,2);acc.x+=dx*g;acc.y+=dy*g}
-  else{fs.y+=-dy/12;fs.x+=dx/12;const iy=Math.trunc(fs.y),ix=Math.trunc(fs.x);fs.y-=iy;fs.x-=ix;acc.sy+=iy;acc.sx+=ix}
+  else{fs.y+=dy/12;fs.x+=dx/12;const iy=Math.trunc(fs.y),ix=Math.trunc(fs.x);fs.y-=iy;fs.x-=ix;acc.sy+=iy;acc.sx+=ix}
   flush()},{passive:false});
 pad.addEventListener("touchend",e=>{e.preventDefault();
   if(e.touches.length==0){if(Date.now()-t0<250&&moved<10)api("click",{button:maxT>=2?"right":"left"});last=null}else last=cen(e)},{passive:false});
 document.querySelectorAll("[data-click]").forEach(b=>b.onclick=()=>api("click",{button:b.dataset.click}));
-pad.addEventListener("dblclick",()=>api("click",{double:true}));
-// keyboard
+// ---- keyboard ----
 $("#send").onclick=async()=>{const t=$("#txt").value;if(t&&await api("type",{text:t}))$("#txt").value=""};
 $("#sendEnter").onclick=async()=>{const t=$("#txt").value;if(t)await api("type",{text:t});await api("key",{key:"enter"});$("#txt").value=""};
 const rows=[["#keys",[["Esc","esc"],["Tab","tab"],["⌫","backspace"],["Enter","enter"],["Entf","delete"]]],
@@ -83,27 +148,12 @@ const rows=[["#keys",[["Esc","esc"],["Tab","tab"],["⌫","backspace"],["Enter","
  ["#keys3",[["Strg+C",["ctrl","c"]],["Strg+V",["ctrl","v"]],["Alt+Tab",["alt","tab"]],["Win",["cmd"]],["Alt+F4",["alt","f4"]]]]];
 rows.forEach(([sel,ks])=>ks.forEach(([n,k])=>{const b=document.createElement("button");b.className="b";b.textContent=n;b.style.padding="12px 2px";
   b.onclick=()=>Array.isArray(k)?api("hotkey",{keys:k}):api("key",{key:k});$(sel).append(b)}));
-// media
+// ---- media / power / shell ----
 [["⏮","prev"],["⏯","play_pause"],["⏭","next"],["🔇","mute"],["🔉","vol_down"],["🔊","vol_up"]].forEach(([n,k])=>{
   const b=document.createElement("button");b.className="b";b.textContent=n;b.style.fontSize="22px";b.onclick=()=>api("media",{name:k});$("#media").append(b)});
 [["F11 Vollbild","f11"],["Leertaste","space"]].forEach(([n,k])=>{const b=document.createElement("button");b.className="b";b.textContent=n;b.onclick=()=>api("key",{key:k});$("#apps").append(b)});
 $("#openUrl").onclick=()=>{const u=$("#url").value.trim();if(u)api("open_url",{url:/^https?:/.test(u)?u:"https://"+u})};
-// screen: always on in the top half; tap = move pointer (long press area = click via 2nd tap)
-const img=$("#img");let lastTap=0;
-async function loop(){let url=null;
-  while(true){
-    if(document.hidden||!token){await new Promise(r=>setTimeout(r,500));continue}
-    try{const r=await fetch("/api/screen?w="+Math.round(Math.min(innerWidth*devicePixelRatio,1280)),{headers:{"X-Token":token}});
-      if(!r.ok){$("#stat").textContent=r.status==401?"Token ungültig":"Bildfehler";await new Promise(r=>setTimeout(r,2000));continue}
-      const u=URL.createObjectURL(await r.blob());img.src=u;if(url)URL.revokeObjectURL(url);url=u;$("#stat").textContent="live"}
-    catch(e){$("#stat").textContent="keine Verbindung";await new Promise(r=>setTimeout(r,2000))}
-    await new Promise(r=>setTimeout(r,120))}}
-img.onclick=async e=>{const r=img.getBoundingClientRect();const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
-  const dbl=Date.now()-lastTap<400;lastTap=Date.now();await api("move_to",p);if(dbl)api("click",{})};
-loop();
-// power
 document.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
   if(["shutdown","restart","sleep"].includes(b.dataset.p)&&!confirm(b.textContent+"?"))return;api("power",{name:b.dataset.p}).then(j=>j&&msg("OK"))});
-// shell
 $("#run").onclick=async()=>{const c=$("#cmd").value;if(!c)return;const j=await api("run",{cmd:c});if(j){$("#out").textContent+="> "+c+"\n"+j.output+"\n";$("#cmd").value="";$("#out").scrollTop=1e9}};
 </script></body></html>

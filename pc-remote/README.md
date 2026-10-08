@@ -1,6 +1,9 @@
 # PC Remote
 
-PC vom Handy-Browser steuern: Touchpad, Tastatur, Medien/Lautstärke, Live-Bildschirm (antippen = Maus), Sperren/Standby/Herunterfahren. Optional Shell.
+PC vom Handy-Browser steuern. Oben immer der Live-Bildschirm, **Wischen links/rechts wechselt den Monitor**. Button oben links schaltet den Modus:
+- **Tasten:** Bild oben, unten Touchpad/Tastatur/Medien/Power. Tippen aufs Bild = Maus dorthin, Doppeltippen = Klick.
+- **Touch:** Das Handy-Display *ist* der PC-Bildschirm, wie Android-Steuerung: Tippen = Linksklick, Doppeltippen = Doppelklick, lang drücken = Rechtsklick, hoch/runter wischen = scrollen, Tippen + sofort halten & ziehen = Ziehen. „⌨ Menü“ öffnet die Tasten-Leiste.
+Optional Shell-Tab (`--allow-exec`).
 
 ```
 pip install -r requirements.txt
