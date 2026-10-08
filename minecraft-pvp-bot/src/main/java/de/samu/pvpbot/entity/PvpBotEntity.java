@@ -751,8 +751,27 @@ public class PvpBotEntity extends PathfinderMob {
      * nothing to do it stays a step away from such edges.
      */
     private void guardLedge(ServerLevel level) {
-        if (!this.onGround() || this.isFallFlying() || this.isInWater()) {
+        if (this.isFallFlying() || this.isInWater() || !this.onGround() && this.fallDistance > 1.0) {
             this.setSneaking(false);
+            return;
+        }
+        if (!this.onGround()) {
+            if (!this.gatherer.isAutonomousMode() && !this.gatherer.isSpeedrun() || this.mode != Mode.GROUND && this.mode != Mode.IDLE) {
+                return; // (fight moves - mace leaps, elytra - steer through the air on purpose)
+            }
+            // Mid-jump (jumping up at something, hopping about): no sideways drift off the ledge either.
+            Vec3 v = this.getDeltaMovement();
+            Vec3 dir = new Vec3(v.x, 0.0, v.z);
+            if (dir.lengthSqr() > 1.0E-4) {
+                Vec3 ahead = this.position().add(dir.normalize().scale(0.8));
+                BlockPos col = BlockPos.containing(ahead.x, this.getY() - 0.5, ahead.z).above();
+                BlockPos below = BlockPos.containing(this.getX(), this.getY() - 0.5, this.getZ());
+                int drop = this.dropAt(level, col);
+                if (drop >= 4 && !col.equals(below.above()) && !this.plannedDrop(drop)
+                        && this.dropAt(level, below.above()) < drop) {
+                    this.setDeltaMovement(0.0, v.y, 0.0);
+                }
+            }
             return;
         }
         boolean edgeNear = false;

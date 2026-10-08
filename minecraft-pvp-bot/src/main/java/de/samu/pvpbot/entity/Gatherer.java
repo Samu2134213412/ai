@@ -4831,6 +4831,13 @@ final class Gatherer {
         if (caged && h < 8.0) {
             // Right at the cage: break the bars between it and the crystal, then climb down and
             // shoot from further away (the crystal's blast would kill it this close).
+            if (this.busyBreaking() && this.breaking != null && level.getBlockState(this.breaking).is(Blocks.IRON_BARS)
+                    && this.bot.getEyePosition().distanceTo(Vec3.atCenterOf(this.breaking)) < 5.0) {
+                // One bar at a time until it is gone (not a new one with every hop - none ever broke).
+                this.poleStall = 0;
+                this.breakBlock(level, this.breaking);
+                return;
+            }
             if (this.bot.getEyeY() < crystal.getY() - 0.5) { // (the bars reach up two blocks: breakable from here)
                 this.pillarUp(level);
                 return;
