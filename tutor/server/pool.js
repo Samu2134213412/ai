@@ -47,7 +47,7 @@ function readBody(req, limit = MAX_BODY) {
 
 function createPool(opts) {
   const { key, ollama = "http://127.0.0.1:11434", maxJobs = 1, port = POOL_PORT, announceMs = 5000,
-    bind = "0.0.0.0", broadcast = "255.255.255.255", udp = true, clock = Date.now, fetchImpl = fetch, onChange } = opts;
+    queueMs = 90000, bind = "0.0.0.0", broadcast = "255.255.255.255", udp = true, clock = Date.now, fetchImpl = fetch, onChange } = opts;
   if (!validKey(key)) throw new Error("Klassencode zu kurz (mindestens 8 Zeichen).");
   const id = opts.id || crypto.randomBytes(6).toString("hex");
   const jobsMax = Math.max(1, Math.min(4, parseInt(maxJobs, 10) || 1));
@@ -71,7 +71,11 @@ function createPool(opts) {
   }
   const contributing = () => localModels.length > 0;
   const live = () => [...peers.values()].filter((p) => clock() - p.seen < PEER_TTL);
-  const changed = () => { if (onChange) onChange(info()); };
+  const changed = () => {
+    if (onChange) onChange(info());
+    if (sock) announce().catch(() => {});            // freie Plätze sofort melden, damit Wartende nicht bis zum nächsten Takt hängen
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* ---------- Rundruf ---------- */
 
@@ -147,26 +151,29 @@ function createPool(opts) {
     if (req.method !== "POST" || path !== "/api/chat") return send(res, 404, { error: "Nicht unterstützt" });
     let body;
     try { body = cleanChat(JSON.parse(await readBody(req))); } catch (e) { return send(res, 400, { error: e.message }); }
-    const order = candidates(body.model);
-    if (!order.length) {
-      const exists = allModels().includes(fullName(body.model));
-      return send(res, exists ? 503 : 404, { error: exists ? "Alle Geräte im Pool sind gerade besetzt – gleich nochmal versuchen." : `model '${body.model}' not found` });
-    }
     const ctl = new AbortController();
     res.on("close", () => ctl.abort());
+    let order = candidates(body.model);
+    const until = clock() + queueMs;                            // Warteschlange: nacheinander, sobald ein Gerät frei ist
+    while (!order.length && allModels().includes(fullName(body.model)) && clock() < until && !ctl.signal.aborted) { await sleep(200); order = candidates(body.model); }
+    if (ctl.signal.aborted) return res.end();
+    if (!order.length) {
+      const exists = allModels().includes(fullName(body.model));
+      return send(res, exists ? 503 : 404, { error: exists ? "Alle Geräte im Pool sind lange besetzt – bitte gleich nochmal versuchen." : `model '${body.model}' not found` });
+    }
     for (const c of order) {
       try {
         let r;
         if (c.self) { active++; changed(); r = await fetchImpl(base + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal }); }
-        else r = await fetchImpl(`http://${c.peer.host}:${c.peer.port}/pool/chat`, { method: "POST", signal: ctl.signal,
-          headers: { "Content-Type": "application/json", ...signHeaders("/pool/chat") }, body: JSON.stringify(body) });
+        else { c.peer.active++; r = await fetchImpl(`http://${c.peer.host}:${c.peer.port}/pool/chat`, { method: "POST", signal: ctl.signal,
+          headers: { "Content-Type": "application/json", ...signHeaders("/pool/chat") }, body: JSON.stringify(body) }); }
         try {
           if (!c.self && (r.status === 429 || r.status === 403 || r.status >= 500)) { c.peer.active = c.peer.max; continue; }   // nächster Kandidat
           if (!c.self) stats.used++;
           res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/x-ndjson" });
           if (r.body) for await (const chunk of r.body) res.write(chunk);
           return res.end();
-        } finally { if (c.self) { active--; changed(); } }
+        } finally { if (c.self) { active--; changed(); } else c.peer.active = Math.max(0, c.peer.active - 1); }
       } catch (e) {
         if (ctl.signal.aborted) return res.end();
         if (!c.self) peers.delete(c.peer.id);                   // nicht erreichbar → raus, nächster Kandidat

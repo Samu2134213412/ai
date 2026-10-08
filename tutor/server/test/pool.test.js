@@ -55,8 +55,9 @@ test("besetztes Gerät wird umgangen, sonst gleichmäßig verteilt", async () =>
   const [r1, r2] = await Promise.all([ask(a, "m:1"), ask(a, "m:1")]);
   assert.deepEqual([r1.text.includes("von a"), r2.text.includes("von b")].sort(), [true, true].sort());
   assert.notEqual(r1.text.match(/von \w/)[0], r2.text.match(/von \w/)[0]);
-  const r3 = await Promise.all([ask(a, "m:1"), ask(a, "m:1"), ask(a, "m:1")]);
-  assert.ok(r3.some((r) => r.status === 503), "dritte gleichzeitige Anfrage: alle besetzt");
+  const r3 = await Promise.all([ask(a, "m:1"), ask(a, "m:1"), ask(a, "m:1")]);   // dritte wartet, bis ein Gerät frei ist
+  assert.deepEqual(r3.map((r) => r.status), [200, 200, 200]);
+  assert.equal(a.fo.calls.length + b.fo.calls.length, 5);
   await a.stop(); await b.stop();
 });
 
@@ -96,4 +97,14 @@ test("unbekanntes Modell: 404 wie bei Ollama", async () => {
   const r = await ask(a, "gibtsnicht:1b");
   assert.equal(r.status, 404);
   await a.stop();
+});
+
+test("Wartezeit zu lang: freundliche 503 statt Hängen", async () => {
+  const fo = await fakeOllama(["m:1"], { delay: 400 });
+  const pool = createPool({ key: KEY, ollama: fo.url, udp: false, queueMs: 100 });
+  await pool.start();
+  const n = { pool };
+  const [a, b] = await Promise.all([ask(n, "m:1"), new Promise((r) => setTimeout(r, 50)).then(() => ask(n, "m:1"))]);
+  assert.deepEqual([a.status, b.status], [200, 503]);
+  await pool.stop(); fo.s.close(); fo.s.closeAllConnections();
 });
