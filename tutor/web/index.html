@@ -137,6 +137,11 @@
     <label class="row2"><input type="checkbox" id="dAutoFocus"> Fokus automatisch (Ablenkungen fernhalten)</label>
     <label class="row2"><input type="checkbox" id="dAutoOverlay"> Leiste automatisch einblenden</label>
     <label class="row2"><input type="checkbox" id="dWatch"> Ablenkungs-Blick: Bildschirm alle <input type="number" id="dWatchMin" min="1" max="30" value="3" style="width:64px"> Min. prüfen (nur bei Fokus und 👀 in der Leiste)</label>
+    <h4>Klassen-Pool</h4>
+    <label class="row2"><input type="checkbox" id="dPool"> Rechenleistung teilen: dieses Gerät hilft anderen mit demselben Klassencode – und nutzt deren Leistung mit</label>
+    <label class="hint">Klassencode (mind. 8 Zeichen, nur die Klasse kennt ihn)<input id="dPoolKey" autocomplete="off" style="width:100%"></label>
+    <label class="hint">Gleichzeitige Anfragen für andere <input type="number" id="dPoolJobs" min="1" max="4" value="1" style="width:64px"></label>
+    <p class="hint" id="dPoolInfo">Die Fragen der anderen laufen als Text auf diesem Gerät mit – ihre Namen und Verläufe bleiben auf ihren Geräten. Änderungen gelten nach Neustart der App. Nur im Schul-WLAN verwenden.</p>
     <p class="hint">Die App läuft dafür im Tray weiter, auch wenn nur GoodNotes offen ist („Beim Anmelden starten“ empfohlen). Geprüft wird lokal mit deinem Ollama; es wird nichts gespeichert.</p>
     <div class="actions left"><button type="button" id="overlayBtn">🪄 GoodNotes-Leiste ein/aus (Strg+Alt+T)</button></div>
   </div>

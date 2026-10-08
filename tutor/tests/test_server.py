@@ -13,7 +13,7 @@ WEB = ROOT / "web"
 @unittest.skipUnless(shutil.which("node"), "node nicht installiert")
 class ServerSuite(unittest.TestCase):
     def test_node_suite(self):
-        r = subprocess.run(["node", "--test", "--test-timeout=30000", str(ROOT / "server" / "test" / "server.test.js")],
+        r = subprocess.run(["node", "--test", "--test-timeout=30000", str(ROOT / "server" / "test" / "server.test.js"), str(ROOT / "server" / "test" / "pool.test.js")],
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-1000:])
 

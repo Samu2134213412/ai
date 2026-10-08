@@ -46,10 +46,10 @@ test("Wächter: Unix nutzt pkill -x mit exaktem Namen; Fehler beim Beenden brich
 test("Config: speichert validiert und lädt wieder", () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "cfg-")), "s", "settings.json");
   const c = createConfig(file);
-  assert.deepStrictEqual(c.get(), { blockedApps: [], autostart: false, trayOnClose: true, overlay: false, autoFocus: false, autoOverlay: false, autoMinutes: 120, watchScreen: false, watchMinutes: 3 });
+  assert.deepStrictEqual(c.get(), { blockedApps: [], autostart: false, trayOnClose: true, overlay: false, autoFocus: false, autoOverlay: false, autoMinutes: 120, watchScreen: false, watchMinutes: 3, pool: false, poolKey: "", poolJobs: 1 });
   c.set({ blockedApps: "Discord.exe, explorer, ../x", autostart: 1, trayOnClose: false, overlay: 1, evil: "ignoriert" });
   const again = createConfig(file).get();
-  assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false, overlay: true, autoFocus: false, autoOverlay: false, autoMinutes: 120, watchScreen: false, watchMinutes: 3 });
+  assert.deepStrictEqual(again, { blockedApps: ["discord"], autostart: true, trayOnClose: false, overlay: true, autoFocus: false, autoOverlay: false, autoMinutes: 120, watchScreen: false, watchMinutes: 3, pool: false, poolKey: "", poolJobs: 1 });
   assert.strictEqual(c.set(null).autostart, true);
 });
 
@@ -104,4 +104,15 @@ test("Automatik: Verlängern vor Ablauf; manuelles Beenden wird respektiert", as
   y.advance(30); y.setActive(false); await y.auto.keepAlive();                                   // Lernender beendet den Fokus
   assert.strictEqual(y.auto.focusOn, false); y.advance(3600); await y.auto.keepAlive();
   assert.deepStrictEqual(y.calls, []);                                                           // und nichts startet ihn wieder
+});
+
+test("Pool-Einstellungen: ohne gültigen Klassencode bleibt der Pool aus", () => {
+  const f = require("node:path").join(require("node:os").tmpdir(), "pool-cfg-" + Date.now() + ".json");
+  const { createConfig } = require("../lib/config.js");
+  const c = createConfig(f);
+  assert.equal(c.get().pool, false);
+  assert.equal(c.set({ pool: true, poolKey: "kurz" }).pool, false);
+  const on = c.set({ pool: true, poolKey: "klasse-7b-geheim", poolJobs: 9 });
+  assert.equal(on.pool, true);
+  assert.equal(on.poolJobs, 4);
 });

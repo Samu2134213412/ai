@@ -177,6 +177,8 @@ function initSettings(st) {
       $("desktopSettings").hidden = false;
       $("dApps").value = d.blockedApps.join("\n"); $("dTray").checked = d.trayOnClose; $("dAuto").checked = d.autostart; $("dOverlay").checked = d.overlay;
       $("dAutoFocus").checked = d.autoFocus; $("dAutoOverlay").checked = d.autoOverlay; $("dWatch").checked = d.watchScreen; $("dWatchMin").value = d.watchMinutes;
+      $("dPool").checked = d.pool; $("dPoolKey").value = d.poolKey; $("dPoolJobs").value = d.poolJobs;
+      D.poolStatus().then((st) => { if (st && st.running) $("dPoolInfo").textContent = `Pool läuft: ${st.peers.length} weiteres Gerät(e) gefunden · ${st.served} Anfragen für andere bearbeitet · ${st.used} von anderen genutzt. Änderungen gelten nach Neustart der App.`; });
     }
     $("settingsDlg").showModal();
   });
@@ -227,7 +229,8 @@ function initSettings(st) {
   $("phoneStop").addEventListener("click", async () => { if (D) await D.phoneStop(); $("phoneDlg").close(); App.say("Handy-Zugang beendet."); });
   $("settingsDlg").addEventListener("close", async () => {
     if (D && !$("desktopSettings").hidden) await D.setSettings({ blockedApps: $("dApps").value.split(/[\n,]+/), trayOnClose: $("dTray").checked, autostart: $("dAuto").checked, overlay: $("dOverlay").checked,
-      autoFocus: $("dAutoFocus").checked, autoOverlay: $("dAutoOverlay").checked, watchScreen: $("dWatch").checked, watchMinutes: +$("dWatchMin").value || 3 });
+      autoFocus: $("dAutoFocus").checked, autoOverlay: $("dAutoOverlay").checked, watchScreen: $("dWatch").checked, watchMinutes: +$("dWatchMin").value || 3,
+      pool: $("dPool").checked, poolKey: $("dPoolKey").value, poolJobs: +$("dPoolJobs").value || 1 });
     try { await save(); App.applyState(await App.api("/api/state")); } catch (e) { /* Test zeigt Fehler */ } });
   $("sNotif").addEventListener("click", async () => { await askNotifications(); $("sNativeState").textContent = $("notifState").textContent; });
   $("sShield").addEventListener("click", async () => {

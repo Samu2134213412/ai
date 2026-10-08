@@ -40,3 +40,14 @@ mit eigenem Verlauf an. (Die PC-App benutzt denselben Server und hat dafür den 
 | `GET /api/me` | wer bin ich (Besitzer?) |
 
 Tests: `node --test server/test/server.test.js` (Kopplung, Streaming, getrennte Verläufe, Neustart, Fokus-API, CORS).
+
+
+## Klassen-Pool (kein eigener Server nötig)
+
+Jedes Gerät mit Tutor-App und Ollama kann seine Rechenleistung der Klasse zur Verfügung stellen und nutzt dafür die der anderen mit.
+
+- **Einschalten:** PC-App → ⚙︎ → „Klassen-Pool“ → Klassencode eintragen (mind. 8 Zeichen, bei allen gleich) → App neu starten. Ohne App: `node server/index.js --pool <code>`.
+- **Funktionsweise:** Alle paar Sekunden ruft jedes Gerät per UDP (Port 8767) seine Modelle aus, signiert mit dem Klassencode. Jede Anfrage läuft komplett auf *einem* Gerät: dem freien, das das Modell hat. Fällt eines aus oder ist besetzt, nimmt das nächste sie.
+- **Geben und Nehmen:** Der Pool nimmt nur Anfragen von Geräten an, die selbst beitragen (selbst Ollama mit Modell haben und mitrufen). Pro Gerät laufen höchstens 1–4 fremde Anfragen gleichzeitig.
+- **Sicherheit:** Nur `/api/tags` und `/api/chat`, signiert (HMAC mit Klassencode, 60 s gültig), nur erlaubte Felder, kein Zugriff auf Verlauf oder Aufgaben der anderen. Die Fragetexte laufen im Klartext (HTTP) durchs Schulnetz und werden auf dem fremden Gerät verarbeitet. Nur im vertrauten Schul-WLAN nutzen, Code nicht weitergeben. Der Router/das WLAN muss Rundrufe zwischen Geräten erlauben (nicht bei „Client-Isolation“).
+- **Grenzen:** Das teilt Arbeit auf, es macht kein großes Modell aus vielen schwachen Geräten (ein 32b-Modell braucht weiter ein starkes Gerät mit viel Speicher). Handy und iPad tragen nichts bei, sie nutzen den Pool über einen PC mit der App.

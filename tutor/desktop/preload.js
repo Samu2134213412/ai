@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("TutorDesktop", {
   phoneStart: () => ipcRenderer.invoke("phone:start"),
   phoneStop: () => ipcRenderer.invoke("phone:stop"),
   phoneStatus: () => ipcRenderer.invoke("phone:status"),
+  poolStatus: () => ipcRenderer.invoke("pool:status"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (partial) => ipcRenderer.invoke("settings:set", partial),
 });

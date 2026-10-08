@@ -12,10 +12,12 @@ const { createTutorServer } = require("./server/server.js");
 const { createGuard, parseProcessList } = require("./lib/guard.js");
 const { createWatcher, createAuto } = require("./lib/watch.js");
 const { createConfig } = require("./lib/config.js");
+const { createPool } = require("./server/pool.js");
 
 const WANT_PORT = Number(process.env.TUTOR_PORT) || 8765;
 const LAN_PORT = Number(process.env.TUTOR_PHONE_PORT) || 8766;
 let overlay = null;
+let pool = null;
 let win = null, tray = null, quitting = false, origin = "", srv = null, config = null, chosenSource = null;
 const run = (cmd, args) => new Promise((resolve, reject) =>
   execFile(cmd, args, { windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (e, out) => (e ? reject(e) : resolve(out))));
@@ -164,6 +166,7 @@ function setupIpc() {
   });
   ipcMain.handle("phone:stop", async (e) => { if (fromOurPage(e)) await srv.disableLan(); return true; });
   ipcMain.handle("phone:status", (e) => (fromOurPage(e) ? { running: srv.lanEnabled } : null));
+  ipcMain.handle("pool:status", (e) => (fromOurPage(e) ? { running: !!pool, ...(pool ? pool.info() : {}) } : null));
   ipcMain.handle("settings:get", (e) => (fromOurPage(e) ? config.get() : null));
   ipcMain.handle("settings:set", (e, partial) => {
     if (!fromOurPage(e)) return null;
@@ -214,8 +217,16 @@ function startWatching() {
 app.whenReady().then(async () => {
   const dataDir = path.join(app.getPath("userData"), "server");
   config = createConfig(path.join(app.getPath("userData"), "settings.json"));
-  srv = createTutorServer({ wwwDir: path.join(__dirname, "www"), dataDir, host: "127.0.0.1", port: WANT_PORT,
-    ollama: process.env.TUTOR_OLLAMA || "http://127.0.0.1:11434" });
+  const localOllama = process.env.TUTOR_OLLAMA || "http://127.0.0.1:11434";
+  let ollamaUrl = localOllama;
+  const c0 = config.get();
+  if (c0.pool) {                      // Klassen-Pool: Anfragen laufen über den lokalen Verteiler (siehe server/pool.js)
+    try {
+      pool = createPool({ key: c0.poolKey, ollama: localOllama, maxJobs: c0.poolJobs });
+      ollamaUrl = (await pool.start()).proxyUrl;
+    } catch (e) { console.error("Pool nicht gestartet:", e.message); pool = null; }
+  }
+  srv = createTutorServer({ wwwDir: path.join(__dirname, "www"), dataDir, host: "127.0.0.1", port: WANT_PORT, ollama: ollamaUrl });
   let started;
   try { started = await srv.start(); } catch (e) { if (e.code !== "EADDRINUSE") throw e; started = await srv.start({ port: 0 }); }
   origin = `http://127.0.0.1:${started.port}`;
@@ -230,4 +241,4 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => { quitting = true; });
 app.on("window-all-closed", () => { if (quitting || process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (win) showWindow(); });
-app.on("will-quit", () => { globalShortcut.unregisterAll(); if (srv) srv.stop(); });
+app.on("will-quit", () => { globalShortcut.unregisterAll(); if (srv) srv.stop(); if (pool) pool.stop(); });
