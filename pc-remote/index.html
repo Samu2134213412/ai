@@ -9,14 +9,24 @@
 html,body{margin:0;height:100%;overscroll-behavior:none}
 body{background:var(--bg);color:var(--fg);font:16px system-ui;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 #view{flex:0 0 45%;min-height:0;background:#000;position:relative;touch-action:none;user-select:none;-webkit-user-select:none}
-#img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
-.chip{position:absolute;top:6px;background:#000a;color:#ddd;border:1px solid #555;border-radius:14px;padding:5px 10px;font-size:13px;z-index:3}
-#modeBtn{left:6px}#sheetBtn{left:110px;display:none}#stat{right:6px;border:0;pointer-events:none}
+#img{transform-origin:0 0;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+#fab{position:absolute;left:0;top:6px;width:34px;height:48px;border:0;border-radius:0 14px 14px 0;background:#000a;color:#ddd;font-size:20px;z-index:4;opacity:.55}
+#menu{position:absolute;left:40px;top:6px;max-height:calc(100% - 12px);overflow-y:auto;background:#000d;border:1px solid #555;border-radius:12px;padding:8px;display:none;flex-direction:column;gap:6px;z-index:6;min-width:170px}
+#menu.on{display:flex}#menu button{background:#222;color:#eee;border:1px solid #444;border-radius:8px;padding:10px;font-size:15px;text-align:left}
+#cur{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2;display:none}
+#cur svg{position:absolute;left:-3px;top:-2px;width:26px;height:26px;overflow:visible;filter:drop-shadow(0 0 5px #4f8cff) drop-shadow(0 0 12px #2f6bff) drop-shadow(0 0 22px #2f6bff);animation:glow 1.6s ease-in-out infinite}
+#cur i{position:absolute;left:-22px;top:-22px;width:44px;height:44px;border-radius:50%;background:radial-gradient(circle,#6fa3ffaa 0%,#4f8cff44 40%,transparent 70%);animation:halo 1.6s ease-in-out infinite}
+#cur b{position:absolute;left:-30px;top:-30px;width:60px;height:60px;border-radius:50%;border:3px solid #7db0ff;opacity:0}
+#cur b.go{animation:rip .5s ease-out}
+@keyframes glow{50%{filter:drop-shadow(0 0 8px #7db0ff) drop-shadow(0 0 20px #4f8cff) drop-shadow(0 0 34px #2f6bff)}}
+@keyframes halo{50%{transform:scale(1.25);opacity:.75}}
+@keyframes rip{from{transform:scale(.3);opacity:1}to{transform:scale(1.4);opacity:0}}
+#stat{font-size:12px;color:#aaa;padding:2px 4px}
 #panel{flex:1;display:flex;flex-direction:column;min-height:0}
 nav{display:flex;background:var(--card)}nav button{flex:1;padding:12px 4px;background:none;border:0;color:var(--fg);font-size:14px}
 nav button.on{border-bottom:2px solid var(--acc);color:var(--acc)}
 main{flex:1;display:flex;flex-direction:column;min-height:0;padding:8px;gap:8px}
-section{display:none;flex:1;flex-direction:column;gap:8px;min-height:0}section.on{display:flex}
+section{display:none;flex:1;flex-direction:column;gap:8px;min-height:0;overflow-y:auto}section.on{display:flex}
 #pad{flex:1;background:var(--card);border-radius:12px;touch-action:none}
 .row{display:flex;gap:8px}.row>*{flex:1}
 button.b,input,textarea{background:var(--card);color:var(--fg);border:1px solid #444;border-radius:10px;padding:14px;font-size:16px}
@@ -28,18 +38,24 @@ pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;ma
 body.m-touch #view{position:fixed;inset:0;flex:none;z-index:1}
 body.m-touch #panel{position:fixed;left:0;right:0;bottom:0;height:52%;z-index:5;background:var(--bg);display:none;border-top:1px solid #555}
 body.m-touch.sheet #panel{display:flex}
-body.m-touch #sheetBtn{display:block}
 </style></head><body>
 <div id="view"><img id="img" alt="">
- <button class="chip" id="modeBtn">Modus: Tasten</button><button class="chip" id="sheetBtn">⌨ Menü</button>
- <span class="chip" id="stat">verbinde…</span><div id="toast"></div></div>
+ <button id="fab">☰</button>
+ <div id="menu"><span id="stat">verbinde…</span>
+  <button id="modeBtn">Modus: Tasten</button><button id="sheetBtn">⌨ Tastatur-Menü</button>
+  <button id="zin">🔍 Zoom +</button><button id="zout">🔍 Zoom −</button><button id="zreset">Zoom 1×</button>
+  <button id="fs">⛶ Vollbild</button></div>
+ <div id="cur"><i></i><b id="rip"></b><svg viewBox="0 0 24 24"><path d="M3 2 L3 19 L8 14.5 L11.5 22 L14.5 20.7 L11 13.2 L18 13 Z" fill="#4f8cff" stroke="#e8f1ff" stroke-width="1.6" stroke-linejoin="round"/></svg></div><div id="toast"></div></div>
 <div id="panel"><nav id="tabs"></nav><main>
 <section id="t-pad"><div id="pad"></div>
  <div class="row"><button class="b" data-click="left">Links</button><button class="b" data-click="middle">Mitte</button><button class="b" data-click="right">Rechts</button></div></section>
 <section id="t-kb">
  <textarea id="txt" rows="3" placeholder="Text eingeben…"></textarea>
  <div class="row"><button class="b" id="send">Senden</button><button class="b" id="sendEnter">Senden + Enter</button></div>
- <div class="row" id="keys"></div><div class="row" id="keys2"></div><div class="row" id="keys3"></div></section>
+ <div class="row" id="mods"></div>
+ <div class="row" id="keys"></div><div class="row" id="keys2"></div><div class="row" id="keys3"></div><div class="row" id="keys4"></div>
+ <div class="row" id="keys5" style="overflow-x:auto;flex:none"></div>
+ <div class="row"><input id="ckey" placeholder="Taste (z.B. a, f5, tab)" style="flex:2"><button class="b" id="cSend">Mit Mod. senden</button></div></section>
 <section id="t-media"><div class="row" id="media"></div><div class="row" id="apps"></div>
  <input id="url" placeholder="https://… im PC-Browser öffnen"><button class="b" id="openUrl">Öffnen</button></section>
 <section id="t-power"><div class="row"><button class="b" data-p="lock">Sperren</button><button class="b" data-p="sleep">Standby</button></div>
@@ -50,7 +66,7 @@ body.m-touch #sheetBtn{display:block}
 <script>
 const $=s=>document.querySelector(s);
 // ---- all state first (no use-before-init) ----
-let token=location.hash.slice(1),mon=0,monCount=1,cur="pad",mode="keys",lastTap={t:0,x:0,y:0};
+let token=location.hash.slice(1),mon=0,monCount=1,cur="pad",mode="keys",lastTap={t:0,x:0,y:0},R={x0:0,y0:0,w:1},shown={x0:0,y0:0,w:1},mods=new Set(),ptr=null;
 const T=[["pad","Touchpad"],["kb","Tastatur"],["media","Medien"],["power","Power"]];
 if(token){try{localStorage.tok=token}catch(e){} history.replaceState(null,"",location.pathname)}
 else{try{token=localStorage.tok||""}catch(e){}}
@@ -69,40 +85,74 @@ fetch("/api/ping",{headers:{"X-Token":token}}).then(r=>r.ok?r.json():null).then(
 build();
 // ---- mode ----
 function setMode(m){mode=m;document.body.classList.toggle("m-touch",m==="touch");if(m!=="touch")document.body.classList.remove("sheet");
-  $("#modeBtn").textContent="Modus: "+(m==="touch"?"Touch":"Tasten");try{localStorage.mode=m}catch(e){}}
-$("#modeBtn").onclick=e=>{e.stopPropagation();setMode(mode==="touch"?"keys":"touch")};
-$("#sheetBtn").onclick=e=>{e.stopPropagation();document.body.classList.toggle("sheet");if(document.body.classList.contains("sheet"))show("kb")};
-for(const b of ["#modeBtn","#sheetBtn"])for(const ev of ["touchstart","touchend"])$(b).addEventListener(ev,e=>e.stopPropagation());
+  $("#modeBtn").textContent="Modus: "+(m==="touch"?"Touch":"Tasten");$("#sheetBtn").style.display=m==="touch"?"block":"none";try{localStorage.mode=m}catch(e){}}
+const menu=$("#menu"),closeMenu=()=>menu.classList.remove("on");
+$("#fab").onclick=e=>{e.stopPropagation();menu.classList.toggle("on")};
+$("#modeBtn").onclick=()=>{setMode(mode==="touch"?"keys":"touch");closeMenu()};
+$("#sheetBtn").onclick=()=>{document.body.classList.toggle("sheet");if(document.body.classList.contains("sheet"))show("kb");closeMenu()};
+$("#zin").onclick=()=>zoomBy(1.5);$("#zout").onclick=()=>zoomBy(1/1.5);$("#zreset").onclick=()=>{R={x0:0,y0:0,w:1};closeMenu()};
+$("#fs").onclick=()=>{closeMenu();const d=document,el=d.documentElement;
+  if(d.fullscreenElement){d.exitFullscreen();return}
+  if(el.requestFullscreen)el.requestFullscreen().catch(()=>toast("Vollbild nicht möglich"));
+  else toast("iPhone: Teilen → Zum Home-Bildschirm")};
+for(const b of ["#fab","#menu"])for(const ev of ["touchstart","touchend","touchmove"])$(b).addEventListener(ev,e=>e.stopPropagation(),{passive:true});
 setMode(mode);
-// ---- screen stream (always on); mon is read each frame ----
-const img=$("#img");
+// ---- screen stream (always on); monitor + zoom region are read for every frame ----
+const img=$("#img"),view=$("#view");
+const setStat=t=>{$("#stat").textContent=t;if(!/live$/.test(t))toast(t)};
+function pic(){const r=view.getBoundingClientRect(),nw=img.naturalWidth||1,nh=img.naturalHeight||1;
+  const sc=Math.min(r.width/nw,r.height/nh),w=nw*sc,h=nh*sc;return{l:r.left+(r.width-w)/2,t:r.top+(r.height-h)/2,w,h,r}}
+function preview(){drawCur(); // show the last frame already moved/scaled to the wanted region until the sharp one arrives
+  if(!img.naturalWidth)return;const P=pic(),k=shown.w/R.w,le=P.l-P.r.left,te=P.t-P.r.top;
+  const tx=le+P.w*(shown.x0-R.x0)/R.w-k*le,ty=te+P.h*(shown.y0-R.y0)/R.w-k*te;
+  img.style.transform=(Math.abs(k-1)<1e-6&&Math.abs(tx)<.5&&Math.abs(ty)<.5)?"":`translate(${tx}px,${ty}px) scale(${k})`}
+function clampR(){R.w=Math.min(1,Math.max(1/8,R.w));R.x0=Math.min(1-R.w,Math.max(0,R.x0));R.y0=Math.min(1-R.w,Math.max(0,R.y0));preview()}
+function zoomBy(f){const cx=R.x0+R.w/2,cy=R.y0+R.w/2;R.w/=f;R.x0=cx-R.w/2;R.y0=cy-R.w/2;clampR()}
 async function loop(){let url=null;
   while(true){
     if(document.hidden||!token){await new Promise(r=>setTimeout(r,500));continue}
-    try{const r=await fetch("/api/screen?mon="+mon+"&w="+Math.round(Math.min(innerWidth*devicePixelRatio,1280)),{headers:{"X-Token":token}});
-      if(!r.ok){$("#stat").textContent=r.status==401?"Token ungültig":"Bildfehler";await new Promise(r=>setTimeout(r,2000));continue}
-      const u=URL.createObjectURL(await r.blob());img.src=u;if(url)URL.revokeObjectURL(url);url=u;
-      $("#stat").textContent=(monCount>1?"Monitor "+(mon+1)+"/"+monCount+" · ":"")+"live"}
-    catch(e){$("#stat").textContent="keine Verbindung";await new Promise(r=>setTimeout(r,2000))}
-    await new Promise(r=>setTimeout(r,120))}}
-function switchMon(dir){if(monCount<2){toast("Nur 1 Monitor");return}mon=(mon+dir+monCount)%monCount;toast("Monitor "+(mon+1)+"/"+monCount)}
-// client point -> fraction of the displayed picture (object-fit: contain), null if on the black bars
-function pos(cx,cy){const r=img.getBoundingClientRect(),nw=img.naturalWidth,nh=img.naturalHeight;if(!nw)return null;
-  const sc=Math.min(r.width/nw,r.height/nh),w=nw*sc,h=nh*sc,l=r.left+(r.width-w)/2,t=r.top+(r.height-h)/2;
-  const x=(cx-l)/w,y=(cy-t)/h;return x<0||x>1||y<0||y>1?null:{x,y}}
-const at=(p,extra={})=>api("move_to",{x:p.x,y:p.y,mon,...extra});
+    const req={...R};
+    try{const q=`mon=${mon}&w=${Math.round(Math.min(innerWidth*devicePixelRatio,1280))}`+(req.w<1?`&x=${req.x0}&y=${req.y0}&z=${req.w}`:"");
+      const r=await fetch("/api/screen?"+q,{headers:{"X-Token":token}});
+      if(!r.ok){setStat(r.status==401?"Token ungültig":"Bildfehler");await new Promise(r=>setTimeout(r,2000));continue}
+      const ph=r.headers.get("X-Pointer");if(ph){const [m,x,y]=ph.split(",").map(Number);ptr={mon:m,x,y}}
+      const blob=await r.blob(),u=URL.createObjectURL(blob);
+      await new Promise(res=>{img.onload=img.onerror=res;img.src=u});
+      if(url)URL.revokeObjectURL(url);url=u;shown=req;preview();drawCur();
+      setStat((monCount>1?"Monitor "+(mon+1)+"/"+monCount+" · ":"")+(R.w<1?(1/R.w).toFixed(1)+"× · ":"")+"live")}
+    catch(e){setStat("keine Verbindung");await new Promise(r=>setTimeout(r,2000))}
+    await new Promise(r=>setTimeout(r,100))}}
+function switchMon(dir){if(monCount<2){toast("Nur 1 Monitor");return}mon=(mon+dir+monCount)%monCount;R={x0:0,y0:0,w:1};toast("Monitor "+(mon+1)+"/"+monCount)}
+// client point -> PC-screen fraction (respects zoom region), null on the black bars
+function pos(cx,cy){if(!img.naturalWidth)return null;const P=pic(),fx=(cx-P.l)/P.w,fy=(cy-P.t)/P.h;
+  return fx<0||fx>1||fy<0||fy>1?null:{x:R.x0+fx*R.w,y:R.y0+fy*R.w}}
+function drawCur(){const c=$("#cur");if(!ptr||ptr.mon!==mon||!img.naturalWidth){c.style.display="none";return}
+  const P=pic(),fx=(ptr.x-R.x0)/R.w,fy=(ptr.y-R.y0)/R.w;
+  if(fx<-.02||fx>1.02||fy<-.02||fy>1.02){c.style.display="none";return}
+  c.style.display="block";c.style.transform=`translate(${P.l-P.r.left+fx*P.w}px,${P.t-P.r.top+fy*P.h}px)`}
+function ripple(){const r=$("#rip");r.classList.remove("go");void r.offsetWidth;r.classList.add("go")}
+const at=(p,extra={})=>{ptr={mon,x:p.x,y:p.y};drawCur();return api("move_to",{x:p.x,y:p.y,mon,...extra}).then(r=>{if(extra.button||("click" in extra))ripple();return r})};
 // ---- gestures on the screen view ----
+// 2 fingers: pinch = zoom, drag = pan (both modes).
 // Touch mode (like Android): tap=left click, long press=right click, double tap=double click,
-//   tap+hold+move=drag, swipe up/down=scroll. Both modes: swipe left/right=switch monitor.
-// Keys mode: tap=move pointer, double tap=click.
-const view=$("#view");let g=null,scrollAcc=0,sending=false;
-view.addEventListener("touchstart",e=>{e.preventDefault();if(e.touches.length>1){g=null;return}
+//   tap+hold+move=drag, swipe up/down=scroll. Both modes: swipe left/right=switch monitor (not while zoomed).
+// Keys mode: tap=move pointer, double tap=click; while zoomed one finger pans.
+let g=null,pz=null,ignore=false,scrollAcc=0,sending=false;
+const pinchOf=e=>{const a=e.touches[0],b=e.touches[1];return{d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)||1,cx:(a.clientX+b.clientX)/2,cy:(a.clientY+b.clientY)/2}};
+function cancelOne(){if(g){clearTimeout(g.timer);if(g.drag)api("press",{button:"left",down:false});g=null}}
+view.addEventListener("touchstart",e=>{e.preventDefault();closeMenu();
+  if(e.touches.length>=2){cancelOne();pz=pinchOf(e);return}
+  if(ignore)return;
   const t=e.touches[0],now=Date.now();
-  g={x0:t.clientX,y0:t.clientY,x:t.clientX,y:t.clientY,t0:now,moved:false,axis:null,scrolled:false,long:false,drag:false,
+  g={x0:t.clientX,y0:t.clientY,x:t.clientX,y:t.clientY,t0:now,moved:false,axis:null,scrolled:false,long:false,drag:false,panned:false,
      second:mode==="touch"&&now-lastTap.t<300&&Math.hypot(t.clientX-lastTap.x,t.clientY-lastTap.y)<40};
   if(mode==="touch"&&!g.second)g.timer=setTimeout(async()=>{if(!g||g.moved)return;const p=pos(g.x0,g.y0);if(!p)return;
-    g.long=true;if(navigator.vibrate)navigator.vibrate(30);await at(p);api("click",{button:"right"})},500)},{passive:false});
-view.addEventListener("touchmove",e=>{e.preventDefault();if(!g||e.touches.length>1)return;const t=e.touches[0];
+    g.long=true;if(navigator.vibrate)navigator.vibrate(30);await at(p);ripple();api("click",{button:"right"})},500)},{passive:false});
+view.addEventListener("touchmove",e=>{e.preventDefault();
+  if(pz&&e.touches.length>=2){const c=pinchOf(e),P=pic();
+    const fxp=(pz.cx-P.l)/P.w,fyp=(pz.cy-P.t)/P.h,px=R.x0+fxp*R.w,py=R.y0+fyp*R.w;
+    R.w/=c.d/pz.d;R.x0=px-((c.cx-P.l)/P.w)*R.w;R.y0=py-((c.cy-P.t)/P.h)*R.w;clampR();pz=c;return}
+  if(ignore||!g||e.touches.length>1)return;const t=e.touches[0];
   const dx=t.clientX-g.x,dy=t.clientY-g.y;g.x=t.clientX;g.y=t.clientY;
   const tx=g.x-g.x0,ty=g.y-g.y0;
   if(!g.moved&&Math.hypot(tx,ty)<12)return;
@@ -110,18 +160,23 @@ view.addEventListener("touchmove",e=>{e.preventDefault();if(!g||e.touches.length
     if(g.second){g.drag=true;g.busy=true;const p=pos(g.x0,g.y0);if(p)at(p).then(()=>api("press",{button:"left",down:true})).finally(()=>g.busy=false);else g.busy=false}
     else g.axis=Math.abs(tx)>Math.abs(ty)*1.5?"h":"v"}
   if(g.drag){const p=pos(g.x,g.y);if(p&&!g.busy){g.busy=true;at(p).finally(()=>g.busy=false)}return}
+  if(mode==="keys"&&R.w<0.98){const P=pic();R.x0-=dx/P.w*R.w;R.y0-=dy/P.h*R.w;g.panned=true;clampR();return}
   if(mode==="touch"&&g.axis==="v"){g.scrolled=true;scrollAcc+=dy/14;const n=Math.trunc(scrollAcc);scrollAcc-=n;
     if(n&&!sending){sending=true;api("scroll",{dx:0,dy:n}).finally(()=>sending=false)}}},{passive:false});
-view.addEventListener("touchend",e=>{e.preventDefault();if(!g||e.touches.length)return;const h=g;g=null;clearTimeout(h.timer);
+view.addEventListener("touchend",e=>{e.preventDefault();
+  if(e.touches.length===0)ignore=false;
+  if(pz){if(e.touches.length<2){pz=null;ignore=e.touches.length>0}return}
+  if(!g||e.touches.length)return;const h=g;g=null;clearTimeout(h.timer);
   if(h.drag){api("press",{button:"left",down:false});return}
-  if(h.long||h.scrolled)return;
+  if(h.long||h.scrolled||h.panned)return;
   const tx=h.x-h.x0;
-  if(h.moved){if(h.axis==="h"&&Math.abs(tx)>50)switchMon(tx<0?1:-1);return}
+  if(h.moved){if(h.axis==="h"&&Math.abs(tx)>50&&R.w>0.98)switchMon(tx<0?1:-1);return}
   if(Date.now()-h.t0>500)return;
   const p=pos(h.x0,h.y0);if(!p)return;
-  if(mode==="touch"){at(p,{}).then(()=>api("click",{}));lastTap={t:h.second?0:Date.now(),x:h.x0,y:h.y0}}
-  else{const dbl=Date.now()-lastTap.t<400;lastTap={t:Date.now(),x:h.x0,y:h.y0};at(p).then(()=>dbl&&api("click",{}))}},{passive:false});
-view.addEventListener("touchcancel",()=>{if(g){clearTimeout(g.timer);if(g.drag)api("press",{button:"left",down:false})}g=null});
+  if(mode==="touch"){at(p,{}).then(()=>{ripple();api("click",{})});lastTap={t:h.second?0:Date.now(),x:h.x0,y:h.y0}}
+  else{const dbl=Date.now()-lastTap.t<400;lastTap={t:Date.now(),x:h.x0,y:h.y0};at(p).then(()=>{if(dbl){ripple();api("click",{})}})}},{passive:false});
+view.addEventListener("touchcancel",()=>{cancelOne();pz=null;ignore=false});
+addEventListener("resize",preview);
 loop();
 // ---- touchpad tab ----
 const pad=$("#pad");let acc={x:0,y:0,sx:0,sy:0},fs={x:0,y:0},last=null,t0=0,moved=0,maxT=0,sendingPad=false;
@@ -143,11 +198,22 @@ document.querySelectorAll("[data-click]").forEach(b=>b.onclick=()=>api("click",{
 // ---- keyboard ----
 $("#send").onclick=async()=>{const t=$("#txt").value;if(t&&await api("type",{text:t}))$("#txt").value=""};
 $("#sendEnter").onclick=async()=>{const t=$("#txt").value;if(t)await api("type",{text:t});await api("key",{key:"enter"});$("#txt").value=""};
+const mk=(n,fn,sel,cls="b")=>{const b=document.createElement("button");b.className=cls;b.textContent=n;b.style.padding="12px 2px";b.onclick=()=>fn(b);$(sel).append(b);return b};
+const ORDER=["ctrl","alt","shift","cmd"];
+const combo=k=>[...ORDER.filter(m=>mods.has(m)),k];
+function sendKey(k){const keys=Array.isArray(k)?k:combo(k);
+  const done=()=>{mods.clear();document.querySelectorAll("#mods button").forEach(b=>b.style.borderColor="")};
+  (keys.length>1?api("hotkey",{keys}):api("key",{key:keys[0]})).then(done)}
+[["Strg","ctrl"],["Alt","alt"],["Shift","shift"],["Win","cmd"]].forEach(([n,m])=>mk(n,b=>{
+  mods.has(m)?mods.delete(m):mods.add(m);b.style.borderColor=mods.has(m)?"#4f8cff":""},"#mods"));
 const rows=[["#keys",[["Esc","esc"],["Tab","tab"],["⌫","backspace"],["Enter","enter"],["Entf","delete"]]],
  ["#keys2",[["←","left"],["↑","up"],["↓","down"],["→","right"],["Space","space"]]],
- ["#keys3",[["Strg+C",["ctrl","c"]],["Strg+V",["ctrl","v"]],["Alt+Tab",["alt","tab"]],["Win",["cmd"]],["Alt+F4",["alt","f4"]]]]];
-rows.forEach(([sel,ks])=>ks.forEach(([n,k])=>{const b=document.createElement("button");b.className="b";b.textContent=n;b.style.padding="12px 2px";
-  b.onclick=()=>Array.isArray(k)?api("hotkey",{keys:k}):api("key",{key:k});$(sel).append(b)}));
+ ["#keys3",[["Strg+C",["ctrl","c"]],["Strg+V",["ctrl","v"]],["Strg+X",["ctrl","x"]],["Strg+A",["ctrl","a"]],["Strg+Z",["ctrl","z"]]]],
+ ["#keys4",[["Alt+Tab",["alt","tab"]],["Alt+F4",["alt","f4"]],["Win+D",["cmd","d"]],["Task-Mgr",["ctrl","shift","esc"]],["Strg+W",["ctrl","w"]]]],
+ ["#keys5",[1,2,3,4,5,6,7,8,9,10,11,12].map(i=>["F"+i,"f"+i])]];
+rows.forEach(([sel,ks])=>ks.forEach(([n,k])=>mk(n,()=>sendKey(k),sel)));
+$("#keys5").querySelectorAll("button").forEach(b=>b.style.minWidth="52px");
+$("#cSend").onclick=()=>{const k=$("#ckey").value.trim().toLowerCase();if(k){sendKey(k);$("#ckey").value=""}};
 // ---- media / power / shell ----
 [["⏮","prev"],["⏯","play_pause"],["⏭","next"],["🔇","mute"],["🔉","vol_down"],["🔊","vol_up"]].forEach(([n,k])=>{
   const b=document.createElement("button");b.className="b";b.textContent=n;b.style.fontSize="22px";b.onclick=()=>api("media",{name:k});$("#media").append(b)});

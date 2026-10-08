@@ -85,6 +85,16 @@ class Backend:
         with mss.mss() as s:
             return len(s.monitors) - 1
 
+    def pointer(self):
+        """(monitor index, x fraction, y fraction) of the real mouse pointer."""
+        import mss
+        px, py = self.ms.position
+        with mss.mss() as s:
+            for i, m in enumerate(s.monitors[1:]):
+                if m["left"] <= px < m["left"] + m["width"] and m["top"] <= py < m["top"] + m["height"]:
+                    return i, (px - m["left"]) / max(m["width"] - 1, 1), (py - m["top"]) / max(m["height"] - 1, 1)
+        return None
+
     def move_to(self, fx, fy, mon=0):
         import mss
         with mss.mss() as s:
@@ -118,12 +128,17 @@ class Backend:
     def media(self, name):
         self.kb.tap(getattr(self.Key, MEDIA_KEYS[name]))
 
-    def screenshot(self, width, quality, mon=0):
+    def screenshot(self, width, quality, mon=0, region=None):
         import mss
         from PIL import Image
         with mss.mss() as s:
             raw = s.grab(s.monitors[1 + min(max(int(mon), 0), len(s.monitors) - 2)])
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+        if region:  # (x0, y0, w) as fractions of the monitor; zoomed view stays sharp
+            x0, y0, w = region
+            W, H = img.size
+            img = img.crop((int(x0 * W), int(y0 * H), max(int(x0 * W) + 1, int((x0 + w) * W)),
+                            max(int(y0 * H) + 1, int((y0 + w) * H))))
         if img.width > width:
             img = img.resize((width, round(img.height * width / img.width)))
         buf = io.BytesIO()
@@ -219,13 +234,15 @@ def make_handler(be, token, allow_exec):
         def log_message(self, *a):
             pass
 
-        def _send(self, code, body, ctype="application/json"):
+        def _send(self, code, body, ctype="application/json", headers=None):
             if isinstance(body, (dict, list)):
                 body = json.dumps(body).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
@@ -256,7 +273,19 @@ def make_handler(be, token, allow_exec):
                 w = min(max(int(q.get("w", ["800"])[0]), 200), 1920)
                 try:
                     mon = int(q.get("mon", ["0"])[0])
-                    return self._send(200, be.screenshot(w, 55, mon), "image/jpeg")
+                    z = min(max(float(q.get("z", ["1"])[0]), 0.05), 1.0)
+                    hdr = {}
+                    try:
+                        p = be.pointer()
+                        if isinstance(p, tuple):
+                            hdr["X-Pointer"] = "%d,%.5f,%.5f" % p
+                    except Exception:
+                        pass
+                    if z < 1.0:
+                        x0 = min(max(float(q.get("x", ["0"])[0]), 0.0), 1.0 - z)
+                        y0 = min(max(float(q.get("y", ["0"])[0]), 0.0), 1.0 - z)
+                        return self._send(200, be.screenshot(w, 55, mon, (x0, y0, z)), "image/jpeg", hdr)
+                    return self._send(200, be.screenshot(w, 55, mon), "image/jpeg", hdr)
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
             if u.path == "/api/ping":

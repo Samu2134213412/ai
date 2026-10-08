@@ -4,6 +4,9 @@ PC vom Handy-Browser steuern. Oben immer der Live-Bildschirm, **Wischen links/re
 - **Tasten:** Bild oben, unten Touchpad/Tastatur/Medien/Power. Tippen aufs Bild = Maus dorthin, Doppeltippen = Klick.
 - **Touch:** Das Handy-Display *ist* der PC-Bildschirm, wie Android-Steuerung: Tippen = Linksklick, Doppeltippen = Doppelklick, lang drücken = Rechtsklick, hoch/runter wischen = scrollen, Tippen + sofort halten & ziehen = Ziehen. „⌨ Menü“ öffnet die Tasten-Leiste.
 Optional Shell-Tab (`--allow-exec`).
+- **Zoom:** Mit zwei Fingern zoomen (Pinch) und verschieben; zoomt scharf (der PC liefert den Ausschnitt in voller Auflösung). Menü ☰ (links oben): Zoom +/−/1×, Modus, Tastatur-Menü, **Vollbild** (⛶; iPhone: Teilen → Zum Home-Bildschirm).
+- **Tastenkombis:** Tab „Tastatur“: Strg/Alt/Shift/Win antippen (bleiben aktiv), dann eine Taste; fertige Kombis (Strg+C/V/X/A/Z, Alt+Tab, Alt+F4, Win+D, Task-Manager …), F1–F12, freies Tastenfeld.
+- **Cursor:** Der echte PC-Mauszeiger wird als blau leuchtender Zeiger mit Klick-Welle angezeigt.
 
 ```
 pip install -r requirements.txt

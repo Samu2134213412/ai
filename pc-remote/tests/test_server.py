@@ -16,6 +16,9 @@ class Fake:
     def __init__(self):
         self.calls = []
 
+    def pointer(self):
+        return (0, 0.25, 0.5)
+
     def __getattr__(self, name):
         def f(*a):
             self.calls.append((name, a))
@@ -96,3 +99,16 @@ def test_ping_and_monitor_args(srv):
     assert call(url, "/api/move_to", {"x": 0.5, "y": 0.5, "mon": 1})[0] == 200
     assert ("screenshot", (400, 55, 1)) in be.calls
     assert ("move_to", (0.5, 0.5, 1)) in be.calls
+
+
+def test_screen_region_is_passed_and_clamped(srv):
+    be, url = srv
+    assert call(url, "/api/screen?w=400&mon=0&x=0.9&y=-1&z=0.25")[0] == 200
+    assert ("screenshot", (400, 55, 0, (0.75, 0.0, 0.25))) in be.calls
+
+
+def test_screen_sends_pointer_header(srv):
+    be, url = srv
+    req = urllib.request.Request(url + "/api/screen?w=400", headers={"X-Token": "tok"})
+    with urllib.request.urlopen(req) as r:
+        assert r.headers["X-Pointer"] == "0,0.25000,0.50000"
