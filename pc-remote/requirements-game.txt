@@ -1,0 +1,3 @@
+# optional, Windows: much faster screen capture for Spiel-Modus (falls back to mss if missing/unsupported)
+dxcam>=0.0.5
+numpy

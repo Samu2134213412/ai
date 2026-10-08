@@ -3,6 +3,7 @@
 PC vom Handy-Browser steuern. Oben immer der Live-Bildschirm, **Wischen links/rechts wechselt den Monitor**. Button oben links schaltet den Modus:
 - **Tasten:** Bild oben, unten Touchpad/Tastatur/Medien/Power. Tippen aufs Bild = Maus dorthin, Doppeltippen = Klick.
 - **Touch:** Das Handy-Display *ist* der PC-Bildschirm, wie Android-Steuerung: Tippen = Linksklick, Doppeltippen = Doppelklick, lang drücken = Rechtsklick, hoch/runter wischen = scrollen, Tippen + sofort halten & ziehen = Ziehen. „⌨ Menü“ öffnet die Tasten-Leiste.
+- **Spiel-Modus** (3. Modus im Menü ☰): Live-Videostrom (Motion-JPEG, bis ~30 FPS) mit Bildschirm-Controller: links Stick = WASD, rechts ziehen = Maus-Blick, Buttons für Feuer (halten + ziehen = zielen), Zielen, Sprung, Sprint, Ducken, E/Q/R/Tab/Esc. Einstellungen (FPS, Breite, Qualität, Maus-Tempo) im Menü. Handy quer halten.
 Optional Shell-Tab (`--allow-exec`).
 - **Zoom:** Mit zwei Fingern zoomen (Pinch) und verschieben; zoomt scharf (der PC liefert den Ausschnitt in voller Auflösung). Menü ☰ (links oben): Zoom +/−/1×, Modus, Tastatur-Menü, **Vollbild** (⛶; iPhone: Teilen → Zum Home-Bildschirm).
 - **Tastenkombis:** Tab „Tastatur“: Strg/Alt/Shift/Win antippen (bleiben aktiv), dann eine Taste; fertige Kombis (Strg+C/V/X/A/Z, Alt+Tab, Alt+F4, Win+D, Task-Manager …), F1–F12, freies Tastenfeld.
@@ -46,3 +47,10 @@ Der Token schützt den Zugang; nach 20 Fehlversuchen/Minute wird gesperrt.
 Idee: Windows-Autologin bleibt an, aber `boot_guard.py` sperrt den PC direkt nach dem Hochfahren wieder – **außer** das Wake-Relay (`wake.py` auf dem Raspberry Pi) hat kurz vorher (10 min) ein Weck-Signal vom Handy gesendet. Powertaste = Passwort, Handy = direkt Desktop. Relay nicht erreichbar = gesperrt.
 Einrichten (erst wenn `wake.py` auf dem Pi läuft): `install-guard.bat` → Pi-Adresse + Token eingeben. Entfernen: `uninstall-guard.bat`.
 Grenzen: Beim Powertasten-Start ist der Desktop ~1–2 s sichtbar, bevor er sperrt; das Autologin-Passwort liegt in Windows gespeichert. Nur bei einem PC zu Hause sinnvoll. Der Guard greift nur in den ersten 10 min nach dem Booten.
+
+## Spiel-Modus: Grenzen (ehrlich)
+- Es ist Tastatur+Maus-Steuerung, **kein Gamepad**. Gut für Strategie, Aufbau, Koop, langsame Shooter; für schnelle Online-Shooter ist die Latenz zu hoch.
+- Schneller: `pip install -r requirements-game.txt` (dxcam, Windows). Ohne dxcam läuft es über mss (~20 FPS). 60 FPS schafft die Python-JPEG-Übertragung nur bei niedriger Breite (480–640) auf schnellem PC. Reale Latenz = Netz + ~50–100 ms.
+- Das Spiel im **Fenster- oder randlosen Vollbild** starten, nicht „exklusiver Vollbildmodus“ (sonst schwarzes Bild). Spiele mit Anti-Cheat (EAC/BattlEye/Vanguard) können simulierte Eingaben blockieren oder deswegen bannen: nur Einzelspieler-/Koop-Spiele ohne Anti-Cheat verwenden.
+- Am besten im WLAN (5 GHz) oder über Tailscale. Über den öffentlichen Tunnel ist der Videostrom zu langsam. Der Stream-Link enthält den Token (nur für `/api/stream`), nicht weitergeben.
+- Sicherheitsnetz: Lässt das Handy die Verbindung fallen, lässt der PC nach 3 s alle gehaltenen Tasten los.

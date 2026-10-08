@@ -16,14 +16,19 @@ import secrets
 import socket
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).parent
-CONTROL_ACTIONS = {"move", "move_to", "click", "press", "scroll", "type", "key", "hotkey", "media"}
+CONTROL_ACTIONS = {"move", "move_to", "click", "press", "scroll", "type", "key", "hotkey", "media",
+                   "key_down", "key_up", "rmove"}
 last_control = [0.0]  # time of the last phone input; drives the glowing pointer on the PC
+last_input = [0.0]    # any input at all; feeds the stuck-key watchdog
+held_keys, held_btns = set(), set()  # keys/buttons the phone is holding down (game mode)
+STALE_S = 3.0         # release everything if the phone goes silent this long while holding
 TOKEN_FILE = Path.home() / ".pc-remote-token"
 MAX_BODY = 64 * 1024
 MOUSE_BUTTONS = {"left", "right", "middle"}
@@ -133,22 +138,55 @@ class Backend:
     def media(self, name):
         self.kb.tap(getattr(self.Key, MEDIA_KEYS[name]))
 
-    def screenshot(self, width, quality, mon=0, region=None):
-        import mss
+    _cams, _last, _dx_ok, _lock = {}, {}, True, threading.Lock()
+
+    def grab(self, mon=0):
+        """Full-resolution PIL frame of a monitor. Uses dxcam (fast, Windows) if installed, else mss."""
         from PIL import Image
-        with mss.mss() as s:
-            raw = s.grab(s.monitors[1 + min(max(int(mon), 0), len(s.monitors) - 2)])
-        img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+        if self._dx_ok:
+            try:
+                import dxcam
+                with self._lock:
+                    cam = self._cams.get(mon) or self._cams.setdefault(
+                        mon, dxcam.create(output_idx=mon, output_color="RGB"))
+                    frame = cam.grab()
+                    if frame is None:  # screen unchanged since last grab
+                        frame = self._last.get(mon)
+                    else:
+                        self._last[mon] = frame
+                if frame is not None:
+                    return Image.fromarray(frame)
+            except ImportError:
+                self._dx_ok = False
+            except Exception:
+                self._dx_ok = False  # DXGI refused (RDP, remote session, ...): stay on mss
+        import mss
+        with mss.mss() as sct:
+            raw = sct.grab(sct.monitors[1 + min(max(int(mon), 0), len(sct.monitors) - 2)])
+        return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+    def screenshot(self, width, quality, mon=0, region=None):
+        img = self.grab(mon)
         if region:  # (x0, y0, w) as fractions of the monitor; zoomed view stays sharp
             x0, y0, w = region
             W, H = img.size
             img = img.crop((int(x0 * W), int(y0 * H), max(int(x0 * W) + 1, int((x0 + w) * W)),
                             max(int(y0 * H) + 1, int((y0 + w) * H))))
-        if img.width > width:
-            img = img.resize((width, round(img.height * width / img.width)))
-        buf = io.BytesIO()
-        img.save(buf, "JPEG", quality=quality)
-        return buf.getvalue()
+        return encode_jpeg(img, width, quality)
+
+    def key_down(self, name):
+        self.kb.press(self._key(name))
+
+    def key_up(self, name):
+        self.kb.release(self._key(name))
+
+    def rel_move(self, dx, dy):
+        """Relative mouse movement (what games read as mouse-look)."""
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)  # MOUSEEVENTF_MOVE
+        else:
+            self.ms.move(int(dx), int(dy))
 
     def power(self, action):
         cmd = POWER_CMDS.get(sys.platform if sys.platform in POWER_CMDS else "linux")[action]
@@ -163,6 +201,47 @@ class Backend:
         return (p.stdout + p.stderr)[-4000:]
 
 
+def encode_jpeg(img, width, quality):
+    if img.width > width:
+        img = img.resize((width, round(img.height * width / img.width)), reducing_gap=2.0)
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def stream_mjpeg(be, write, mon, width, fps, quality, should_stop=lambda: False):
+    """Push multipart JPEG frames through write() at up to `fps` until write() raises or should_stop()."""
+    step = 1.0 / fps
+    due = time.perf_counter()
+    while not should_stop():
+        frame = encode_jpeg(be.grab(mon), width, quality)
+        write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame) + frame + b"\r\n")
+        due += step
+        lag = due - time.perf_counter()
+        if lag > 0:
+            time.sleep(lag)
+        else:
+            due = time.perf_counter()  # can't keep up: don't try to catch up
+
+
+def release_all(be):
+    for k in list(held_keys):
+        be.key_up(k)
+    for b in list(held_btns):
+        be.press(b, False)
+    held_keys.clear()
+    held_btns.clear()
+
+
+def release_stale(be, now=None, timeout=STALE_S):
+    """Watchdog: phone vanished while holding keys (lost signal, closed tab) -> let go of everything."""
+    now = time.time() if now is None else now
+    if (held_keys or held_btns) and now - last_input[0] > timeout:
+        release_all(be)
+        return True
+    return False
+
+
 def num(d, k, lo=-5000, hi=5000):
     v = float(d.get(k, 0))
     if not lo <= v <= hi:
@@ -172,8 +251,9 @@ def num(d, k, lo=-5000, hi=5000):
 
 def dispatch(be, action, d, allow_exec=False):
     """Run one action. Raises ValueError on bad input."""
-    if action in CONTROL_ACTIONS:
-        last_control[0] = time.time()
+    last_input[0] = time.time()
+    if action in CONTROL_ACTIONS and not d.get("quiet"):
+        last_control[0] = last_input[0]
     if action == "move":
         be.move(num(d, "dx"), num(d, "dy"))
     elif action == "move_to":
@@ -184,9 +264,31 @@ def dispatch(be, action, d, allow_exec=False):
             raise ValueError("bad button")
         be.click(btn, 2 if d.get("double") else 1)
     elif action == "press":
-        if d.get("button", "left") not in MOUSE_BUTTONS:
+        btn = d.get("button", "left")
+        if btn not in MOUSE_BUTTONS:
             raise ValueError("bad button")
-        be.press(d.get("button", "left"), bool(d.get("down")))
+        be.press(btn, bool(d.get("down")))
+        (held_btns.add if d.get("down") else held_btns.discard)(btn)
+    elif action in ("key_down", "key_up"):
+        name = str(d.get("key", ""))
+        if not name or len(name) > 12:
+            raise ValueError("bad key")
+        getattr(be, action)(name)
+        (held_keys.add if action == "key_down" else held_keys.discard)(name)
+    elif action == "rmove":
+        be.rel_move(int(num(d, "dx", -3000, 3000)), int(num(d, "dy", -3000, 3000)))
+    elif action == "release_all":
+        release_all(be)
+    elif action == "noop":
+        pass
+    elif action == "batch":  # ordered list, one round trip: key down/up must never be reordered
+        items = d.get("actions")
+        if not isinstance(items, list) or len(items) > 64:
+            raise ValueError("actions must be a list of at most 64")
+        for it in items:
+            if not isinstance(it, dict) or it.get("a") in (None, "batch"):
+                raise ValueError("bad batch item")
+            dispatch(be, str(it["a"]), it, allow_exec)
     elif action == "scroll":
         be.scroll(num(d, "dx", -100, 100), num(d, "dy", -100, 100))
     elif action == "type":
@@ -238,6 +340,19 @@ def load_token():
 def make_handler(be, token, allow_exec):
     fails = []
     class H(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"  # keep-alive: no new TCP handshake per input event
+        timeout = 30
+
+        def setup(self):
+            super().setup()
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+        def handle(self):
+            try:
+                super().handle()
+            except (ConnectionError, TimeoutError):
+                pass  # phone closed/lost the connection
+
         def log_message(self, *a):
             pass
 
@@ -253,13 +368,13 @@ def make_handler(be, token, allow_exec):
             self.end_headers()
             self.wfile.write(body)
 
-        def _authed(self):
+        def _authed(self, query_token=""):
             now = time.time()
             fails[:] = [t for t in fails if now - t < 60]
             if len(fails) >= 20:  # global lockout: tunnel hides client IPs
                 self._send(429, {"error": "too many attempts"})
                 return False
-            got = self.headers.get("X-Token", "")
+            got = self.headers.get("X-Token", "") or query_token
             ok = hmac.compare_digest(got.encode(), token.encode())
             if not ok:
                 fails.append(now)
@@ -273,6 +388,11 @@ def make_handler(be, token, allow_exec):
                 return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/favicon.ico":
                 return self._send(404, b"", "text/plain")
+            if u.path == "/api/stream":  # <img> can't send headers, so this one takes ?t=TOKEN
+                q = parse_qs(u.query)
+                if not self._authed(q.get("t", [""])[0]):
+                    return
+                return self._stream(q)
             if not self._authed():
                 return
             if u.path == "/api/screen":
@@ -300,17 +420,34 @@ def make_handler(be, token, allow_exec):
                                              "monitors": be.monitor_count()})
             self._send(404, {"error": "not found"})
 
+        def _stream(self, q):
+            def num_arg(k, default, lo, hi):
+                return min(max(int(float(q.get(k, [default])[0])), lo), hi)
+            mon, w, fps, qual = num_arg("mon", 0, 0, 16), num_arg("w", 854, 320, 1920), num_arg("fps", 30, 5, 60), num_arg("q", 55, 20, 90)
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            try:
+                stream_mjpeg(be, lambda b: (self.wfile.write(b), self.wfile.flush()), mon, w, fps, qual)
+            except (OSError, ValueError):
+                pass  # phone went away
+
         def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > MAX_BODY:
+                self.close_connection = True
+                return self._send(413, {"error": "too large"})
+            raw = self.rfile.read(n)  # always consume the body or keep-alive desyncs
             if not self._authed():
                 return
             u = urlparse(self.path)
             if not u.path.startswith("/api/"):
                 return self._send(404, {"error": "not found"})
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
-                return self._send(413, {"error": "too large"})
             try:
-                data = json.loads(self.rfile.read(n) or b"{}")
+                data = json.loads(raw or b"{}")
                 res = dispatch(be, u.path[5:], data, allow_exec)
                 self._send(200, {"ok": True, **res})
             except PermissionError as e:
@@ -383,6 +520,14 @@ def main():
     token = load_token()
     be = Backend()
     srv = ThreadingHTTPServer((a.host, a.port), make_handler(be, token, a.allow_exec))
+    def watchdog():
+        while True:
+            time.sleep(0.5)
+            try:
+                release_stale(be)
+            except Exception:
+                pass
+    threading.Thread(target=watchdog, daemon=True).start()
     if not a.no_overlay:
         from overlay import Overlay
         Overlay(lambda: last_control[0], be.pointer_xy).start()
