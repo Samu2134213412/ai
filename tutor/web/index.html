@@ -155,6 +155,13 @@
     </div>
     <div class="actions left"><button type="button" id="cDisconnect" hidden>Trennen</button></div>
   </div>
+  <div id="helpSettings" hidden>
+    <h4>Mitrechnen (Klassen-Pool)</h4>
+    <label class="row2"><input type="checkbox" id="hOn"> Dieses Gerät rechnet für die Klasse mit, solange der Tutor offen ist</label>
+    <label class="hint">Modell auf diesem Gerät<select id="hModel" style="width:100%"></select></label>
+    <div id="hState" class="hint"></div>
+    <p class="hint">Lädt einmal ein kleines Modell vom PC (0,4–2 GB) und rechnet damit einfache Anfragen der Klasse. Am besten am Ladekabel. Die Fragen der anderen laufen dabei als Text über dieses Gerät; gespeichert wird nichts. Damit es hilft, sollte am PC das „schnelle Modell“ dasselbe sein (z. B. qwen2.5:1.5b).</p>
+  </div>
   <div id="pairSettings" hidden>
     <h4>Geräte</h4>
     <div class="actions left"><button type="button" id="phoneBtn">📱 Handy / Gerät koppeln</button></div>
@@ -230,6 +237,7 @@
 <script src="/planner.js"></script>
 <script src="/notes.js"></script>
 <script src="/tidy.js"></script>
+<script src="/helper.js"></script>
 <script>TutorTidy.init({ api: TutorApp.api, say: TutorApp.say }); document.getElementById("tidyBtn").addEventListener("click", () => TutorTidy.open());</script>
 </body>
 </html>

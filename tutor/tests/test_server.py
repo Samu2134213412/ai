@@ -44,5 +44,31 @@ class RouteCoverage(unittest.TestCase):
         self.assertIn("lockHost: true", server)
 
 
+class TabletHelper(unittest.TestCase):
+    """Tablets rechnen im Klassen-Pool mit: Oberfläche, Server-Routen und Bibliothek passen zusammen."""
+
+    def test_helper_is_wired_and_uses_only_local_assets(self):
+        html = (WEB / "index.html").read_text()
+        js = (WEB / "helper.js").read_text()
+        self.assertIn('<script src="/helper.js"></script>', html)
+        for el in ("helpSettings", "hOn", "hModel", "hState"):
+            self.assertIn(f'id="{el}"', html)
+        for route in ("/api/pool/status", "/api/pool/pull", "/api/pool/push", "/api/pool/model.gguf"):
+            self.assertIn(route, js)
+            self.assertIn(route.replace("?", ""), (ROOT / "server" / "server.js").read_text())
+        self.assertNotIn("cdn.jsdelivr", js)                       # Schulnetz ohne Internet: alles vom PC
+        self.assertIn("setCompat", js)                             # Safari/iPad: Kompatibilitäts-Build
+        self.assertIn("window.TutorDesktop", js)                   # PC-App trägt mit Ollama bei, nicht über den Browser
+
+    def test_only_small_models_for_tablets(self):
+        src = (ROOT / "server" / "pullers.js").read_text()
+        self.assertIn('const PULL_MODELS = ["qwen2.5:0.5b", "qwen2.5:1.5b", "qwen2.5:3b"]', src)
+
+    def test_vendor_script_and_gitignore(self):
+        self.assertTrue((ROOT / "scripts" / "vendor-wllama.mjs").exists())
+        self.assertIn("tutor/web/vendor/", (ROOT.parent / ".gitignore").read_text())
+        self.assertIn("vendor-wllama.mjs", (ROOT / "desktop" / "package.json").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

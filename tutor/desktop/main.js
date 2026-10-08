@@ -232,7 +232,7 @@ app.whenReady().then(async () => {
       ollamaUrl = (await pool.start()).proxyUrl;
     } catch (e) { console.error("Pool nicht gestartet:", e.message); pool = null; }
   }
-  srv = createTutorServer({ wwwDir: path.join(__dirname, "www"), dataDir, host: "127.0.0.1", port: WANT_PORT, ollama: ollamaUrl });
+  srv = createTutorServer({ wwwDir: path.join(__dirname, "www"), dataDir, host: "127.0.0.1", port: WANT_PORT, ollama: ollamaUrl, pool });
   let started;
   try { started = await srv.start(); } catch (e) { if (e.code !== "EADDRINUSE") throw e; started = await srv.start({ port: 0 }); }
   origin = `http://127.0.0.1:${started.port}`;

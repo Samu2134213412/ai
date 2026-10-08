@@ -2,11 +2,11 @@
   "name": "tutor-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Tutor – Desktop-App für Windows, macOS und Linux",
+  "description": "Tutor \u2013 Desktop-App f\u00fcr Windows, macOS und Linux",
   "author": "Tutor",
   "main": "main.js",
   "scripts": {
-    "build-www": "node ../scripts/build-www.mjs www && node ../scripts/copy-server.mjs",
+    "build-www": "node ../scripts/vendor-wllama.mjs && node ../scripts/build-www.mjs www && node ../scripts/copy-server.mjs",
     "start": "npm run build-www && electron .",
     "dist": "npm run build-www && electron-builder --publish never",
     "test": "node --test test/lib.test.js",
@@ -76,6 +76,8 @@
     "publish": null
   },
   "dependencies": {
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "@wllama/wllama": "3.8.1",
+    "@wllama/wllama-compat": "3.8.1"
   }
 }

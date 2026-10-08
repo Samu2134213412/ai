@@ -11,6 +11,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { serveFile } = require("./static.js");
 const { fileStorage, usersDb } = require("./store.js");
+const { ggufPath, sendFile } = require("./gguf.js");
+const { PULL_MODELS } = require("./pullers.js");
 
 const MAX_BODY = 40 * 1024 * 1024;               // Seitenbilder
 const STREAM_ROUTES = new Set(["/api/chat", "/api/giveup", "/api/new"]);
@@ -25,7 +27,7 @@ function lanAddresses(interfaces = os.networkInterfaces()) {
 
 function createTutorServer(opts) {
   const { wwwDir, dataDir, ollama = "http://127.0.0.1:11434", host = "127.0.0.1", port = 8780,
-    clock, fetchImpl, template, addresses = lanAddresses } = opts;
+    clock, fetchImpl, template, addresses = lanAddresses, pool = null, modelsDir } = opts;
   const root = path.resolve(wwwDir);
   const promptText = template || [path.join(root, "prompts", "tutor.md"), path.join(root, "..", "prompts", "tutor.md")]
     .map((f) => { try { return require("node:fs").readFileSync(f, "utf8"); } catch (e) { return null; } }).find(Boolean);
@@ -121,11 +123,12 @@ function createTutorServer(opts) {
     // Clients mit Token im Header (iPad-App, Overlay, Add-ons) dürfen von anderen Ursprüngen aus zugreifen.
     // Cookies werden dabei nicht mitgeschickt (kein „credentials“) – ohne Token gibt es nichts zu lesen.
     if (req.method === "OPTIONS") {
-      res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type, X-Tutor-Token, Authorization",
-        "Access-Control-Allow-Methods": "GET, POST", "Access-Control-Max-Age": "600" });
+      res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type, X-Tutor-Token, Authorization, Range",
+        "Access-Control-Allow-Methods": "GET, HEAD, POST", "Access-Control-Max-Age": "600" });
       return res.end();
     }
-    if (origin) { const orig = res.writeHead.bind(res); res.writeHead = (code, headers) => orig(code, { "Access-Control-Allow-Origin": "*", ...(headers || {}) }); }
+    if (origin) { const orig = res.writeHead.bind(res); res.writeHead = (code, headers) => orig(code, { "Access-Control-Allow-Origin": "*",
+      "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges", ...(headers || {}) }); }
 
     // Kopplung per Link (?pair=CODE) oder per API (POST /api/pair {code})
     if (url.searchParams.has("pair")) {
@@ -148,6 +151,7 @@ function createTutorServer(opts) {
     const cors = {};
     const st = userState(id);
 
+    if (p.startsWith("/api/pool/")) return poolRoute(req, res, url, id);
     if (!p.startsWith("/api/")) {
       if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "Nicht erlaubt" });
       return serveFile(root, p, req, res);
@@ -201,6 +205,35 @@ function createTutorServer(opts) {
     if (STREAM_ROUTES.has(p)) return streamRoute(res, st, p, body);
     try { return json(res, 200, await st.backend.api(p, body), cors); }
     catch (e) { return json(res, e instanceof TutorError ? 400 : 500, { error: e.message }, cors); }
+  }
+
+  /* ---------- Klassen-Pool: Tablets rechnen mit (siehe pullers.js) ---------- */
+
+  async function poolRoute(req, res, url, id) {
+    const p = url.pathname;
+    const dev = id + ":" + String(url.searchParams.get("dev") || "tablet").replace(/[^a-z0-9-]/gi, "").slice(0, 24);
+    const available = () => PULL_MODELS.filter((m) => ggufPath(m, modelsDir || undefined));
+    if (p === "/api/pool/status" && req.method === "GET")
+      return json(res, 200, { enabled: !!pool, models: pool ? available() : [], tablets: pool ? pool.pullers.info().length : 0 });
+    if (!pool) return json(res, 404, { error: "Der Klassen-Pool ist auf diesem PC aus (Einstellungen → Klassen-Pool)." });
+    if (p === "/api/pool/model.gguf" && (req.method === "GET" || req.method === "HEAD")) {
+      const name = url.searchParams.get("name") || "";
+      const file = PULL_MODELS.includes(name) && ggufPath(name, modelsDir || undefined);
+      if (!file) return json(res, 404, { error: `Modell fehlt am PC. Dort: ollama pull ${PULL_MODELS.includes(name) ? name : PULL_MODELS[1]}` });
+      return sendFile(req, res, file);
+    }
+    if (p === "/api/pool/pull" && req.method === "GET") {
+      const ctl = new AbortController();
+      res.on("close", () => ctl.abort());
+      const job = await pool.pullers.take(dev, { name: url.searchParams.get("name"), models: url.searchParams.get("models") }, ctl.signal);
+      if (ctl.signal.aborted) return res.end();
+      return json(res, 200, { job });
+    }
+    if (p === "/api/pool/push" && req.method === "POST") {
+      let b = {}; try { b = JSON.parse((await readBody(req)).toString() || "{}"); } catch (e) { return json(res, 400, { error: "Ungültiges JSON" }); }
+      return json(res, 200, pool.pullers.push(dev, b.job, b));
+    }
+    return json(res, 404, { error: "Unbekannt" });
   }
 
   /* ---------- Listener ---------- */

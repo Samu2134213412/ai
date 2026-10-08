@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".md": "text/markdown; charset=utf-8",
-  ".webmanifest": "application/manifest+json", ".png": "image/png", ".json": "application/json" };
+  ".webmanifest": "application/manifest+json", ".png": "image/png", ".json": "application/json", ".wasm": "application/wasm" };
 
 function serveFile(root, pathname, req, res) {
   const fail = (code, error) => {

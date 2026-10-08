@@ -108,3 +108,87 @@ test("Wartezeit zu lang: freundliche 503 statt Hängen", async () => {
   assert.deepEqual([a.status, b.status], [200, 503]);
   await pool.stop(); fo.s.close(); fo.s.closeAllConnections();
 });
+
+/* ---------- Tablets rechnen mit (Abholer) ---------- */
+const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+const { createTutorServer } = require("../server.js");
+
+async function tabletSetup() {
+  const fo = await fakeOllama([]);                                  // PC ohne eigenes Modell – nur das Tablet rechnet
+  const pool = createPool({ key: KEY, ollama: fo.url, udp: false });
+  await pool.start();
+  const models = fs.mkdtempSync(path.join(os.tmpdir(), "ollama-models-"));
+  const digest = "a".repeat(64);
+  fs.mkdirSync(path.join(models, "manifests", "registry.ollama.ai", "library", "qwen2.5"), { recursive: true });
+  fs.writeFileSync(path.join(models, "manifests", "registry.ollama.ai", "library", "qwen2.5", "1.5b"),
+    JSON.stringify({ layers: [{ mediaType: "application/vnd.ollama.image.model", digest: "sha256:" + digest }] }));
+  fs.mkdirSync(path.join(models, "blobs"));
+  fs.writeFileSync(path.join(models, "blobs", "sha256-" + digest), Buffer.from("GGUF0123456789"));
+  const srv = createTutorServer({ wwwDir: path.join(__dirname, "..", "..", "web"), dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "td-")),
+    ollama: pool.proxyUrl, port: 0, pool, modelsDir: models });
+  const { port } = await srv.start();
+  const base = `http://127.0.0.1:${port}`;
+  const token = (await (await fetch(base + "/api/pair", { method: "POST", body: JSON.stringify({ code: srv.createPairing({ forOwner: true }) }) })).json()).token;
+  const H = { "X-Tutor-Token": token, "Content-Type": "application/json" };
+  return { fo, pool, srv, base, H, stop: async () => { await srv.stop(); await pool.stop(); fo.s.close(); fo.s.closeAllConnections(); } };
+}
+
+test("Tablet holt Anfrage ab, rechnet und streamt zurück – für den Pool wie ein Ollama", async () => {
+  const t = await tabletSetup();
+  const st = await (await fetch(t.base + "/api/pool/status", { headers: t.H })).json();
+  assert.deepEqual(st, { enabled: true, models: ["qwen2.5:1.5b"], tablets: 0 });
+  // Tablet wartet auf Arbeit
+  const pulling = fetch(t.base + "/api/pool/pull?dev=ipad1&name=iPad&models=qwen2.5:1.5b,qwen2.5:32b", { headers: t.H }).then((r) => r.json());
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok((await (await fetch(t.pool.proxyUrl + "/api/tags")).json()).models.some((m) => m.model === "qwen2.5:1.5b"));
+  assert.ok(!(await (await fetch(t.pool.proxyUrl + "/api/tags")).json()).models.some((m) => m.model.startsWith("qwen2.5:32b")), "große Modelle darf ein Tablet nicht anbieten");
+  const answer = ask({ pool: t.pool }, "qwen2.5:1.5b", { options: { temperature: 0.2 } });
+  const { job } = await pulling;
+  assert.equal(job.model, "qwen2.5:1.5b");
+  assert.equal(job.messages[0].content, "hi");
+  assert.equal(job.temperature, 0.2);
+  const push = (b) => fetch(t.base + "/api/pool/push?dev=ipad1", { method: "POST", headers: t.H, body: JSON.stringify({ job: job.job, ...b }) }).then((r) => r.json());
+  assert.deepEqual(await push({ content: "Was " }), { ok: true, cancel: false });
+  await push({ content: "meinst du?" });
+  await push({ done: true });
+  const r = await answer;
+  assert.equal(r.status, 200);
+  const lines = r.text.trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(lines.map((l) => l.message.content).join(""), "Was meinst du?");
+  assert.equal(lines.at(-1).done, true);
+  assert.equal(t.pool.info().tablets[0].done, 1);
+  // ein anderes Gerät kann die Aufgabe nicht beantworten
+  assert.deepEqual(await (await fetch(t.base + "/api/pool/push?dev=fremd", { method: "POST", headers: t.H, body: JSON.stringify({ job: job.job, content: "x" }) })).json(), { ok: false, cancel: true });
+  await t.stop();
+});
+
+test("Tablet: Abbruch beim Fragenden meldet cancel, Modell-Download mit Range, Pfad-Tricks abgewiesen", async () => {
+  const t = await tabletSetup();
+  const pulling = fetch(t.base + "/api/pool/pull?dev=ipad2&models=qwen2.5:1.5b", { headers: t.H }).then((r) => r.json());
+  await new Promise((r) => setTimeout(r, 50));
+  const ctl = new AbortController();
+  const req = fetch(t.pool.proxyUrl + "/api/chat", { method: "POST", signal: ctl.signal, body: JSON.stringify({ model: "qwen2.5:1.5b", messages: [{ role: "user", content: "x" }] }) }).catch(() => null);
+  const { job } = await pulling;
+  ctl.abort(); await req; await new Promise((r) => setTimeout(r, 50));
+  const res = await (await fetch(t.base + "/api/pool/push?dev=ipad2", { method: "POST", headers: t.H, body: JSON.stringify({ job: job.job, content: "zu spät" }) })).json();
+  assert.equal(res.cancel, true);
+  const full = await fetch(t.base + "/api/pool/model.gguf?name=qwen2.5:1.5b", { headers: t.H });
+  assert.equal(await full.text(), "GGUF0123456789");
+  const head = await fetch(t.base + "/api/pool/model.gguf?name=qwen2.5:1.5b", { method: "HEAD", headers: t.H });
+  assert.equal(head.headers.get("content-length"), "14"); assert.equal(head.headers.get("accept-ranges"), "bytes");
+  const part = await fetch(t.base + "/api/pool/model.gguf?name=qwen2.5:1.5b", { headers: { ...t.H, Range: "bytes=4-7" } });
+  assert.equal(part.status, 206); assert.equal(await part.text(), "0123");
+  for (const n of ["../../etc/passwd", "qwen2.5:32b", "qwen2.5:3b"]) assert.equal((await fetch(t.base + "/api/pool/model.gguf?name=" + encodeURIComponent(n), { headers: t.H })).status, 404, n);
+  assert.equal((await fetch(t.base + "/api/pool/pull?models=qwen2.5:1.5b")).status, 401, "ohne Kopplung kein Zugriff");
+  await t.stop();
+});
+
+test("Pool aus: Tablet-Routen sagen das klar", async () => {
+  const fo = await fakeOllama(["m:1"]);
+  const srv = createTutorServer({ wwwDir: path.join(__dirname, "..", "..", "web"), dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "td-")), ollama: fo.url, port: 0 });
+  const { port } = await srv.start(); const base = `http://127.0.0.1:${port}`;
+  const token = (await (await fetch(base + "/api/pair", { method: "POST", body: JSON.stringify({ code: srv.createPairing({ forOwner: true }) }) })).json()).token;
+  assert.deepEqual(await (await fetch(base + "/api/pool/status", { headers: { "X-Tutor-Token": token } })).json(), { enabled: false, models: [], tablets: 0 });
+  assert.equal((await fetch(base + "/api/pool/pull", { headers: { "X-Tutor-Token": token } })).status, 404);
+  await srv.stop(); fo.s.close(); fo.s.closeAllConnections();
+});

@@ -11,6 +11,7 @@
 const http = require("node:http");
 const crypto = require("node:crypto");
 const dgram = require("node:dgram");
+const { createPullers } = require("./pullers.js");
 
 const POOL_PORT = 8767;
 const PEER_TTL = 20000, SKEW = 5 * 60 * 1000, MAX_BODY = 16 * 1024 * 1024;
@@ -69,7 +70,30 @@ function createPool(opts) {
     localAt = clock();
     return localModels;
   }
-  const contributing = () => localModels.length > 0;
+  const pullers = createPullers({ clock, onChange: () => changed(), ...(opts.pullerOpts || {}) });
+  const ollamaCap = () => (localModels.length ? jobsMax : 0);
+  const ownModels = () => [...new Set([...localModels, ...pullers.models()])];
+  const ownActive = () => active + pullers.busy();
+  const ownMax = () => ollamaCap() + pullers.count();
+  const contributing = () => ownModels().length > 0;
+  /* Frei auf diesem Gerät? "ollama" (eigenes Ollama), ein Tablet (Abholer) oder null. */
+  function selfFree(model) {
+    const want = fullName(model);
+    if (localModels.map(fullName).includes(want) && active < jobsMax) return { kind: "ollama" };
+    const w = pullers.free(model) || pullers.free(want.replace(/:latest$/, ""));
+    return w ? { kind: "pull", worker: w } : null;
+  }
+  /* Auf diesem Gerät ausführen und die Ollama-Antwort nach `res` schreiben. */
+  async function execLocal(slot, body, res, signal) {
+    if (slot.kind === "pull") return pullers.run(slot.worker, body, res, signal);
+    active++; changed();
+    try {
+      const r = await fetchImpl(base + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/x-ndjson" });
+      if (r.body) for await (const chunk of r.body) res.write(chunk);
+      res.end();
+    } finally { active--; changed(); }
+  }
   const live = () => [...peers.values()].filter((p) => clock() - p.seen < PEER_TTL);
   const changed = () => {
     if (onChange) onChange(info());
@@ -81,8 +105,9 @@ function createPool(opts) {
 
   function announcement() {
     const ts = String(clock());
-    return Buffer.from(JSON.stringify({ v: 1, id, port: workerPort, ts, models: localModels, active, max: jobsMax,
-      sig: sig([id, workerPort, ts, localModels.join(",")]) }));
+    const models = ownModels();
+    return Buffer.from(JSON.stringify({ v: 1, id, port: workerPort, ts, models, active: ownActive(), max: Math.max(1, ownMax()),
+      sig: sig([id, workerPort, ts, models.join(",")]) }));
   }
   function hear(msg, host) {
     let m; try { m = JSON.parse(msg.toString("utf8")); } catch (e) { return false; }
@@ -115,32 +140,30 @@ function createPool(opts) {
   async function workerHandle(req, res) {
     const path = (req.url || "").split("?")[0];
     if (!["/pool/tags", "/pool/chat"].includes(path) || !authorize(req, path)) return send(res, 403, { error: "Kein Zugriff" });
-    if (path === "/pool/tags") return send(res, 200, { models: (await refreshLocal()).map((m) => ({ model: m })) });
-    if (active >= jobsMax) return send(res, 429, { error: "Besetzt" });
+    await refreshLocal();
+    if (path === "/pool/tags") return send(res, 200, { models: ownModels().map((m) => ({ model: m })) });
     let body;
     try { body = cleanChat(JSON.parse(await readBody(req))); } catch (e) { return send(res, 400, { error: e.message }); }
-    if (!(await refreshLocal()).map(fullName).includes(fullName(body.model))) return send(res, 404, { error: "Modell nicht installiert" });
-    active++; stats.served++; changed();
+    if (!ownModels().map(fullName).includes(fullName(body.model))) return send(res, 404, { error: "Modell nicht installiert" });
+    const slot = selfFree(body.model);
+    if (!slot) return send(res, 429, { error: "Besetzt" });
+    stats.served++;
     const ctl = new AbortController();
     res.on("close", () => ctl.abort());
-    try {
-      const r = await fetchImpl(base + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal });
-      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/x-ndjson" });
-      if (r.body) for await (const chunk of r.body) res.write(chunk);
-      res.end();
-    } catch (e) { if (!res.headersSent) send(res, 502, { error: "Ollama nicht erreichbar" }); else res.end(); }
-    finally { active--; changed(); }
+    try { await execLocal(slot, body, res, ctl.signal); }
+    catch (e) { if (!res.headersSent) send(res, 502, { error: "Ollama nicht erreichbar" }); else res.end(); }
   }
 
   /* ---------- Auswahl des Geräts ---------- */
 
   function candidates(model) {
     const want = fullName(model), list = [];
-    if (localModels.map(fullName).includes(want) && active < jobsMax) list.push({ self: true, load: active / jobsMax, id });
+    const slot = selfFree(model);
+    if (slot) list.push({ self: true, slot, load: ownActive() / Math.max(1, ownMax()), id });
     for (const p of live()) if (p.models.map(fullName).includes(want) && p.active < p.max) list.push({ self: false, load: p.active / p.max, peer: p, id: p.id });
     return list.sort((a, b) => a.load - b.load || (b.self ? 1 : 0) - (a.self ? 1 : 0) || (a.id < b.id ? -1 : 1));
   }
-  const allModels = () => [...new Set([...localModels, ...live().flatMap((p) => p.models)].map(fullName))];
+  const allModels = () => [...new Set([...ownModels(), ...live().flatMap((p) => p.models)].map(fullName))];
 
   /* ---------- Lokaler Verteiler (Ollama-Schnittstelle) ---------- */
 
@@ -163,17 +186,17 @@ function createPool(opts) {
     }
     for (const c of order) {
       try {
+        if (c.self) { await execLocal(c.slot, body, res, ctl.signal); return; }
         let r;
-        if (c.self) { active++; changed(); r = await fetchImpl(base + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal }); }
-        else { c.peer.active++; r = await fetchImpl(`http://${c.peer.host}:${c.peer.port}/pool/chat`, { method: "POST", signal: ctl.signal,
+        { c.peer.active++; r = await fetchImpl(`http://${c.peer.host}:${c.peer.port}/pool/chat`, { method: "POST", signal: ctl.signal,
           headers: { "Content-Type": "application/json", ...signHeaders("/pool/chat") }, body: JSON.stringify(body) }); }
         try {
-          if (!c.self && (r.status === 429 || r.status === 403 || r.status >= 500)) { c.peer.active = c.peer.max; continue; }   // nächster Kandidat
-          if (!c.self) stats.used++;
+          if (r.status === 429 || r.status === 403 || r.status >= 500) { c.peer.active = c.peer.max; continue; }   // nächster Kandidat
+          stats.used++;
           res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/x-ndjson" });
           if (r.body) for await (const chunk of r.body) res.write(chunk);
           return res.end();
-        } finally { if (c.self) { active--; changed(); } else c.peer.active = Math.max(0, c.peer.active - 1); }
+        } finally { c.peer.active = Math.max(0, c.peer.active - 1); }
       } catch (e) {
         if (ctl.signal.aborted) return res.end();
         if (!c.self) peers.delete(c.peer.id);                   // nicht erreichbar → raus, nächster Kandidat
@@ -188,11 +211,11 @@ function createPool(opts) {
 
   function info() {
     return { id, running: !!workerServer, contributing: contributing(), active, max: jobsMax, served: stats.served, used: stats.used,
-      localModels: [...localModels], peers: live().map((p) => ({ id: p.id, host: p.host, models: p.models, active: p.active, max: p.max })) };
+      localModels: [...localModels], tablets: pullers.info(), peers: live().map((p) => ({ id: p.id, host: p.host, models: p.models, active: p.active, max: p.max })) };
   }
 
   return {
-    id, info, hear, announcement, candidates,
+    id, info, hear, announcement, candidates, pullers,
     get proxyUrl() { return proxyServer ? `http://127.0.0.1:${proxyServer.address().port}` : null; },
     get workerPort() { return workerPort; },
     async start() {

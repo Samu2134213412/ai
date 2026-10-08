@@ -52,3 +52,13 @@ Jedes Gerät mit Tutor-App und Ollama kann seine Rechenleistung der Klasse zur V
 - **Geben und Nehmen:** Der Pool nimmt nur Anfragen von Geräten an, die selbst beitragen (selbst Ollama mit Modell haben und mitrufen). Pro Gerät laufen höchstens 1–4 fremde Anfragen gleichzeitig.
 - **Sicherheit:** Nur `/api/tags` und `/api/chat`, signiert (HMAC mit Klassencode, 60 s gültig), nur erlaubte Felder, kein Zugriff auf Verlauf oder Aufgaben der anderen. Die Fragetexte laufen im Klartext (HTTP) durchs Schulnetz und werden auf dem fremden Gerät verarbeitet. Nur im vertrauten Schul-WLAN nutzen, Code nicht weitergeben. Der Router/das WLAN muss Rundrufe zwischen Geräten erlauben (nicht bei „Client-Isolation“).
 - **Grenzen:** Das teilt Arbeit auf, es macht kein großes Modell aus vielen schwachen Geräten (ein 32b-Modell braucht weiter ein starkes Gerät mit viel Speicher). Handy und iPad tragen nichts bei, sie nutzen den Pool über einen PC mit der App.
+
+### Tablets und Handys rechnen mit
+
+iPads/Handys können keine Anfragen annehmen, aber sie können sie **abholen**: Im Tutor (als Web-App vom PC geöffnet) unter ⚙︎ → „Mitrechnen“ einschalten. Das Gerät lädt einmal ein kleines Modell **vom PC** (`qwen2.5:0.5b`, `1.5b` oder `3b`, aus dem Ollama des PCs, kein Internet nötig), rechnet es im Browser (wllama: llama.cpp als WebAssembly, auf neueren Geräten mit WebGPU) und arbeitet Anfragen der Klasse für dieses Modell ab.
+
+- Am PC muss das Modell installiert sein (`ollama pull qwen2.5:1.5b`) und der Pool an sein.
+- Damit Tablets wirklich helfen, das **schnelle Modell** der Klasse auf dasselbe Modell stellen (⚙︎ → „Schnelles Modell“ = `qwen2.5:1.5b`). Große Anfragen (32b) bleiben bei den PCs.
+- Läuft nur, solange der Tutor auf dem Tablet offen und sichtbar ist (iPadOS pausiert Web-Apps im Hintergrund). Am besten am Ladekabel; die App hält den Bildschirm wach, wo der Browser das erlaubt.
+- Über `http://` (Web-App vom PC) rechnet das Tablet mit der CPU, ohne Zwischenspeicher – nach jedem Öffnen lädt es das Modell neu vom PC. Die iPad-App (sicherer Kontext) kann WebGPU und den Zwischenspeicher nutzen.
+- Bibliothek: `cd desktop && npm i` und `node ../scripts/vendor-wllama.mjs` (macht `npm run build-www` automatisch) kopiert wllama nach `web/vendor/wllama/`.

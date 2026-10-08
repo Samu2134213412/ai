@@ -21,7 +21,7 @@ if (process.argv.includes("--help")) {
   if (poolKey) { pool = createPool({ key: poolKey, ollama: localOllama, maxJobs: Number(arg("jobs", 1)) }); ollamaUrl = (await pool.start()).proxyUrl; }
   const srv = createTutorServer({ wwwDir: path.resolve(arg("www", path.join(__dirname, "..", "web"))),
     dataDir: path.resolve(arg("data", "tutor-data")), ollama: ollamaUrl,
-    host, port: Number(arg("port", 8780)) });
+    host, port: Number(arg("port", 8780)), pool });
   const { port } = await srv.start();
   let QR = null; try { QR = require("qrcode"); } catch (e) { /* optional */ }
 

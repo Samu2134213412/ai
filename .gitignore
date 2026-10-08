@@ -29,3 +29,6 @@ config.json
 # Tutor: gespeicherte Sitzungen
 tutor/sessions/*.json
 tutor/data/
+
+# wllama (wird aus desktop/node_modules kopiert)
+tutor/web/vendor/
