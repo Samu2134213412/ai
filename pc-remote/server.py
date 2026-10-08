@@ -489,10 +489,25 @@ def start_tunnel(port, token):
             m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
             if m and not shown:
                 shown = True
-                show(f"{m.group(0)}/#{token}", "Öffentliche URL (von überall, HTTPS)")
+                link = f"{m.group(0)}/#{token}"
+                show(link, "Öffentliche URL (von überall, HTTPS)")
+                if copy_link(link):
+                    print("\n  >>> Der Link wurde KOPIERT. Jetzt in eine Nachricht einfügen")
+                    print("  >>> (Rechtsklick -> Einfügen) und an die helfende Person senden.\n")
         if not shown:
             print("Tunnel beendet, keine URL erhalten. Ausgabe oben prüfen / Internetverbindung?")
     threading.Thread(target=watch, daemon=True).start()
+
+
+def copy_link(text):
+    """Windows: put the link on the clipboard so a non-technical user can just paste it."""
+    if sys.platform != "win32":
+        return False
+    try:
+        subprocess.run(["clip"], input=text.encode("ascii"), check=True, timeout=5)
+        return True
+    except Exception:
+        return False
 
 
 def show(url, title):
