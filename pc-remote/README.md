@@ -30,3 +30,10 @@ Server nach dem Booten automatisch starten: Windows Aufgabenplanung („Bei Anme
 **Option A – Tunnel (am einfachsten):** `winget install Cloudflare.cloudflared`, neues Fenster, dann `py server.py --tunnel`. Es erscheint eine öffentliche `https://….trycloudflare.com/#TOKEN`-URL (ändert sich bei jedem Start). Kein Router-Setup nötig. `--allow-exec` dabei **nicht** verwenden.
 **Option B – Tailscale (sicherer, feste Adresse):** Tailscale auf PC und Handy installieren, dann die Tailscale-IP des PCs: `http://100.x.y.z:8765/#TOKEN`. Nicht öffentlich erreichbar.
 Der Token schützt den Zugang; nach 20 Fehlversuchen/Minute wird gesperrt.
+
+## Ohne Computer-Gefummel: Anschalten + Autostart
+1. **Autostart:** `install-autostart.bat` einmal doppelklicken. Danach startet PC Remote bei jeder Windows-Anmeldung von selbst (versteckt). Einmal vorher `py server.py` sichtbar starten und die URL am Handy öffnen – der Token wird im Handy gemerkt. Windows-Autologin (Win+R → `netplwiz`) einrichten, damit der PC nach dem Anschalten ohne PIN hochfährt. Entfernen: `uninstall-autostart.bat`. Für Zugriff von überall hier Tailscale nutzen (feste Adresse); die Tunnel-URL ändert sich bei jedem Start.
+2. **Anschalten vom Handy** (PC muss per LAN-Kabel hängen, Wake-on-LAN in BIOS + Netzwerkadapter aktiv):
+   - **Zuhause im WLAN:** Eine WoL-App aus dem Play Store (z. B. „Wake On Lan“) mit der MAC-Adresse des PCs.
+   - **Von überall mit Fritz!Box:** MyFRITZ einrichten, Fritz!Box-Oberfläche am Handy öffnen → Heimnetz → Netzwerk → PC → „Computer starten“.
+   - **Von überall mit eigenem Gerät:** `wake.py` auf einem Raspberry Pi/NAS (+ Tailscale): `python wake.py --mac AA:BB:CC:DD:EE:FF --pc-url http://100.x.y.z:8765/`. Seite am Handy öffnen → „PC anschalten“ → danach „PC-Steuerung öffnen“.
