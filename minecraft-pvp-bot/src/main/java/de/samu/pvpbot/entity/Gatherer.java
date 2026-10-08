@@ -5234,8 +5234,10 @@ final class Gatherer {
             if ((ore == Ore.NETHER_GOLD || ore == Ore.GOLD_BLOCK || ore == Ore.NETHERRACK) && Math.abs(p.getY() - this.bot.getBlockY()) > 3) {
                 continue; // (gold high up a nether cliff: climbing after it ends in a fall - there is more)
             }
-            if (ore != Ore.LAVA && ore != Ore.OBSIDIAN && ore != Ore.WATER && this.lavaNear(p, ore == Ore.DIAMOND ? 1 : 2)) {
-                continue; // (next to lava: one wrong step and everything is gone)
+            if (ore != Ore.LAVA && ore != Ore.OBSIDIAN && ore != Ore.WATER && ore != Ore.END_FRAME && ore != Ore.END_PORTAL
+                    && this.lavaNear(p, ore == Ore.DIAMOND ? 1 : 2)) {
+                continue; // (next to lava: one wrong step and everything is gone - not the portal room
+                          // though: its lava pool lies right under the frames, and that is where it has to go)
             }
             // Exposed blocks are much cheaper to reach than buried ones - and buried ones far off are
             // not worth tunnelling to at all (the way there digs up more of the same).
@@ -5595,7 +5597,9 @@ final class Gatherer {
                     }
                     List<BlockPos> list = this.known.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
                     for (BlockPos p : e.getValue()) {
-                        if (p.distSqr(here) < 64 * 64 && e.getKey().match.test(level.getBlockState(p))) {
+                        // (The portal room is kept however far it walks off: that is the way to the End.)
+                        boolean keep = e.getKey() == Ore.END_FRAME || e.getKey() == Ore.END_PORTAL || p.distSqr(here) < 64 * 64;
+                        if (keep && (!level.isLoaded(p) || e.getKey().match.test(level.getBlockState(p)))) {
                             remember(list, e.getKey(), p);
                         }
                     }
