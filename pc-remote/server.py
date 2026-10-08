@@ -22,6 +22,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).parent
+CONTROL_ACTIONS = {"move", "move_to", "click", "press", "scroll", "type", "key", "hotkey", "media"}
+last_control = [0.0]  # time of the last phone input; drives the glowing pointer on the PC
 TOKEN_FILE = Path.home() / ".pc-remote-token"
 MAX_BODY = 64 * 1024
 MOUSE_BUTTONS = {"left", "right", "middle"}
@@ -79,6 +81,9 @@ class Backend:
 
     def move(self, dx, dy):
         self.ms.move(int(dx), int(dy))
+
+    def pointer_xy(self):
+        return tuple(self.ms.position)
 
     def monitor_count(self):
         import mss
@@ -167,6 +172,8 @@ def num(d, k, lo=-5000, hi=5000):
 
 def dispatch(be, action, d, allow_exec=False):
     """Run one action. Raises ValueError on bad input."""
+    if action in CONTROL_ACTIONS:
+        last_control[0] = time.time()
     if action == "move":
         be.move(num(d, "dx"), num(d, "dy"))
     elif action == "move_to":
@@ -368,12 +375,17 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--allow-exec", action="store_true", help="enable the shell-command tab")
     ap.add_argument("--tunnel", action="store_true", help="öffentliche HTTPS-URL über Cloudflare Tunnel")
+    ap.add_argument("--no-overlay", action="store_true", help="kein blauer Cursor am PC")
     ap.add_argument("--reset-token", action="store_true")
     a = ap.parse_args()
     if a.reset_token:
         TOKEN_FILE.unlink(missing_ok=True)
     token = load_token()
-    srv = ThreadingHTTPServer((a.host, a.port), make_handler(Backend(), token, a.allow_exec))
+    be = Backend()
+    srv = ThreadingHTTPServer((a.host, a.port), make_handler(be, token, a.allow_exec))
+    if not a.no_overlay:
+        from overlay import Overlay
+        Overlay(lambda: last_control[0], be.pointer_xy).start()
     show(f"http://{lan_ip()}:{a.port}/#{token}", "PC Remote läuft. Im selben WLAN öffnen")
     if a.tunnel:
         if a.allow_exec:

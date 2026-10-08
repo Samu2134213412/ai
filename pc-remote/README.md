@@ -6,7 +6,8 @@ PC vom Handy-Browser steuern. Oben immer der Live-Bildschirm, **Wischen links/re
 Optional Shell-Tab (`--allow-exec`).
 - **Zoom:** Mit zwei Fingern zoomen (Pinch) und verschieben; zoomt scharf (der PC liefert den Ausschnitt in voller Auflösung). Menü ☰ (links oben): Zoom +/−/1×, Modus, Tastatur-Menü, **Vollbild** (⛶; iPhone: Teilen → Zum Home-Bildschirm).
 - **Tastenkombis:** Tab „Tastatur“: Strg/Alt/Shift/Win antippen (bleiben aktiv), dann eine Taste; fertige Kombis (Strg+C/V/X/A/Z, Alt+Tab, Alt+F4, Win+D, Task-Manager …), F1–F12, freies Tastenfeld.
-- **Cursor:** Der echte PC-Mauszeiger wird als blau leuchtender Zeiger mit Klick-Welle angezeigt.
+- **Leuchten am PC:** Solange das Handy steuert (und 2,5 s danach), liegt ein blau leuchtender Ring um den Mauszeiger auf dem PC (klickdurchlässig, nicht im Handy-Bild). Abschalten: `--no-overlay`. Braucht tkinter (bei python.org-Python für Windows dabei).
+- **Cursor am Handy:** Der echte PC-Mauszeiger wird als blau leuchtender Zeiger mit Klick-Welle angezeigt.
 
 ```
 pip install -r requirements.txt
