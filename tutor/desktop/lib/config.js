@@ -35,6 +35,7 @@ function createConfig(file) {
       if ("poolKey" in partial) data.poolKey = String(partial.poolKey || "").trim().slice(0, 64);
       if ("poolJobs" in partial) data.poolJobs = Math.max(1, Math.min(4, parseInt(partial.poolJobs, 10) || 1));
       if (data.pool && data.poolKey.length < 8) data.pool = false;        // ohne gültigen Klassencode kein Pool
+      if (data.pool) { data.autostart = true; data.trayOnClose = true; }   // Pool: rechnet im Hintergrund weiter, auch ungenutzt
       save();
       return this.get();
     },

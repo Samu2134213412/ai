@@ -178,7 +178,7 @@ function initSettings(st) {
       $("dApps").value = d.blockedApps.join("\n"); $("dTray").checked = d.trayOnClose; $("dAuto").checked = d.autostart; $("dOverlay").checked = d.overlay;
       $("dAutoFocus").checked = d.autoFocus; $("dAutoOverlay").checked = d.autoOverlay; $("dWatch").checked = d.watchScreen; $("dWatchMin").value = d.watchMinutes;
       $("dPool").checked = d.pool; $("dPoolKey").value = d.poolKey; $("dPoolJobs").value = d.poolJobs;
-      D.poolStatus().then((st) => { if (st && st.running) $("dPoolInfo").textContent = `Pool läuft: ${st.peers.length} weiteres Gerät(e) gefunden · ${st.served} Anfragen für andere bearbeitet · ${st.used} von anderen genutzt. Änderungen gelten nach Neustart der App.`; });
+      D.poolStatus().then((st) => { if (st && st.running) $("dPoolInfo").textContent = `Pool läuft: ${st.peers.length} weiteres Gerät(e) gefunden · ${st.served} Anfragen für andere bearbeitet · ${st.used} von anderen genutzt. Läuft im Tray weiter, auch wenn du den Tutor nicht nutzt.`; });
     }
     $("settingsDlg").showModal();
   });

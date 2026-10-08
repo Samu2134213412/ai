@@ -115,4 +115,6 @@ test("Pool-Einstellungen: ohne gültigen Klassencode bleibt der Pool aus", () =>
   const on = c.set({ pool: true, poolKey: "klasse-7b-geheim", poolJobs: 9 });
   assert.equal(on.pool, true);
   assert.equal(on.poolJobs, 4);
+  assert.equal(on.autostart, true);          // rechnet auch ungenutzt im Hintergrund mit
+  assert.equal(on.trayOnClose, true);
 });

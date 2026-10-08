@@ -170,8 +170,14 @@ function setupIpc() {
   ipcMain.handle("settings:get", (e) => (fromOurPage(e) ? config.get() : null));
   ipcMain.handle("settings:set", (e, partial) => {
     if (!fromOurPage(e)) return null;
+    const before = config.get();
     const next = config.set(partial);
-    if (partial && "autostart" in partial && app.isPackaged) app.setLoginItemSettings({ openAtLogin: next.autostart, args: ["--hidden"] });
+    if (app.isPackaged && (next.autostart !== before.autostart || (partial && "autostart" in partial)))
+      app.setLoginItemSettings({ openAtLogin: next.autostart, args: ["--hidden"] });
+    // Pool an/aus oder anderer Code: App startet im Hintergrund neu, damit der Tutor ab sofort über den Pool läuft
+    if (next.pool !== before.pool || (next.pool && (next.poolKey !== before.poolKey || next.poolJobs !== before.poolJobs))) {
+      setTimeout(() => { quitting = true; app.relaunch({ args: process.argv.slice(1).filter((a) => a !== "--hidden").concat(win && win.isVisible() ? [] : ["--hidden"]) }); app.exit(0); }, 300);
+    }
     return next;
   });
 }
