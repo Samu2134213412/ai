@@ -202,7 +202,8 @@ server/                 FastAPI backend + web dashboard
   tests/                pytest suite, including a live Claude Code test
 mobile/                 Expo / React Native app (Android first)
 docs/                   OLLAMA, REMOTE_ACCESS, SECURITY, VERIFY, ARCHITECTURE
-bigmodel/               standalone: biggest model the PC can run (VRAM+RAM or SSD streaming), quality pipeline
+bigmodel/               standalone: biggest model the PC can run (VRAM+RAM or SSD streaming),
+                        quality pipeline; SchulKI serverless LAN pool (schulki.py)
 start.bat / start.sh    one command to start everything
 ```
 

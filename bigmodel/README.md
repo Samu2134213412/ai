@@ -1,5 +1,7 @@
 # ollama_max – das größte Modell, das dein PC ausführen kann
 
+> Geteilte KI für viele Geräte im Schulnetz, ohne Server: siehe [SCHULKI.md](SCHULKI.md).
+
 Ein eigenständiges Programm (nur Python-Standardbibliothek), getrennt von CodePilot.
 Ziel ist die bestmögliche Antwort, die Geschwindigkeit spielt keine Rolle.
 
