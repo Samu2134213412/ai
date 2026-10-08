@@ -125,3 +125,27 @@ def test_keepalive_survives_rejected_post(http_srv):
     c.request("POST", "/api/noop", body="{}", headers={"X-Token": "tok"})   # same connection
     r = c.getresponse()
     assert r.status == 200 and json.loads(r.read())["ok"] is True
+
+
+def test_stream_is_pipelined_and_ordered(monkeypatch):
+    """Slow encoder (30 ms) must not cap fps at 1/30 s: frames are encoded in parallel but written in order."""
+    n = [0]
+    def slow_encode(img, width, quality, fast=False):
+        i = n[0] = n[0] + 1
+        time.sleep(0.03)
+        return b"\xff\xd8" + i.to_bytes(4, "big")
+    monkeypatch.setattr(server, "encode_jpeg", slow_encode)
+    got = []
+    t0 = time.perf_counter()
+    def write(b):
+        got.append(int.from_bytes(b.split(b"\r\n\r\n", 1)[1][2:6], "big"))
+    server.stream_mjpeg(Rec(), write, 0, 640, 100, 50, should_stop=lambda: time.perf_counter() - t0 > 0.6)
+    assert got == sorted(got)                 # in order
+    assert len(got) >= 28                     # a single 30 ms encoder would give at most ~20 in 0.6 s
+
+
+def test_fast_encode_matches_requested_width():
+    img = Image.new("RGB", (1920, 1080), "blue")
+    import io
+    for w in (480, 640, 854, 1280, 1600):
+        assert Image.open(io.BytesIO(server.encode_jpeg(img, w, 55, True))).width == w

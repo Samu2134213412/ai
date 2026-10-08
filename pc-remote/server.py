@@ -138,7 +138,7 @@ class Backend:
     def media(self, name):
         self.kb.tap(getattr(self.Key, MEDIA_KEYS[name]))
 
-    _cams, _last, _dx_ok, _lock = {}, {}, True, threading.Lock()
+    _cams, _last, _dx_ok, _lock, _tl = {}, {}, True, threading.Lock(), threading.local()
 
     def grab(self, mon=0):
         """Full-resolution PIL frame of a monitor. Uses dxcam (fast, Windows) if installed, else mss."""
@@ -161,9 +161,17 @@ class Backend:
             except Exception:
                 self._dx_ok = False  # DXGI refused (RDP, remote session, ...): stay on mss
         import mss
-        with mss.mss() as sct:
-            raw = sct.grab(sct.monitors[1 + min(max(int(mon), 0), len(sct.monitors) - 2)])
-        return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+        for attempt in (0, 1):
+            sct = getattr(self._tl, "sct", None)
+            if sct is None:  # one mss handle per thread: creating it per frame costs several ms
+                sct = self._tl.sct = mss.mss()
+            try:
+                raw = sct.grab(sct.monitors[1 + min(max(int(mon), 0), len(sct.monitors) - 2)])
+                return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+            except Exception:
+                self._tl.sct = None  # stale handle (resolution change, sleep/wake): rebuild once
+                if attempt:
+                    raise
 
     def screenshot(self, width, quality, mon=0, region=None):
         img = self.grab(mon)
@@ -201,27 +209,64 @@ class Backend:
         return (p.stdout + p.stderr)[-4000:]
 
 
-def encode_jpeg(img, width, quality):
+def encode_jpeg(img, width, quality, fast=False):
+    """fast=True (video): integer box-reduce first, then bilinear; ~3x quicker than the default
+    resampling filter, which was the real bottleneck (JPEG encoding itself is ~2 ms)."""
+    from PIL import Image
     if img.width > width:
-        img = img.resize((width, round(img.height * width / img.width)), reducing_gap=2.0)
+        if fast:
+            f = img.width // width
+            if f >= 2:
+                img = img.reduce(f)
+            if img.width != width:
+                img = img.resize((width, round(img.height * width / img.width)), Image.BILINEAR)
+        else:
+            img = img.resize((width, round(img.height * width / img.width)), reducing_gap=2.0)
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=quality)
+    img.save(buf, "JPEG", quality=quality, **({"subsampling": 2} if fast else {}))
     return buf.getvalue()
 
 
-def stream_mjpeg(be, write, mon, width, fps, quality, should_stop=lambda: False):
-    """Push multipart JPEG frames through write() at up to `fps` until write() raises or should_stop()."""
+_pool = [None]
+
+
+def _encoder_pool():
+    if _pool[0] is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _pool[0] = ThreadPoolExecutor(max_workers=min(4, max(2, (os.cpu_count() or 2))))
+    return _pool[0]
+
+
+def stream_mjpeg(be, write, mon, width, fps, quality, should_stop=lambda: False, depth=3):
+    """Push multipart JPEG frames through write() at up to `fps` until write() raises or should_stop().
+    Capture runs in this thread while up to `depth` frames are encoded in parallel (Pillow releases the
+    GIL); frames are written strictly in order and dropped, never queued, when the encoders are busy."""
+    from collections import deque
+    pool = _encoder_pool()
+    pending = deque()
+
+    def send(fut):
+        frame = fut.result()
+        write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame) + frame + b"\r\n")
+
     step = 1.0 / fps
     due = time.perf_counter()
-    while not should_stop():
-        frame = encode_jpeg(be.grab(mon), width, quality)
-        write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame) + frame + b"\r\n")
-        due += step
-        lag = due - time.perf_counter()
-        if lag > 0:
-            time.sleep(lag)
-        else:
-            due = time.perf_counter()  # can't keep up: don't try to catch up
+    try:
+        while not should_stop():
+            img = be.grab(mon)
+            if len(pending) < depth:
+                pending.append(pool.submit(encode_jpeg, img, width, quality, True))
+            while pending and (pending[0].done() or len(pending) >= depth):
+                send(pending.popleft())
+            due += step
+            lag = due - time.perf_counter()
+            if lag > 0:
+                time.sleep(lag)
+            else:
+                due = time.perf_counter()  # can't keep up: don't try to catch up
+    finally:
+        for f in pending:
+            f.cancel()
 
 
 def release_all(be):

@@ -50,7 +50,7 @@ Grenzen: Beim Powertasten-Start ist der Desktop ~1–2 s sichtbar, bevor er sper
 
 ## Spiel-Modus: Grenzen (ehrlich)
 - Es ist Tastatur+Maus-Steuerung, **kein Gamepad**. Gut für Strategie, Aufbau, Koop, langsame Shooter; für schnelle Online-Shooter ist die Latenz zu hoch.
-- Schneller: `pip install -r requirements-game.txt` (dxcam, Windows). Ohne dxcam läuft es über mss (~20 FPS). 60 FPS schafft die Python-JPEG-Übertragung nur bei niedriger Breite (480–640) auf schnellem PC. Reale Latenz = Netz + ~50–100 ms.
+- FPS: Das Bild wird in 3 Threads parallel umgerechnet und in Reihenfolge gesendet (Motion-JPEG). Im Test (Linux, leerer Bildschirm) waren es 57–60 FPS; auf einem echten Windows-Desktop hängt es an der Bildschirmaufnahme: `pip install -r requirements-game.txt` (dxcam) macht sie deutlich schneller. Danach zählt das Netz (WLAN 5 GHz) und die Breite (480–854 ist schneller als 1280+). Zusätzlich ~50–100 ms Latenz.
 - Das Spiel im **Fenster- oder randlosen Vollbild** starten, nicht „exklusiver Vollbildmodus“ (sonst schwarzes Bild). Spiele mit Anti-Cheat (EAC/BattlEye/Vanguard) können simulierte Eingaben blockieren oder deswegen bannen: nur Einzelspieler-/Koop-Spiele ohne Anti-Cheat verwenden.
 - Am besten im WLAN (5 GHz) oder über Tailscale. Über den öffentlichen Tunnel ist der Videostrom zu langsam. Der Stream-Link enthält den Token (nur für `/api/stream`), nicht weitergeben.
 - Sicherheitsnetz: Lässt das Handy die Verbindung fallen, lässt der PC nach 3 s alle gehaltenen Tasten los.
