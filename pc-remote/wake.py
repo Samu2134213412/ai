@@ -8,7 +8,9 @@ import argparse
 import hmac
 import re
 import secrets
+import json
 import socket
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -36,7 +38,9 @@ def send(mac, broadcast="255.255.255.255", port=9):
         s.sendto(magic_packet(mac), (broadcast, port))
 
 
-def make_handler(token, mac, broadcast, sender=send, pc_url=""):
+def make_handler(token, mac, broadcast, sender=send, pc_url="", window=600, clock=time.time):
+    state = {"last": None}  # time of the last wake signal sent by the phone
+
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -53,17 +57,21 @@ def make_handler(token, mac, broadcast, sender=send, pc_url=""):
             if self.path == "/":
                 self._out(200, PAGE, "text/html; charset=utf-8")
             elif self.path == "/cfg":
-                import json
                 self._out(200, json.dumps({"pc_url": pc_url}), "application/json")
             else:
                 self._out(404, "")
 
         def do_POST(self):
-            if self.path != "/wake":
+            if self.path not in ("/wake", "/woken"):
                 return self._out(404, "")
             if not hmac.compare_digest(self.headers.get("X-Token", "").encode(), token.encode()):
                 return self._out(401, "unauthorized")
+            if self.path == "/woken":  # asked by the PC after boot; one-shot
+                last, state["last"] = state["last"], None
+                woken = last is not None and clock() - last <= window
+                return self._out(200, json.dumps({"woken": woken}), "application/json")
             sender(mac, broadcast)
+            state["last"] = clock()
             self._out(200, "ok")
     return H
 
