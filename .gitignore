@@ -25,3 +25,6 @@ config.json
 .DS_Store
 .idea/
 .vscode/
+
+# ollama_max downloads llama.cpp here
+bigmodel/llama.cpp/
