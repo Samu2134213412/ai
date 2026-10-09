@@ -17,7 +17,7 @@ ES-Module funktionieren nicht über `file://`, daher braucht die Seite einen kle
 
 ```bash
 cd pc-builder
-python -m http.server 8080
+python -m http.server 8080   # oder unter Windows: start.bat doppelklicken
 # oder: npx serve .
 ```
 
