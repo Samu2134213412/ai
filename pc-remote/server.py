@@ -608,9 +608,11 @@ def show(url, title):
 
 def main():
     ensure_streams()
+    import panel_logic
+    cfg = panel_logic.load_config()  # settings made in the control panel; command-line flags still win
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=cfg["port"])
     ap.add_argument("--allow-exec", action="store_true", help="enable the shell-command tab")
     ap.add_argument("--tunnel", action="store_true", help="öffentliche HTTPS-URL über Cloudflare Tunnel")
     ap.add_argument("--no-overlay", action="store_true", help="kein blauer Cursor am PC")
@@ -618,8 +620,13 @@ def main():
     a = ap.parse_args()
     if a.reset_token:
         TOKEN_FILE.unlink(missing_ok=True)
+    a.allow_exec = a.allow_exec or cfg["allow_exec"]
+    a.no_overlay = a.no_overlay or not cfg["overlay"]
     token = load_token()
     be = Backend()
+    import atexit
+    panel_logic.PID_FILE.write_text(str(os.getpid()))
+    atexit.register(lambda: panel_logic.PID_FILE.unlink(missing_ok=True))
     srv = ThreadingHTTPServer((a.host, a.port), make_handler(be, token, a.allow_exec))
     def watchdog():
         while True:

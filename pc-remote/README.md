@@ -10,6 +10,9 @@ Optional Shell-Tab (`--allow-exec`).
 - **Leuchten am PC:** Solange das Handy steuert (und 2,5 s danach), liegt ein blau leuchtender Ring um den Mauszeiger auf dem PC (klickdurchlässig, nicht im Handy-Bild). Abschalten: `--no-overlay`. Braucht tkinter (bei python.org-Python für Windows dabei).
 - **Cursor am Handy:** Der echte PC-Mauszeiger wird als blau leuchtender Zeiger mit Klick-Welle angezeigt.
 
+**Ohne Befehle:** `PC-Remote.bat` (oder `panel.pyw`) doppelklicken → Kontrollfenster mit Starten/Stoppen, Links + QR-Code, Autostart-Haken, Einstellungen, Programmteile installieren, Desktop-Verknüpfung. Das Fenster zu schließen stoppt den Server nicht.
+
+Mit Befehlen:
 ```
 pip install -r requirements.txt
 python server.py            # --allow-exec aktiviert den Shell-Tab
