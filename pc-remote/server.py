@@ -23,6 +23,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).parent
+
+
+def nowin():
+    """Windows: never pop up a console window for child processes (pythonw has no console of its own)."""
+    return {"creationflags": 0x08000000} if sys.platform == "win32" else {}  # CREATE_NO_WINDOW
+
 CONTROL_ACTIONS = {"move", "move_to", "click", "press", "scroll", "type", "key", "hotkey", "media",
                    "key_down", "key_up", "rmove"}
 last_control = [0.0]  # time of the last phone input; drives the glowing pointer on the PC
@@ -198,14 +204,14 @@ class Backend:
 
     def power(self, action):
         cmd = POWER_CMDS.get(sys.platform if sys.platform in POWER_CMDS else "linux")[action]
-        subprocess.Popen(cmd)
+        subprocess.Popen(cmd, **nowin())
 
     def open_url(self, url):
         import webbrowser
         webbrowser.open(url)
 
     def run(self, cmd):
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, **nowin())
         return (p.stdout + p.stderr)[-4000:]
 
 
@@ -523,7 +529,7 @@ def start_tunnel(port, token):
     if not exe:
         sys.exit("cloudflared fehlt: Windows: 'winget install Cloudflare.cloudflared', dann neues Fenster öffnen.")
     p = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--protocol", "http2", "--url", f"http://127.0.0.1:{port}"],
-                         stderr=subprocess.PIPE, text=True)
+                         stderr=subprocess.PIPE, text=True, **nowin())
 
     def watch():
         shown = False
@@ -544,12 +550,22 @@ def start_tunnel(port, token):
     threading.Thread(target=watch, daemon=True).start()
 
 
-def tailscale_dns(run=subprocess.run):
-    """This PC's Tailscale name (e.g. pc.tail1234.ts.net), or None if Tailscale isn't installed/up."""
+def tailscale_exe():
     import shutil
-    exe = shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"
+    exe = shutil.which("tailscale")
+    if exe:
+        return exe
+    default = Path(r"C:\Program Files\Tailscale\tailscale.exe")
+    return str(default) if default.exists() else None
+
+
+def tailscale_dns(run=subprocess.run, exe_finder=tailscale_exe):
+    """This PC's Tailscale name (e.g. pc.tail1234.ts.net), or None if Tailscale isn't installed/up."""
+    exe = exe_finder()
+    if not exe:
+        return None  # not installed: don't even start a process
     try:
-        out = run([exe, "status", "--json"], capture_output=True, text=True, timeout=10).stdout
+        out = run([exe, "status", "--json"], capture_output=True, text=True, timeout=10, **nowin()).stdout
         name = (json.loads(out).get("Self") or {}).get("DNSName", "")
         return name.rstrip(".") or None
     except Exception:
@@ -574,7 +590,7 @@ def copy_link(text):
     if sys.platform != "win32":
         return False
     try:
-        subprocess.run(["clip"], input=text.encode("ascii"), check=True, timeout=5)
+        subprocess.run(["clip"], input=text.encode("ascii"), check=True, timeout=5, **nowin())
         return True
     except Exception:
         return False
@@ -636,11 +652,13 @@ def main():
             except Exception:
                 pass
     threading.Thread(target=watchdog, daemon=True).start()
-    def links():  # Tailscale may come up after login: retry for a few minutes
-        for _ in range(30):
+    def links():  # Tailscale may come up after login (or be installed later): keep checking, quietly
+        tries = 0
+        while True:
             if publish_links(a.port, token):
                 return
-            time.sleep(10)
+            tries += 1
+            time.sleep(15 if tries < 8 else 120)
     threading.Thread(target=links, daemon=True).start()
     if not a.no_overlay:
         from overlay import Overlay

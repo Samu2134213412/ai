@@ -1,3 +1,19 @@
+# PC Remote – PC vom Handy steuern, dauerhaft
+
+## So richtest du es einmal ein (alles im Kontrollfenster)
+1. ZIP entpacken, im Ordner `pc-remote` **`PC-Remote.bat`** doppelklicken.
+2. Im Fenster die Liste „Einrichtung“ von oben nach unten abarbeiten (rote ✗ → Knopf klicken):
+   Programmteile · Autostart · Fester Link (Tailscale) · Automatisch anmelden · PC fürs Anschalten vorbereiten.
+3. Oben auf **Starten**. Unter „Verbindung vom Handy“ den **festen Link** kopieren, am Handy öffnen, als Lesezeichen speichern.
+4. Fertig: PC aus → wieder an → Windows meldet sich selbst an → Server startet unsichtbar → derselbe Link geht wieder.
+5. **Anschalten vom Handy aus** (wenn der PC ganz aus ist): braucht ein Gerät, das immer läuft (Raspberry Pi) oder eine Fritz!Box:
+   `sudo bash pi-wake-setup.sh <MAC-des-PCs>` auf dem Pi (MAC steht im Fenster). Ergibt einen festen Link „PC anschalten“.
+   Am PC: LAN-Kabel, im BIOS „Wake on LAN“ an, Knopf „PC vorbereiten (Admin)“.
+
+Wenn sich Fenster immer wieder öffnen oder etwas nicht klappt: Protokoll (Knopf im Fenster) ansehen oder Foto schicken.
+
+---
+
 # PC Remote
 
 PC vom Handy-Browser steuern. Oben immer der Live-Bildschirm, **Wischen links/rechts wechselt den Monitor**. Button oben links schaltet den Modus:

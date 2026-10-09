@@ -61,3 +61,25 @@ def test_start_server_command():
     seen = {}
     L.start_server("/py", "/srv/server.py", popen=lambda cmd, **kw: seen.update(cmd=cmd, kw=kw) or "proc")
     assert seen["cmd"] == ["/py", "/srv/server.py"]
+
+
+def test_parse_getmac_only_connected_adapters():
+    txt = ('"AA-BB-CC-DD-EE-01","\\Device\\Tcpip_{1234}"\r\n'
+           '"AA-BB-CC-DD-EE-02","Media disconnected"\r\n'
+           '"AA-BB-CC-DD-EE-03","Hardware not present"\r\n')
+    assert L.parse_getmac(txt) == ["AA-BB-CC-DD-EE-01"]
+
+
+def test_local_macs_fallback_format():
+    m = L.local_macs()
+    assert m and len(m[0].split("-")) == 6
+
+
+def test_single_instance_lock():
+    a = L.acquire_single_instance(48999)
+    assert a is not None
+    assert L.acquire_single_instance(48999) is None   # second panel refuses to start
+    a.close()
+    b = L.acquire_single_instance(48999)
+    assert b is not None
+    b.close()

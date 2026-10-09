@@ -20,8 +20,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("PC Remote")
-        self.geometry("560x720")
-        self.minsize(520, 640)
+        self.geometry("580x860")
+        self.minsize(540, 760)
         self.cfg = L.load_config()
         st = ttk.Style(self)
         st.configure("TButton", padding=6)
@@ -40,6 +40,35 @@ class App(tk.Tk):
         self.btn_stop = ttk.Button(top, text="Stoppen", style="Big.TButton", command=self.stop)
         self.btn_stop.pack(side="right", padx=6)
 
+        # ---- one-time setup checklist
+        chk = ttk.LabelFrame(self, text="Einrichtung (einmalig) – damit es dauerhaft vom Handy klappt")
+        chk.pack(fill="x", **pad)
+        self.rows = {}
+        for key, title, hint in (
+                ("deps", "Programmteile installiert", ""),
+                ("auto", "Startet automatisch mit Windows", ""),
+                ("fixed", "Fester Link von überall (Tailscale)", ""),
+                ("login", "Windows meldet sich selbst an", "nötig, damit nach dem Anschalten alles von allein startet"),
+                ("wake", "Per Handy anschalten möglich", "braucht LAN-Kabel + Raspberry Pi/Fritz!Box (siehe Hilfe)")):
+            row = ttk.Frame(chk)
+            row.pack(fill="x", padx=8, pady=2)
+            mark = tk.Label(row, text="?", width=2, font=("Segoe UI", 13, "bold"), fg=GREY)
+            mark.pack(side="left")
+            ttk.Label(row, text=title).pack(side="left")
+            btn = ttk.Button(row, text="…")
+            btn.pack(side="right")
+            self.rows[key] = (mark, btn)
+        self.rows["deps"][1].configure(command=self.install_deps)
+        self.rows["auto"][1].configure(command=self.toggle_auto)
+        self.rows["fixed"][1].configure(command=self.setup_fixed)
+        self.rows["login"][1].configure(command=self.setup_login)
+        self.rows["wake"][1].configure(text="PC vorbereiten (Admin)", command=self.prepare_wake)
+        mac = ttk.Frame(chk)
+        mac.pack(fill="x", padx=8, pady=(2, 8))
+        ttk.Label(mac, text="MAC-Adresse dieses PCs (für das Anschalten):", foreground=GREY).pack(side="left")
+        self.mac_var = tk.StringVar(value=", ".join(L.local_macs()) or "unbekannt")
+        ttk.Entry(mac, textvariable=self.mac_var, state="readonly", width=24).pack(side="left", padx=6)
+
         # ---- links
         box = ttk.LabelFrame(self, text="Verbindung vom Handy")
         box.pack(fill="x", **pad)
@@ -53,17 +82,14 @@ class App(tk.Tk):
             ttk.Entry(row, textvariable=var, state="readonly").pack(side="left", fill="x", expand=True)
             ttk.Button(row, text="Kopieren", command=lambda k=key: self.copy(k)).pack(side="left", padx=4)
             ttk.Button(row, text="QR-Code", command=lambda k=key: self.qr(k)).pack(side="left")
-        self.btn_fixed = ttk.Button(box, text="Festen Link einrichten (Tailscale) …", command=self.setup_fixed)
-        self.btn_fixed.pack(anchor="w", padx=8, pady=(2, 8))
+        ttk.Label(box, text="Am Handy öffnen, dann als Lesezeichen speichern.",
+                  foreground=GREY).pack(anchor="w", padx=8, pady=(0, 8))
 
         # ---- settings
         sett = ttk.LabelFrame(self, text="Einstellungen")
         sett.pack(fill="x", **pad)
-        self.v_auto = tk.BooleanVar(value=L.autostart_enabled())
         self.v_overlay = tk.BooleanVar(value=self.cfg["overlay"])
         self.v_exec = tk.BooleanVar(value=self.cfg["allow_exec"])
-        ttk.Checkbutton(sett, text="Beim Windows-Start automatisch (unsichtbar) starten", variable=self.v_auto,
-                        command=self.toggle_auto).pack(anchor="w", padx=8, pady=3)
         ttk.Checkbutton(sett, text="Blau leuchtenden Kreis am PC zeigen, wenn das Handy steuert",
                         variable=self.v_overlay, command=self.save_settings).pack(anchor="w", padx=8, pady=3)
         ttk.Checkbutton(sett, text="Befehls-Tab erlauben (Vorsicht: volle Kontrolle über den PC)",
@@ -79,8 +105,6 @@ class App(tk.Tk):
         ttk.Button(row, text="Neuen Zugangscode", command=self.renew_token).pack(side="left")
         ttk.Button(row, text="Protokoll öffnen", command=lambda: self.open_file(L.LOG_FILE)).pack(side="left", padx=6)
         ttk.Button(row, text="Desktop-Verknüpfung", command=self.shortcut).pack(side="left")
-        self.btn_deps = ttk.Button(tools, text="Fehlende Programmteile installieren", command=self.install_deps)
-        self.btn_deps.pack(anchor="w", padx=8, pady=(0, 8))
 
         # ---- log
         self.out = tk.Text(self, height=8, state="disabled", bg="#f4f4f4", font=("Consolas", 9))
@@ -134,11 +158,11 @@ class App(tk.Tk):
         self.after(1200, self.start)
 
     def toggle_auto(self):
+        want = not L.autostart_enabled()
         try:
-            L.set_autostart(self.v_auto.get(), L.pythonw_path(), SERVER_PY)
-            self.log("Autostart " + ("eingeschaltet." if self.v_auto.get() else "ausgeschaltet."))
+            L.set_autostart(want, L.pythonw_path(), SERVER_PY)
+            self.log("Autostart " + ("eingeschaltet." if want else "ausgeschaltet."))
         except OSError as e:
-            self.v_auto.set(not self.v_auto.get())
             messagebox.showerror("PC Remote", f"Autostart konnte nicht geändert werden:\n{e}")
 
     def save_settings(self):
@@ -162,6 +186,25 @@ class App(tk.Tk):
 
     def setup_fixed(self):
         bat = HERE / "install-fixed-link.bat"
+        if IS_WIN and bat.exists():
+            os.startfile(bat)
+        else:
+            messagebox.showinfo("PC Remote", "Nur unter Windows verfügbar.")
+
+    def setup_login(self):
+        if not IS_WIN:
+            return
+        messagebox.showinfo(
+            "Automatisch anmelden",
+            "Gleich öffnet sich ein Fenster.\n\n1. Dein Konto anklicken.\n"
+            "2. Den Haken bei „Benutzer müssen Benutzernamen und Kennwort eingeben“ ENTFERNEN.\n"
+            "3. OK klicken und das Windows-Passwort 2× eingeben (kein Passwort: leer lassen).\n\n"
+            "Fehlt der Haken: Einstellungen → Konten → Anmeldeoptionen → „Nur Windows Hello zulassen“ ausschalten.\n"
+            "Hinweis: Dann kommt jeder, der den PC einschaltet, auf deinen Desktop.")
+        subprocess.Popen(["netplwiz"], creationflags=L.CREATE_NO_WINDOW)
+
+    def prepare_wake(self):
+        bat = HERE / "wol-vorbereiten.bat"
         if IS_WIN and bat.exists():
             os.startfile(bat)
         else:
@@ -212,13 +255,27 @@ class App(tk.Tk):
         links = L.read_links()
         for key in ("public", "wlan"):
             self.link_vars[key].set(links.get(key, ""))
-        self.btn_fixed.state(["disabled"] if links.get("public") else ["!disabled"])
         miss = L.missing_modules()
-        self.btn_deps.state(["!disabled"] if miss else ["disabled"])
-        self.btn_deps.configure(text="Fehlende Programmteile installieren (" + ", ".join(miss) + ")" if miss
-                                else "Alle Programmteile vorhanden ✓")
+        auto = L.autostart_enabled()
+        states = {"deps": not miss, "auto": auto, "fixed": bool(links.get("public")),
+                  "login": L.autologin_enabled() if IS_WIN else None, "wake": None}
+        texts = {"deps": "Installieren", "auto": "Ausschalten" if auto else "Einschalten", "fixed": "Einrichten",
+                 "login": "Einrichten"}
+        for key, (mark, btn) in self.rows.items():
+            ok = states[key]
+            mark.configure(text="✓" if ok else ("?" if ok is None else "✗"),
+                           fg=GREEN if ok else (GREY if ok is None else RED))
+            if key in texts:
+                btn.configure(text=texts[key])
+            if key == "deps":
+                btn.state(["disabled"] if ok else ["!disabled"])
+            elif key == "fixed":
+                btn.state(["disabled"] if ok else ["!disabled"])
         self.after(2000, self.tick)
 
 
 if __name__ == "__main__":
+    lock = L.acquire_single_instance()
+    if lock is None:  # already open: don't spawn a second window
+        sys.exit(0)
     App().mainloop()

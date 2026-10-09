@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import urllib.request
@@ -131,3 +132,51 @@ def missing_modules(modules=REQUIRED_MODULES):
 def new_token():
     """Delete the saved access code; the server creates a fresh one on next start."""
     TOKEN_FILE.unlink(missing_ok=True)
+
+
+def autologin_enabled():
+    """True if Windows signs in automatically at boot (needed so the server starts after a power-on)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon") as k:
+            return str(winreg.QueryValueEx(k, "AutoAdminLogon")[0]) == "1"
+    except OSError:
+        return False
+
+
+def parse_getmac(text):
+    """`getmac /fo csv /nh` -> MAC addresses of adapters that are connected."""
+    macs = []
+    for line in text.splitlines():
+        parts = [p.strip().strip('"') for p in line.split('",')]
+        if len(parts) >= 2 and "Tcpip_" in parts[1] and parts[0].count("-") == 5:
+            macs.append(parts[0].upper())
+    return macs
+
+
+def local_macs(run=subprocess.run):
+    if sys.platform == "win32":
+        try:
+            out = run(["getmac", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=10,
+                      creationflags=CREATE_NO_WINDOW).stdout
+            return parse_getmac(out)
+        except Exception:
+            return []
+    import uuid
+    n = uuid.getnode()
+    return ["-".join(f"{(n >> s) & 0xff:02X}" for s in range(40, -8, -8))]
+
+
+def acquire_single_instance(port=48765):
+    """Only one control panel at a time: returns the bound socket (keep a reference) or None if taken."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", port))
+        sock.listen(1)
+        return sock
+    except OSError:
+        sock.close()
+        return None

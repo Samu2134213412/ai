@@ -136,6 +136,27 @@ def test_publish_links_with_and_without_tailscale(tmp_path):
 def test_tailscale_dns_parsing():
     import types
     ok = lambda *a, **k: types.SimpleNamespace(stdout='{"Self": {"DNSName": "pc.tail1.ts.net."}}')
-    assert server.tailscale_dns(ok) == "pc.tail1.ts.net"
+    assert server.tailscale_dns(ok, lambda: "ts") == "pc.tail1.ts.net"
     bad = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError())
-    assert server.tailscale_dns(bad) is None
+    assert server.tailscale_dns(bad, lambda: "ts") is None
+
+
+def test_no_process_when_tailscale_missing():
+    def boom(*a, **k):
+        raise AssertionError("must not spawn")
+    assert server.tailscale_dns(boom, lambda: None) is None
+
+
+def test_child_processes_never_open_a_console_on_windows(monkeypatch):
+    """Regression: polling `tailscale status` opened a black console window every few seconds."""
+    import types
+    monkeypatch.setattr(sys, "platform", "win32")
+    seen = {}
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        return types.SimpleNamespace(stdout="{}")
+    server.tailscale_dns(fake_run, lambda: "ts")
+    assert seen.get("creationflags") == 0x08000000
+    assert server.nowin() == {"creationflags": 0x08000000}
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert server.nowin() == {}
