@@ -34,6 +34,9 @@ button.b:active{background:var(--acc)}button.bad{border-color:var(--bad);color:v
 #msg{position:fixed;bottom:8px;left:8px;right:8px;text-align:center;font-size:13px;color:#aaa;pointer-events:none;z-index:9}
 #toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000c;padding:10px 18px;border-radius:12px;font-size:20px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:3}
 pre{flex:1;overflow:auto;background:var(--card);padding:8px;border-radius:8px;margin:0;white-space:pre-wrap}
+#gate{position:fixed;inset:0;background:#000d;z-index:50;display:none;align-items:center;justify-content:center;padding:16px}
+#gate div{background:#222;border:1px solid #555;border-radius:14px;padding:18px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:10px}
+#gate input{width:100%}#gate p{margin:0;color:#ccc;font-size:15px}
 /* Game mode: MJPEG stream + on-screen controls */
 #game{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;pointer-events:none;background:#000}
 #gui{display:none;position:absolute;inset:0;z-index:3;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -85,7 +88,10 @@ body.m-touch.sheet #panel{display:flex}
  <div class="row"><button class="b bad" data-p="restart">Neustart</button><button class="b bad" data-p="shutdown">Herunterfahren</button></div>
  <button class="b" data-p="cancel">Abbrechen (30 s Frist)</button></section>
 <section id="t-sh"><pre id="out"></pre><div class="row"><input id="cmd" placeholder="Befehl"><button class="b" id="run" style="flex:0 0 90px">Los</button></div></section>
-</main></div><div id="msg"></div>
+</main></div><div id="gate"><div><b>Zugangscode nötig</b>
+ <p>Füge den kompletten Link vom PC ein (aus <i>LINK-ANZEIGEN</i>) oder nur den Code nach dem #.</p>
+ <input id="gateIn" placeholder="https://…/#CODE oder CODE" autocapitalize="off" autocomplete="off" spellcheck="false">
+ <button class="b" id="gateOk">Verbinden</button></div></div><div id="msg"></div>
 <script>
 const $=s=>document.querySelector(s);
 // ---- all state first (no use-before-init) ----
@@ -96,9 +102,12 @@ else{try{token=localStorage.tok||""}catch(e){}}
 try{mode=localStorage.mode==="touch"?"touch":"keys"}catch(e){}  // game mode is never restored: it needs a deliberate tap
 const msg=t=>{$("#msg").textContent=t;clearTimeout(msg.t);msg.t=setTimeout(()=>$("#msg").textContent="",2500)};
 function toast(t){const e=$("#toast");e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,900)}
+function askToken(){$("#gate").style.display="flex"}
+$("#gateOk").onclick=()=>{let v=$("#gateIn").value.trim();if(v.includes("#"))v=v.split("#").pop();if(!v)return;
+  token=v;try{localStorage.tok=v}catch(e){}$("#gate").style.display="none";$("#gateIn").value="";toast("Gespeichert");if(typeof startStream==="function"&&mode==="game")startStream()};
 async function api(a,d={}){
   try{const r=await fetch("/api/"+a,{method:"POST",headers:{"X-Token":token},body:JSON.stringify(d)});
-    const j=await r.json();if(!r.ok){msg(r.status==401?"Token ungültig – QR/URL vom PC neu öffnen":j.error);return null}return j}
+    const j=await r.json();if(!r.ok){if(r.status==401){askToken();msg("Zugangscode ungültig")}else msg(j.error);return null}return j}
   catch(e){msg("Keine Verbindung");return null}}
 // ---- tabs ----
 function show(id){cur=id;document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id=="t-"+id));
@@ -137,11 +146,12 @@ function clampR(){R.w=Math.min(1,Math.max(1/8,R.w));R.x0=Math.min(1-R.w,Math.max
 function zoomBy(f){const cx=R.x0+R.w/2,cy=R.y0+R.w/2;R.w/=f;R.x0=cx-R.w/2;R.y0=cy-R.w/2;clampR()}
 async function loop(){let url=null;
   while(true){
+    if(!token){askToken()}
     if(document.hidden||!token||mode==="game"){await new Promise(r=>setTimeout(r,300));continue}
     const req={...R};
     try{const q=`mon=${mon}&w=${Math.round(Math.min(innerWidth*devicePixelRatio,1280))}`+(req.w<1?`&x=${req.x0}&y=${req.y0}&z=${req.w}`:"");
       const r=await fetch("/api/screen?"+q,{headers:{"X-Token":token}});
-      if(!r.ok){setStat(r.status==401?"Token ungültig":"Bildfehler");await new Promise(r=>setTimeout(r,2000));continue}
+      if(!r.ok){if(r.status==401)askToken();setStat(r.status==401?"Token ungültig":"Bildfehler");await new Promise(r=>setTimeout(r,2000));continue}
       const ph=r.headers.get("X-Pointer");if(ph){const [m,x,y]=ph.split(",").map(Number);ptr={mon:m,x,y}}
       const blob=await r.blob(),u=URL.createObjectURL(blob);
       await new Promise(res=>{img.onload=img.onerror=res;img.src=u});
