@@ -88,6 +88,7 @@ button { font: inherit; cursor: pointer; }
 .info { min-width: 0; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
 .brand { color: var(--muted); font-weight: 500; }
+.tag-new { display: inline-block; font-size: 10px; font-weight: 700; color: var(--accent-text); background: var(--accent); border-radius: 4px; padding: 0 4px; margin-right: 2px; }
 .specs, .evidence { font-size: 12px; color: var(--muted); }
 .evidence { font-style: italic; }
 .price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -113,6 +114,12 @@ body.dragging .drop-hint { display: grid; }
 .slot-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 .slot .name { font-size: 13px; }
 
+.price-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.price-note { font-size: 11px; color: var(--muted); }
+.price-note a { color: var(--accent); }
+#price-status { margin: 6px 0 0; min-height: 1em; }
+.live { display: block; font-size: 10px; font-weight: 600; color: var(--ok); text-align: right; }
+.live-note { color: var(--ok); }
 .power-bar { height: 12px; border-radius: 6px; background: var(--panel-2); overflow: hidden; }
 .power-bar .fill { height: 100%; width: var(--pct, 0%); background: var(--ok); transition: width .3s, background .3s; }
 .power-bar[data-level="warn"] .fill { background: var(--warn); }

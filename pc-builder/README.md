@@ -42,6 +42,16 @@ Hinweise zu den Daten:
 - Felder, die im Datensatz fehlen, werden abgeleitet: der CPU-Sockel aus der Architektur, der RAM-Typ des Mainboards aus Sockel und Name, die GPU-Leistungsaufnahme aus einer Tabelle von Referenzwerten und die Gehäusemaße aus dem Gehäusetyp. Größenprobleme beim Gehäuse werden deshalb nur als Warnung gezeigt.
 - Zum Aktualisieren das Skript einfach erneut ausführen.
 
+## Neue Teile (seit Juli 2025)
+
+Der PCPartPicker-Datensatz endet im Juli 2025. Neuere Teile stehen in `js/parts-extra.js` und erscheinen im Katalog oben mit „Neu“. Dazu gehören Ryzen 7 9850X3D, Ryzen 9 9950X3D2, Core Ultra 200S Plus, RX 9050/9060, Arc Pro B70 und Samsung 9100 Pro. Die Datei enthält außerdem genaue GPU- und Kühler-Freiräume für beliebte Gehäuse, damit dort nicht geschätzt wird. Die Quellen stehen in der Datei.
+
+## Aktuelle Preise
+
+„Aktuelle Preise abrufen“ im Bereich „Dein PC“ sucht mit Claude und Websuche die günstigsten lieferbaren Preise für alle Teile im Build. Gesucht wird auf deutschen Preisvergleichen und Shops: Geizhals, idealo, Mindfactory, Alternate, Caseking und weiteren. Jeder Preis bekommt einen Link zum Angebot und wird im Browser gespeichert. Ist er älter als einen Tag, steht ein Hinweis dabei. Ohne Live-Preis gilt der Katalogpreis.
+
+Eine Abfrage kostet einige Cent API-Guthaben (Websuche plus Tokens). Sie nutzt denselben API-Schlüssel wie die Foto-Erkennung.
+
 ## Foto-Erkennung
 
 Braucht einen Anthropic-API-Schlüssel (<https://console.anthropic.com>). Er wird im Foto-Dialog eingetragen, nur im `localStorage` dieses Browsers gespeichert und direkt an `api.anthropic.com` geschickt. Für eine öffentlich gehostete Version sollte der Aufruf stattdessen über einen eigenen Server laufen, damit der Schlüssel nicht im Browser liegt.
@@ -56,12 +66,14 @@ Das Foto wird vor dem Senden auf max. 1568 px verkleinert. Claude bekommt die je
 | `tools/import-pcpp.mjs` | Import des PCPartPicker-Datensatzes |
 | `js/check.js` | Stromverbrauch, Netzteilempfehlung, Kompatibilitätsregeln |
 | `js/scene3d.js` | 3D-Modell (three.js) |
+| `js/parts-extra.js` | recherchierte neue Teile und Gehäusemaße |
+| `js/prices.js` | Live-Preise über Claude mit Websuche |
 | `js/recognize.js` | Foto-Erkennung über die Claude API |
 | `js/icons.js` | generierte Produktbilder (SVG) |
 | `js/app.js` | Oberfläche, Drag & Drop, Speichern |
 
 ## Grenzen
 
-- Die Preise sind feste Richtwerte. Für echte Tagespreise müsste man eine Preis-API (z. B. Geizhals, Händler-APIs) anbinden.
+- Katalogpreise sind Richtwerte. Echte Tagespreise gibt es über „Aktuelle Preise abrufen“.
 - Der Stromverbrauch ist eine Schätzung aus TDP-Werten, keine Messung.
 - Drag & Drop geht am Handy nicht (Browser-Einschränkung) – dort Teile antippen.

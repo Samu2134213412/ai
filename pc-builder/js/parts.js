@@ -11,6 +11,8 @@
 //   case:    formFactors (unterstützt), maxGpuMm, maxCoolerMm
 //   cooler:  sockets, maxTdp, heightMm (0 = AIO), watt
 
+import { EXTRA_PARTS, applyCaseSpecs } from "./parts-extra.js";
+
 export const CATEGORIES = [
   { id: "cpu", label: "Prozessor", multi: false },
   { id: "mobo", label: "Mainboard", multi: false },
@@ -95,13 +97,17 @@ export const PARTS = [
   { id: "case-nr200p", cat: "case", brand: "Cooler Master", name: "NR200P V2 (ITX)", price: 109, formFactors: ["ITX"], maxGpuMm: 336, maxCoolerMm: 155 },
 ];
 
+// Neue Teile (nach Juli 2025) stehen vorne im Katalog.
+PARTS.unshift(...EXTRA_PARTS);
+
 // Importierter PCPartPicker-Katalog (js/parts-db.js, erzeugt von tools/import-pcpp.mjs).
 // Ist er vorhanden, ersetzt er den eingebauten Beispielkatalog.
 export async function loadImportedParts() {
   try {
     const { default: imported } = await import("./parts-db.js");
     PARTS.length = 0;
-    for (const p of imported) PARTS.push(p);
+    for (const p of EXTRA_PARTS) PARTS.push(p);
+    for (const p of imported) PARTS.push(applyCaseSpecs(p));
     byId = null;
     return imported.length;
   } catch {

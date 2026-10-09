@@ -2,6 +2,7 @@ import { CATEGORIES, PARTS, loadImportedParts, partById, specLine } from "./part
 import { checkBuild, fitsBuild, powerDraw, recommendedPsu } from "./check.js";
 import { partSvg } from "./icons.js";
 import { PcScene } from "./scene3d.js";
+import { fetchPrices, isFresh, readPriceCache } from "./prices.js";
 import { fileToBase64, matchCatalog, recognizeParts, toCustomPart } from "./recognize.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -21,6 +22,11 @@ const state = {
   sort: "priced",
   limit: PAGE,
 };
+
+// Live-Preis aus dem Cache, sonst Katalogpreis.
+let priceCache = readPriceCache();
+const livePrice = (p) => priceCache[p.id];
+const priceOf = (p) => livePrice(p)?.price ?? p.price;
 
 const allParts = () => [...PARTS, ...state.customParts];
 const findPart = (id) => partById(id) || state.customParts.find((p) => p.id === id);
@@ -90,9 +96,10 @@ function renderCatalog() {
     const hay = `${p.brand} ${p.name} ${specLine(p)}`.toLowerCase();
     return words.every((w) => hay.includes(w));
   });
-  if (state.sort === "price-asc") items = items.filter((p) => p.price != null).sort((a, b) => a.price - b.price);
-  if (state.sort === "price-desc") items = items.filter((p) => p.price != null).sort((a, b) => b.price - a.price);
-  if (state.sort === "priced") items = items.filter((p) => p.price != null);
+  const hasPrice = (p) => priceOf(p) != null;
+  if (state.sort === "price-asc") items = items.filter(hasPrice).sort((a, b) => priceOf(a) - priceOf(b));
+  if (state.sort === "price-desc") items = items.filter(hasPrice).sort((a, b) => priceOf(b) - priceOf(a));
+  if (state.sort === "priced") items = items.filter((p) => hasPrice(p) || p.isNew);
   if (state.onlyFitting) items = items.filter((p) => fitsBuild(p, state.build));
   const total = items.length;
   const shown = items.slice(0, state.limit).map((p) => ({ p, fits: state.onlyFitting || fitsBuild(p, state.build) }));
@@ -107,9 +114,9 @@ function renderCatalog() {
         <div class="thumb">${partSvg(p)}</div>
         <div class="info">
           <div class="name"><span class="brand">${esc(p.brand)}</span> ${esc(p.name)}</div>
-          <div class="specs">${esc(specLine(p))}${p.custom ? " · per Foto erkannt" : ""}</div>
+          <div class="specs">${p.isNew ? `<span class="tag-new">Neu</span> ` : ""}${esc(specLine(p))}${p.custom ? " · per Foto erkannt" : ""}</div>
         </div>
-        <div class="price">${eur(p.price)}</div>
+        <div class="price">${eur(priceOf(p))}${livePrice(p)?.price != null ? `<span class="live" title="Live-Preis">live</span>` : ""}</div>
         ${fits ? "" : `<span class="badge-warn" aria-label="Konflikt">!</span>`}
       </article>`;
         })
@@ -132,8 +139,9 @@ function renderBuild() {
         <div class="info">
           <span class="slot-label">${c.label}</span>
           <div class="name">${esc(p.brand)} ${esc(p.name)}</div>
+          ${priceNote(p)}
         </div>
-        <div class="price">${eur(p.price)}</div>
+        <div class="price">${eur(priceOf(p))}</div>
         <button class="icon-btn" data-remove="${c.id}" data-index="${i}" aria-label="${esc(p.name)} entfernen">×</button>
       </li>`),
     );
@@ -141,10 +149,21 @@ function renderBuild() {
   $("#build-list").innerHTML = rows.join("");
 }
 
+function priceNote(p) {
+  const lp = livePrice(p);
+  if (!lp) return `<div class="price-note">Katalogpreis</div>`;
+  const age = isFresh(lp) ? "" : " (älter als 1 Tag)";
+  if (lp.price == null) return `<div class="price-note">Kein aktuelles Angebot gefunden${age}</div>`;
+  const shop = lp.url ? `<a href="${esc(lp.url)}" target="_blank" rel="noopener noreferrer">${esc(lp.shop || "Angebot")}</a>` : esc(lp.shop || "");
+  return `<div class="price-note live-note">Live: ${shop}${lp.note ? ` · ${esc(lp.note)}` : ""}${age}</div>`;
+}
+
 function renderSummary() {
   const b = state.build;
   const all = [b.cpu, b.mobo, b.ram, b.gpu, b.cooler, b.psu, b.case, ...b.storage].filter(Boolean);
-  const total = all.reduce((s, p) => s + (p.price ?? 0), 0);
+  const total = all.reduce((s, p) => s + (priceOf(p) ?? 0), 0);
+  const missing = all.filter((p) => priceOf(p) == null).length;
+  $("#price-hint").textContent = missing ? `${missing} Teil${missing > 1 ? "e" : ""} ohne Preis` : "";
   const { total: watt, parts } = powerDraw(b);
   const rec = recommendedPsu(watt);
   const psuW = b.psu?.watt;
@@ -241,6 +260,8 @@ function bindEvents() {
     }
   });
 
+  $("#fetch-prices").addEventListener("click", updatePrices);
+
   $("#reset").addEventListener("click", () => {
     if (!confirm("Build wirklich leeren?")) return;
     state.build = { cpu: null, mobo: null, ram: null, gpu: null, cooler: null, psu: null, case: null, storage: [] };
@@ -255,6 +276,38 @@ function bindEvents() {
   });
 
   bindPhoto();
+}
+
+// ---------- Live-Preise ----------
+
+async function updatePrices() {
+  const b = state.build;
+  const parts = [b.cpu, b.mobo, b.ram, b.gpu, b.cooler, b.psu, b.case, ...b.storage].filter(Boolean);
+  const status = $("#price-status");
+  if (!parts.length) return void (status.textContent = "Erst Teile auswählen.");
+  let key = readKey();
+  if (!key) {
+    key = (prompt("Anthropic-API-Schlüssel für die Preissuche (wird nur in diesem Browser gespeichert):") || "").trim();
+    if (!key) return;
+    try {
+      localStorage.setItem(KEY_KEY, key);
+    } catch {}
+  }
+  const btn = $("#fetch-prices");
+  btn.disabled = true;
+  status.textContent = `Suche Preise für ${parts.length} Teile …`;
+  try {
+    priceCache = await fetchPrices(key, parts, (round) => {
+      if (round) status.textContent = `Suche läuft weiter (Runde ${round + 1}) …`;
+    });
+    const found = parts.filter((p) => priceCache[p.id]?.price != null).length;
+    status.textContent = `${found} von ${parts.length} Preisen aktualisiert · ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
+    render();
+  } catch (err) {
+    status.textContent = `Fehler: ${err.message || err}`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- Foto-Erkennung ----------
