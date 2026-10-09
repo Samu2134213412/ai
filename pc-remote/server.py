@@ -555,6 +555,21 @@ def copy_link(text):
         return False
 
 
+LOG_FILE = Path.home() / ".pc-remote.log"
+
+
+def ensure_streams():
+    """pythonw.exe (autostart, no console) has sys.stdout/stderr = None: print()/qrcode would crash.
+    Send output to ~/.pc-remote.log instead so the server still starts and problems can be read."""
+    if sys.stdout is None or sys.stderr is None:
+        log = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+        log.write("\n--- %s start ---\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
+        if sys.stdout is None:
+            sys.stdout = log
+        if sys.stderr is None:
+            sys.stderr = log
+
+
 def show(url, title):
     print(f"\n{title}:\n\n  {url}\n")
     try:
@@ -562,11 +577,12 @@ def show(url, title):
         q = qrcode.QRCode(border=1)
         q.add_data(url)
         q.print_ascii(invert=True)
-    except ImportError:
-        pass
+    except Exception:
+        pass  # no qrcode package / no console: the URL above is enough
 
 
 def main():
+    ensure_streams()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8765)

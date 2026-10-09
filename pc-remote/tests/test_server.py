@@ -112,3 +112,14 @@ def test_screen_sends_pointer_header(srv):
     req = urllib.request.Request(url + "/api/screen?w=400", headers={"X-Token": "tok"})
     with urllib.request.urlopen(req) as r:
         assert r.headers["X-Pointer"] == "0,0.25000,0.50000"
+
+
+def test_runs_without_console_pythonw(tmp_path, monkeypatch):
+    """Autostart uses pythonw.exe: sys.stdout/stderr are None. Startup output must not crash."""
+    monkeypatch.setattr(server, "LOG_FILE", tmp_path / "log.txt")
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    server.ensure_streams()
+    server.show("http://x/#t", "Titel")   # print + QR code must work
+    sys.stdout.flush()
+    assert "http://x/#t" in (tmp_path / "log.txt").read_text()
