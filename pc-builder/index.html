@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PC Baukasten</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+        "@anthropic-ai/sdk": "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.128.0/+esm"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>PC Baukasten</h1>
+    <div class="stats">
+      <div class="stat"><span class="stat-label">Preis</span><strong id="total-price">0 €</strong></div>
+      <div class="stat"><span class="stat-label">Verbrauch</span><strong id="total-watt">0 W</strong></div>
+      <div class="stat"><span class="stat-label">Netzteil empf.</span><strong id="psu-rec">0 W</strong></div>
+      <div class="stat"><span class="stat-label">Status</span><strong id="status" data-level="none">Leer</strong></div>
+    </div>
+    <button id="open-photo" class="primary">📷 Teile per Foto</button>
+  </header>
+
+  <main class="layout">
+    <section class="panel catalog-panel" aria-label="Teile-Katalog">
+      <nav id="tabs" class="tabs" role="tablist"></nav>
+      <div class="filters">
+        <input id="search" type="search" placeholder="Suchen …" aria-label="Teile suchen">
+        <label class="toggle"><input id="only-fitting" type="checkbox"> nur passende</label>
+      </div>
+      <div id="catalog" class="catalog"></div>
+    </section>
+
+    <section class="viewport-wrap" aria-label="3D-Ansicht">
+      <div id="viewport" class="viewport">
+        <div class="drop-hint">Hier loslassen zum Einbauen</div>
+      </div>
+      <div class="viewport-actions">
+        <span class="hint">Ziehen = drehen · Scrollen = zoomen · Teile hierher ziehen</span>
+        <button id="screenshot" class="ghost">Bild speichern</button>
+      </div>
+    </section>
+
+    <aside id="build-panel" class="panel build-panel" aria-label="Dein Build">
+      <div class="panel-head">
+        <h2>Dein PC</h2>
+        <button id="reset" class="ghost small">Leeren</button>
+      </div>
+      <ul id="build-list" class="build-list"></ul>
+
+      <h3>Stromversorgung</h3>
+      <div id="power-bar" class="power-bar" data-level="none"><div class="fill"></div></div>
+      <p id="power-text" class="power-text"></p>
+      <details>
+        <summary>Verbrauch im Detail</summary>
+        <ul id="power-detail" class="power-detail"></ul>
+      </details>
+
+      <h3>Kompatibilität</h3>
+      <ul id="checks" class="checks"></ul>
+    </aside>
+  </main>
+
+  <dialog id="photo-dialog" class="dialog">
+    <div class="dialog-head">
+      <h2>Teile per Foto erkennen</h2>
+      <button id="close-photo" class="icon-btn" aria-label="Schließen">×</button>
+    </div>
+    <p class="muted">Fotografiere deinen PC von innen oder einzelne Teile. Claude erkennt die Modelle und baut sie in deinen PC ein.</p>
+    <label class="field">
+      Anthropic-API-Schlüssel
+      <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off">
+      <small>Wird nur in diesem Browser gespeichert und direkt an api.anthropic.com gesendet.</small>
+    </label>
+    <label class="upload">
+      <input id="photo-input" type="file" accept="image/*" capture="environment">
+      <span>Foto aufnehmen oder auswählen</span>
+    </label>
+    <img id="photo-preview" class="photo-preview" alt="Ausgewähltes Foto" hidden>
+    <p id="photo-error" class="error" role="alert"></p>
+    <ul id="photo-results" class="results"></ul>
+    <div class="dialog-actions">
+      <button id="apply-photo" class="primary" disabled>Ausgewählte einbauen</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
