@@ -414,18 +414,18 @@ def make_handler(be, token, allow_exec):
             self.wfile.write(body)
 
         def _authed(self, query_token=""):
+            got = self.headers.get("X-Token", "") or query_token
+            if hmac.compare_digest(got.encode(), token.encode()):
+                return True  # a correct token is never throttled, so strangers can't lock the owner out
             now = time.time()
             fails[:] = [t for t in fails if now - t < 60]
-            if len(fails) >= 20:  # global lockout: tunnel hides client IPs
+            if len(fails) >= 20:  # many wrong guesses: answer instantly, no work
                 self._send(429, {"error": "too many attempts"})
                 return False
-            got = self.headers.get("X-Token", "") or query_token
-            ok = hmac.compare_digest(got.encode(), token.encode())
-            if not ok:
-                fails.append(now)
-                time.sleep(0.5)  # slow down guessing
-                self._send(401, {"error": "unauthorized"})
-            return ok
+            fails.append(now)
+            time.sleep(0.5)  # slow down guessing
+            self._send(401, {"error": "unauthorized"})
+            return False
 
         def do_GET(self):
             u = urlparse(self.path)
@@ -544,6 +544,31 @@ def start_tunnel(port, token):
     threading.Thread(target=watch, daemon=True).start()
 
 
+def tailscale_dns(run=subprocess.run):
+    """This PC's Tailscale name (e.g. pc.tail1234.ts.net), or None if Tailscale isn't installed/up."""
+    import shutil
+    exe = shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"
+    try:
+        out = run([exe, "status", "--json"], capture_output=True, text=True, timeout=10).stdout
+        name = (json.loads(out).get("Self") or {}).get("DNSName", "")
+        return name.rstrip(".") or None
+    except Exception:
+        return None
+
+
+LINKS_FILE = Path.home() / ".pc-remote-links.txt"
+
+
+def publish_links(port, token, find_dns=tailscale_dns, path=None):
+    """Write the (stable) links to a file so they can be looked up any time without a console."""
+    lines = [f"WLAN:      http://{lan_ip()}:{port}/#{token}"]
+    dns = find_dns()
+    if dns:
+        lines.append(f"OEFFENTLICH: https://{dns}/#{token}")
+    (path or LINKS_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return dns
+
+
 def copy_link(text):
     """Windows: put the link on the clipboard so a non-technical user can just paste it."""
     if sys.platform != "win32":
@@ -604,6 +629,12 @@ def main():
             except Exception:
                 pass
     threading.Thread(target=watchdog, daemon=True).start()
+    def links():  # Tailscale may come up after login: retry for a few minutes
+        for _ in range(30):
+            if publish_links(a.port, token):
+                return
+            time.sleep(10)
+    threading.Thread(target=links, daemon=True).start()
     if not a.no_overlay:
         from overlay import Overlay
         Overlay(lambda: last_control[0], be.pointer_xy).start()

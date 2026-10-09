@@ -90,7 +90,7 @@ def test_lockout_after_many_failures(srv):
     for _ in range(20):
         assert call(url, "/api/ping", token="bad")[0] == 401
     assert call(url, "/api/ping", token="bad")[0] == 429
-    assert call(url, "/api/ping", token="tok")[0] == 429  # global lockout (tunnel hides IPs)
+    assert call(url, "/api/ping", token="tok")[0] == 200  # the owner is never locked out by strangers
 
 
 def test_ping_and_monitor_args(srv):
@@ -123,3 +123,19 @@ def test_runs_without_console_pythonw(tmp_path, monkeypatch):
     server.show("http://x/#t", "Titel")   # print + QR code must work
     sys.stdout.flush()
     assert "http://x/#t" in (tmp_path / "log.txt").read_text()
+
+
+def test_publish_links_with_and_without_tailscale(tmp_path):
+    f = tmp_path / "links.txt"
+    assert server.publish_links(8765, "T", lambda: None, f) is None
+    assert "OEFFENTLICH" not in f.read_text() and "#T" in f.read_text()
+    assert server.publish_links(8765, "T", lambda: "pc.tail1.ts.net", f) == "pc.tail1.ts.net"
+    assert "https://pc.tail1.ts.net/#T" in f.read_text()
+
+
+def test_tailscale_dns_parsing():
+    import types
+    ok = lambda *a, **k: types.SimpleNamespace(stdout='{"Self": {"DNSName": "pc.tail1.ts.net."}}')
+    assert server.tailscale_dns(ok) == "pc.tail1.ts.net"
+    bad = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError())
+    assert server.tailscale_dns(bad) is None

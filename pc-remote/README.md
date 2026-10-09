@@ -54,3 +54,9 @@ Grenzen: Beim Powertasten-Start ist der Desktop ~1–2 s sichtbar, bevor er sper
 - Das Spiel im **Fenster- oder randlosen Vollbild** starten, nicht „exklusiver Vollbildmodus“ (sonst schwarzes Bild). Spiele mit Anti-Cheat (EAC/BattlEye/Vanguard) können simulierte Eingaben blockieren oder deswegen bannen: nur Einzelspieler-/Koop-Spiele ohne Anti-Cheat verwenden.
 - Am besten im WLAN (5 GHz) oder über Tailscale. Über den öffentlichen Tunnel ist der Videostrom zu langsam. Der Stream-Link enthält den Token (nur für `/api/stream`), nicht weitergeben.
 - Sicherheitsnetz: Lässt das Handy die Verbindung fallen, lässt der PC nach 3 s alle gehaltenen Tasten los.
+
+## Fester Link, läuft unsichtbar im Hintergrund
+1. `install-autostart.bat` (Server startet bei jeder Windows-Anmeldung unsichtbar).
+2. `install-fixed-link.bat` einmalig: installiert Tailscale (kostenlos), Anmeldung im Browser, schaltet `tailscale funnel --bg 8765` ein. Danach gibt es einen **festen** Link `https://<pc>.<tailnet>.ts.net/#TOKEN` (ändert sich nie, auch nicht nach Neustart). Falls Tailscale eine Freischaltung („Enable HTTPS/Funnel“) im Browser verlangt: einmal bestätigen und das Skript nochmal starten.
+3. `LINK-ANZEIGEN.bat` zeigt alle Links an und kopiert den öffentlichen. Auf dem Handy als Lesezeichen / „Zum Startbildschirm“ speichern: der Token wird gemerkt.
+Sicherheit: Der Link ist öffentlich erreichbar; Schutz ist der lange Zugangscode. Falsche Codes werden gebremst, der richtige nie gesperrt. Nicht weitergeben. Neuer Code: `py server.py --reset-token` (dann Link neu holen). Für den Mama-Hilfe-Fall bleibt `HILFE-STARTEN.bat` (Wegwerf-Link, nur solange das Fenster offen ist).
