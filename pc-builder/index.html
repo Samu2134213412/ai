@@ -34,6 +34,16 @@
         <input id="search" type="search" placeholder="Suchen …" aria-label="Teile suchen">
         <label class="toggle"><input id="only-fitting" type="checkbox"> nur passende</label>
       </div>
+      <div class="filters">
+        <select id="sort" aria-label="Sortierung">
+          <option value="priced">Beliebtheit, nur mit Preis</option>
+          <option value="popular">Beliebtheit, alle</option>
+          <option value="price-asc">Preis aufsteigend</option>
+          <option value="price-desc">Preis absteigend</option>
+        </select>
+        <span id="catalog-count" class="count"></span>
+      </div>
+      <p id="catalog-source" class="source"></p>
       <div id="catalog" class="catalog"></div>
     </section>
 

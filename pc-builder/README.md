@@ -25,17 +25,35 @@ Dann <http://localhost:8080> öffnen. Kein Build-Schritt, keine Installation –
 
 Auf dem Handy: PC und Handy im selben WLAN, dann `http://<IP-des-PCs>:8080` öffnen. Der Foto-Button öffnet direkt die Kamera.
 
+## Alle Teile von PCPartPicker laden
+
+Der eingebaute Katalog hat nur ~55 Beispielteile. Für den vollen Katalog (~46.000 Teile) einmal ausführen (Node 18+):
+
+```bash
+cd pc-builder
+node tools/import-pcpp.mjs                 # alle Teile, auch ältere ohne Preis
+node tools/import-pcpp.mjs --nur-mit-preis # nur ~10.000 aktuell erhältliche Teile
+```
+
+Das Skript lädt den Datensatz [docyx/pc-part-dataset](https://github.com/docyx/pc-part-dataset), der die PCPartPicker-Daten enthält, und schreibt `js/parts-db.js`. Die App nutzt die Datei automatisch, wenn sie vorhanden ist. Sie ist in `.gitignore` eingetragen und nur für den privaten Gebrauch gedacht.
+
+Hinweise zu den Daten:
+- Die Preise sind US-Preise, grob in EUR umgerechnet.
+- Felder, die im Datensatz fehlen, werden abgeleitet: der CPU-Sockel aus der Architektur, der RAM-Typ des Mainboards aus Sockel und Name, die GPU-Leistungsaufnahme aus einer Tabelle von Referenzwerten und die Gehäusemaße aus dem Gehäusetyp. Größenprobleme beim Gehäuse werden deshalb nur als Warnung gezeigt.
+- Zum Aktualisieren das Skript einfach erneut ausführen.
+
 ## Foto-Erkennung
 
 Braucht einen Anthropic-API-Schlüssel (<https://console.anthropic.com>). Er wird im Foto-Dialog eingetragen, nur im `localStorage` dieses Browsers gespeichert und direkt an `api.anthropic.com` geschickt. Für eine öffentlich gehostete Version sollte der Aufruf stattdessen über einen eigenen Server laufen, damit der Schlüssel nicht im Browser liegt.
 
-Das Foto wird vor dem Senden auf max. 1568 px verkleinert. Die Antwort kommt als strukturiertes JSON (Kategorie, Katalog-ID, Sicherheit, Begründung, geschätzte Daten). Erkennungen mit niedriger Sicherheit sind standardmäßig abgewählt.
+Das Foto wird vor dem Senden auf max. 1568 px verkleinert. Claude bekommt die je 60 beliebtesten Teile pro Kategorie als Liste; alle anderen werden danach lokal über den Namen im vollen Katalog gesucht. Die Antwort kommt als strukturiertes JSON (Kategorie, Katalog-ID, Sicherheit, Begründung, geschätzte Daten). Erkennungen mit niedriger Sicherheit sind standardmäßig abgewählt.
 
 ## Aufbau
 
 | Datei | Inhalt |
 |---|---|
-| `js/parts.js` | Teile-Katalog mit Preisen und technischen Daten |
+| `js/parts.js` | Beispielkatalog, lädt `js/parts-db.js` falls vorhanden |
+| `tools/import-pcpp.mjs` | Import des PCPartPicker-Datensatzes |
 | `js/check.js` | Stromverbrauch, Netzteilempfehlung, Kompatibilitätsregeln |
 | `js/scene3d.js` | 3D-Modell (three.js) |
 | `js/recognize.js` | Foto-Erkennung über die Claude API |
@@ -45,6 +63,5 @@ Das Foto wird vor dem Senden auf max. 1568 px verkleinert. Die Antwort kommt als
 ## Grenzen
 
 - Die Preise sind feste Richtwerte. Für echte Tagespreise müsste man eine Preis-API (z. B. Geizhals, Händler-APIs) anbinden.
-- Der Katalog ist eine Auswahl (~55 Teile). Neue Teile einfach in `js/parts.js` ergänzen.
 - Der Stromverbrauch ist eine Schätzung aus TDP-Werten, keine Messung.
 - Drag & Drop geht am Handy nicht (Browser-Einschränkung) – dort Teile antippen.

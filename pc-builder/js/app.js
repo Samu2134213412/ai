@@ -1,11 +1,12 @@
-import { CATEGORIES, PARTS, partById, specLine } from "./parts.js";
+import { CATEGORIES, PARTS, loadImportedParts, partById, specLine } from "./parts.js";
 import { checkBuild, fitsBuild, powerDraw, recommendedPsu } from "./check.js";
 import { partSvg } from "./icons.js";
 import { PcScene } from "./scene3d.js";
-import { fileToBase64, recognizeParts, toCustomPart } from "./recognize.js";
+import { fileToBase64, matchCatalog, recognizeParts, toCustomPart } from "./recognize.js";
 
 const $ = (sel) => document.querySelector(sel);
-const eur = (n) => n.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const PAGE = 60;
+const eur = (n) => n == null ? "–" : n.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const STORE_KEY = "pc-builder.build";
@@ -17,6 +18,8 @@ const state = {
   tab: "cpu",
   query: "",
   onlyFitting: false,
+  sort: "priced",
+  limit: PAGE,
 };
 
 const allParts = () => [...PARTS, ...state.customParts];
@@ -81,15 +84,22 @@ function renderTabs() {
 }
 
 function renderCatalog() {
-  const q = state.query.trim().toLowerCase();
-  const items = allParts()
-    .filter((p) => p.cat === state.tab)
-    .filter((p) => !q || `${p.brand} ${p.name}`.toLowerCase().includes(q))
-    .map((p) => ({ p, fits: fitsBuild(p, state.build) }))
-    .filter(({ fits }) => fits || !state.onlyFitting);
+  const words = state.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let items = allParts().filter((p) => p.cat === state.tab);
+  if (words.length) items = items.filter((p) => {
+    const hay = `${p.brand} ${p.name} ${specLine(p)}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+  if (state.sort === "price-asc") items = items.filter((p) => p.price != null).sort((a, b) => a.price - b.price);
+  if (state.sort === "price-desc") items = items.filter((p) => p.price != null).sort((a, b) => b.price - a.price);
+  if (state.sort === "priced") items = items.filter((p) => p.price != null);
+  if (state.onlyFitting) items = items.filter((p) => fitsBuild(p, state.build));
+  const total = items.length;
+  const shown = items.slice(0, state.limit).map((p) => ({ p, fits: state.onlyFitting || fitsBuild(p, state.build) }));
 
-  $("#catalog").innerHTML = items.length
-    ? items
+  $("#catalog-count").textContent = `${total.toLocaleString("de-DE")} Teile`;
+  $("#catalog").innerHTML = shown.length
+    ? shown
         .map(({ p, fits }) => {
           const inBuild = p.cat === "storage" ? state.build.storage.includes(p) : state.build[p.cat]?.id === p.id;
           return `
@@ -103,7 +113,8 @@ function renderCatalog() {
         ${fits ? "" : `<span class="badge-warn" aria-label="Konflikt">!</span>`}
       </article>`;
         })
-        .join("")
+        .join("") +
+      (total > shown.length ? `<button class="ghost more" id="more">Mehr anzeigen (${(total - shown.length).toLocaleString("de-DE")} weitere)</button>` : "")
     : `<p class="empty">Keine Teile gefunden.</p>`;
 }
 
@@ -133,7 +144,7 @@ function renderBuild() {
 function renderSummary() {
   const b = state.build;
   const all = [b.cpu, b.mobo, b.ram, b.gpu, b.cooler, b.psu, b.case, ...b.storage].filter(Boolean);
-  const total = all.reduce((s, p) => s + p.price, 0);
+  const total = all.reduce((s, p) => s + (p.price ?? 0), 0);
   const { total: watt, parts } = powerDraw(b);
   const rec = recommendedPsu(watt);
   const psuW = b.psu?.watt;
@@ -165,11 +176,14 @@ function bindEvents() {
     const t = e.target.closest("[data-tab]");
     if (t) {
       state.tab = t.dataset.tab;
+      state.limit = PAGE;
+      state.query = $("#search").value = "";
       render();
     }
   });
   $("#search").addEventListener("input", (e) => {
     state.query = e.target.value;
+    state.limit = PAGE;
     renderCatalog();
   });
   $("#only-fitting").addEventListener("change", (e) => {
@@ -177,7 +191,17 @@ function bindEvents() {
     renderCatalog();
   });
 
+  $("#sort").addEventListener("change", (e) => {
+    state.sort = e.target.value;
+    state.limit = PAGE;
+    renderCatalog();
+  });
+
   $("#catalog").addEventListener("click", (e) => {
+    if (e.target.id === "more") {
+      state.limit += PAGE * 2;
+      return renderCatalog();
+    }
     const card = e.target.closest(".card");
     if (card) addPart(findPart(card.dataset.id));
   });
@@ -211,6 +235,7 @@ function bindEvents() {
     const pick = e.target.closest("[data-pick]");
     if (pick) {
       state.tab = pick.dataset.pick;
+      state.limit = PAGE;
       render();
       $("#catalog").scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -266,7 +291,7 @@ function bindPhoto() {
       $("#photo-preview").src = preview;
       $("#photo-preview").hidden = false;
       const found = await recognizeParts(key, data);
-      results = found.map((r) => ({ r, part: (r.catalogId && partById(r.catalogId)) || toCustomPart(r) }));
+      results = found.map((r) => ({ r, part: (r.catalogId && partById(r.catalogId)) || matchCatalog(r, allParts()) || toCustomPart(r) }));
       renderResults(results);
     } catch (err) {
       $("#photo-results").innerHTML = "";
@@ -315,6 +340,8 @@ function readKey() {
 
 // ---------- Start ----------
 
+const imported = await loadImportedParts();
+$("#catalog-source").textContent = imported ? "Katalog: PCPartPicker-Daten (Preise aus USD umgerechnet)" : "Katalog: Beispielteile – für alle Teile tools/import-pcpp.mjs ausführen";
 load();
 bindEvents();
 render();

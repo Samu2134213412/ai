@@ -49,12 +49,37 @@ const SCHEMA = {
 
 const SYSTEM = `Du erkennst PC-Hardware auf Fotos – Teile in einem offenen PC, auf dem Tisch oder in der Verpackung.
 Nenne jedes klar sichtbare Teil einmal. Lies Aufdrucke, Aufkleber und Logos, um das genaue Modell zu bestimmen.
-Gibt es das Modell im Katalog, setze catalogId; ein ähnliches Modell ist kein Treffer (dann null und Daten schätzen).
+Der Katalog ist nur ein Auszug der beliebtesten Teile. Gibt es das Modell dort, setze catalogId; ein ähnliches Modell ist kein Treffer. Sonst catalogId null, den Namen mit Hersteller und genauer Modellbezeichnung angeben und die Daten schätzen.
 Wenn du ein Teil nur vermutest, setze confidence auf "niedrig" und sag in evidence, warum.
 Kabel, Lüfter allein und Schrauben sind keine Teile. Ist kein PC-Teil zu sehen, gib eine leere Liste zurück.`;
 
+// Nur die beliebtesten Teile je Kategorie mitschicken – der volle Katalog hat
+// zehntausende Einträge. Alles andere wird danach lokal per Name zugeordnet.
+const PROMPT_PER_CAT = 60;
+
 function catalogText() {
-  return PARTS.map((p) => `${p.id} | ${p.cat} | ${p.brand} ${p.name} | ${specLine(p)}`).join("\n");
+  const count = {};
+  return PARTS.filter((p) => p.price != null && (count[p.cat] = (count[p.cat] || 0) + 1) <= PROMPT_PER_CAT)
+    .map((p) => `${p.id} | ${p.cat} | ${p.brand} ${p.name} | ${specLine(p)}`)
+    .join("\n");
+}
+
+const tokens = (s) => s.toLowerCase().replace(/[^a-z0-9.]+/g, " ").split(" ").filter((t) => t.length > 1);
+
+// Erkanntes Teil im ganzen Katalog suchen: Anteil der Wörter aus dem erkannten
+// Namen, die im Katalognamen vorkommen. Erst ab 75 % gilt es als Treffer;
+// bei Gleichstand gewinnt das beliebtere (frühere) Teil mit Preis.
+export function matchCatalog(r, parts) {
+  const want = tokens(`${r.brand} ${r.name}`);
+  if (!want.length) return null;
+  let best = null, bestScore = 0;
+  for (const p of parts) {
+    if (p.cat !== r.category || p.custom) continue;
+    const have = new Set(tokens(`${p.brand} ${p.name}`));
+    const score = want.filter((t) => have.has(t)).length / want.length - (p.price == null ? 0.01 : 0);
+    if (score > bestScore) [best, bestScore] = [p, score];
+  }
+  return bestScore >= 0.75 ? best : null;
 }
 
 // Bild verkleinern und als JPEG-Base64 liefern.

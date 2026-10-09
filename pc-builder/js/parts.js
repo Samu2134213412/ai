@@ -95,19 +95,37 @@ export const PARTS = [
   { id: "case-nr200p", cat: "case", brand: "Cooler Master", name: "NR200P V2 (ITX)", price: 109, formFactors: ["ITX"], maxGpuMm: 336, maxCoolerMm: 155 },
 ];
 
-export const partById = (id) => PARTS.find((p) => p.id === id);
+// Importierter PCPartPicker-Katalog (js/parts-db.js, erzeugt von tools/import-pcpp.mjs).
+// Ist er vorhanden, ersetzt er den eingebauten Beispielkatalog.
+export async function loadImportedParts() {
+  try {
+    const { default: imported } = await import("./parts-db.js");
+    PARTS.length = 0;
+    for (const p of imported) PARTS.push(p);
+    byId = null;
+    return imported.length;
+  } catch {
+    return 0;
+  }
+}
+
+let byId = null;
+export function partById(id) {
+  byId ??= new Map(PARTS.map((p) => [p.id, p]));
+  return byId.get(id);
+}
 
 // Kurze Spezifikationszeile für Karten und Listen.
 export function specLine(p) {
   switch (p.cat) {
     case "cpu": return `${p.socket} · ${p.cores} Kerne · ${p.tdp} W`;
     case "mobo": return `${p.socket} · ${p.memType} · ${p.formFactor}`;
-    case "ram": return `${p.memType} · ${p.sizeGB} GB`;
+    case "ram": return `${p.memType}${p.speed ? "-" + p.speed : ""} · ${p.sizeGB} GB (${p.sticks}×${p.sizeGB / p.sticks})`;
     case "gpu": return `${p.vramGB} GB · ${p.tdp} W · ${p.lengthMm} mm`;
-    case "storage": return `${p.kind === "m2" ? "M.2 NVMe" : "SATA"} · ${p.sizeGB >= 1000 ? p.sizeGB / 1000 + " TB" : p.sizeGB + " GB"}`;
-    case "cooler": return `bis ${p.maxTdp} W · ${p.heightMm ? p.heightMm + " mm" : "AIO"}`;
+    case "storage": return `${p.kind === "m2" ? "M.2" : p.hdd ? "HDD" : "SATA"} · ${p.sizeGB >= 1000 ? p.sizeGB / 1000 + " TB" : p.sizeGB + " GB"}`;
+    case "cooler": return `bis ${p.maxTdp} W · ${p.heightMm === 0 ? "AIO" : p.heightMm ? p.heightMm + " mm" : "Luftkühler"}`;
     case "psu": return `${p.watt} W · ${p.efficiency}`;
-    case "case": return `${p.formFactors.join("/")} · GPU ≤ ${p.maxGpuMm} mm`;
+    case "case": return p.type ? `${p.type} · ${p.formFactors.join("/")}` : `${p.formFactors.join("/")} · GPU ≤ ${p.maxGpuMm} mm`;
     default: return "";
   }
 }

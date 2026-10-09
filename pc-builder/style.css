@@ -70,6 +70,10 @@ button { font: inherit; cursor: pointer; }
 .tab.active { background: var(--accent); color: var(--accent-text); }
 .filters { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .filters input[type="search"] { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; }
+.filters select { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; }
+.count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.source { font-size: 11px; color: var(--muted); margin: -4px 0 10px; }
+.more { width: 100%; padding: 10px; }
 .toggle { font-size: 12px; color: var(--muted); white-space: nowrap; display: flex; gap: 4px; align-items: center; }
 .catalog { display: flex; flex-direction: column; gap: 8px; }
 .card { position: relative; display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); cursor: grab; transition: border-color .15s, transform .15s; user-select: none; }

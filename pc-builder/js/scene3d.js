@@ -11,6 +11,7 @@ const TOP = CASE.h / 2 - 3; // Oberkante Mainboard
 const MOBO_X = -CASE.w / 2 + 1.5;
 
 const BOARD = {
+  EATX: { w: 30.5, h: 33, pcie: 12.5 },
   ATX: { w: 24.4, h: 30.5, pcie: 12.5 },
   mATX: { w: 24.4, h: 24.4, pcie: 12.5 },
   ITX: { w: 17, h: 17, pcie: 13 },
@@ -229,7 +230,7 @@ function makeCpu(part, b) {
 function makeCooler(part, b) {
   const g = new THREE.Group();
   const accent = brandColor(part.brand);
-  if (!part.heightMm) {
+  if (part.heightMm === 0) {
     // AIO: Pumpenblock + Radiator am Gehäusedeckel
     const pump = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 3, 32), mat(0x22252b));
     pump.rotation.z = Math.PI / 2;
@@ -242,8 +243,8 @@ function makeCooler(part, b) {
     g.add(pump, ring, rad);
     return g;
   }
-  const h = part.heightMm / 10;
-  const towers = part.heightMm > 100 ? 1 : 0;
+  const h = (part.heightMm ?? 155) / 10;
+  const towers = h > 10 ? 1 : 0;
   const fin = box(h - 1, 12, 5, mat(0xb8bcc2, { metalness: 0.8, roughness: 0.3 }));
   fin.position.copy(onBoard(cpuU(b), 7, 1 + h / 2));
   const fan = box(h - 1.5, 12, 2.5, mat(accent));

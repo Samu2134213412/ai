@@ -30,7 +30,9 @@ export function checkBuild(build) {
   const { cpu, mobo, ram, gpu, cooler, psu, storage } = build;
   const pcCase = build.case;
 
-  if (cpu && mobo) {
+  if (cpu && mobo && (cpu.socket === "?" || mobo.socket === "?")) {
+    warn("CPU-Sockel unbekannt – bitte selbst prüfen");
+  } else if (cpu && mobo) {
     cpu.socket === mobo.socket
       ? ok(`CPU-Sockel passt (${cpu.socket})`)
       : err(`CPU-Sockel ${cpu.socket} passt nicht zum Mainboard (${mobo.socket})`);
@@ -46,18 +48,20 @@ export function checkBuild(build) {
       ? ok(`Mainboard (${mobo.formFactor}) passt ins Gehäuse`)
       : err(`${mobo.formFactor}-Mainboard passt nicht ins Gehäuse (${pcCase.formFactors.join("/")})`);
   }
+  // Bei importierten Gehäusen sind die Maße aus dem Gehäusetyp geschätzt – dann nur warnen.
+  const sizeIssue = pcCase?.estimated ? (t) => warn(`${t} (Gehäusemaße geschätzt, bitte prüfen)`) : err;
   if (gpu && pcCase) {
     gpu.lengthMm <= pcCase.maxGpuMm
       ? ok(`Grafikkarte passt ins Gehäuse (${gpu.lengthMm} ≤ ${pcCase.maxGpuMm} mm)`)
-      : err(`Grafikkarte zu lang: ${gpu.lengthMm} mm, Gehäuse erlaubt ${pcCase.maxGpuMm} mm`);
+      : sizeIssue(`Grafikkarte evtl. zu lang: ${gpu.lengthMm} mm, Gehäuse ca. ${pcCase.maxGpuMm} mm`);
   }
   if (cooler && cpu) {
-    if (!cooler.sockets.includes(cpu.socket)) err(`Kühler unterstützt Sockel ${cpu.socket} nicht`);
+    if (cooler.sockets && !cooler.sockets.includes(cpu.socket)) err(`Kühler unterstützt Sockel ${cpu.socket} nicht`);
     if (cooler.maxTdp < cpu.tdp) warn(`Kühler (bis ${cooler.maxTdp} W) ist knapp für die CPU (${cpu.tdp} W)`);
     else ok("Kühler schafft die CPU-Abwärme");
   }
-  if (cooler && pcCase && cooler.heightMm > pcCase.maxCoolerMm) {
-    err(`Kühler zu hoch: ${cooler.heightMm} mm, Gehäuse erlaubt ${pcCase.maxCoolerMm} mm`);
+  if (cooler && pcCase && cooler.heightMm != null && cooler.heightMm > pcCase.maxCoolerMm) {
+    sizeIssue(`Kühler zu hoch: ${cooler.heightMm} mm, Gehäuse erlaubt ${pcCase.maxCoolerMm} mm`);
   }
   if (mobo) {
     const m2 = storage.filter((s) => s.kind === "m2").length;

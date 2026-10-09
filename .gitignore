@@ -25,3 +25,6 @@ config.json
 .DS_Store
 .idea/
 .vscode/
+
+# PC Baukasten: importierter PCPartPicker-Katalog (lokal erzeugen, nicht committen)
+pc-builder/js/parts-db.js
