@@ -52,6 +52,14 @@ Der PCPartPicker-Datensatz endet im Juli 2025. Neuere Teile stehen in `js/parts-
 
 Eine Abfrage kostet einige Cent API-Guthaben (Websuche plus Tokens). Sie nutzt denselben API-Schlüssel wie die Foto-Erkennung.
 
+## 3D-Modelle
+
+Die eingebauten Modelle werden aus den Daten des Teils gebaut. Länge und Dicke der Grafikkarte, Höhe des Kühlers, Größe des Mainboards und Zahl der RAM-Riegel stimmen also. Dazu kommen drehende Lüfter, Kühlrippen, Heatpipes, Kabel und Beschriftungen.
+
+Echte Modelle einzelner Produkte gibt es frei nur vereinzelt, vor allem auf Sketchfab: dort nach dem Produkt suchen und auf „Downloadable“ filtern. Die Lizenz steht beim Modell, CC-BY verlangt eine Namensnennung. Lade die Datei als **glTF/.glb** herunter. So kommt ein Modell in die App:
+- In „Dein PC“ beim Teil auf **„3D-Modell laden“** klicken und die .glb-Datei wählen. Größe und Ausrichtung werden automatisch angepasst, mit „drehen“ lässt sich nachkorrigieren. Das Modell bleibt im Browser gespeichert.
+- Oder die Datei nach `models/` legen und in `models/manifest.json` einem Teil oder einer ganzen Kategorie zuordnen (siehe `models/README.md`).
+
 ## Foto-Erkennung
 
 Braucht einen Anthropic-API-Schlüssel (<https://console.anthropic.com>). Er wird im Foto-Dialog eingetragen, nur im `localStorage` dieses Browsers gespeichert und direkt an `api.anthropic.com` geschickt. Für eine öffentlich gehostete Version sollte der Aufruf stattdessen über einen eigenen Server laufen, damit der Schlüssel nicht im Browser liegt.
@@ -65,7 +73,8 @@ Das Foto wird vor dem Senden auf max. 1568 px verkleinert. Claude bekommt die je
 | `js/parts.js` | Beispielkatalog, lädt `js/parts-db.js` falls vorhanden |
 | `tools/import-pcpp.mjs` | Import des PCPartPicker-Datensatzes |
 | `js/check.js` | Stromverbrauch, Netzteilempfehlung, Kompatibilitätsregeln |
-| `js/scene3d.js` | 3D-Modell (three.js) |
+| `js/scene3d.js` | 3D-Modelle (three.js), Einpassen eigener .glb-Modelle |
+| `js/models.js` | Speicher für eigene 3D-Modelle, `models/manifest.json` |
 | `js/parts-extra.js` | recherchierte neue Teile und Gehäusemaße |
 | `js/prices.js` | Live-Preise über Claude mit Websuche |
 | `js/recognize.js` | Foto-Erkennung über die Claude API |

@@ -2,6 +2,7 @@ import { CATEGORIES, PARTS, loadImportedParts, partById, specLine } from "./part
 import { checkBuild, fitsBuild, powerDraw, recommendedPsu } from "./check.js";
 import { partSvg } from "./icons.js";
 import { PcScene } from "./scene3d.js";
+import { deleteModel, isGlb, loadAllModels, loadManifest, saveModel } from "./models.js";
 import { fetchPrices, isFresh, readPriceCache } from "./prices.js";
 import { fileToBase64, matchCatalog, recognizeParts, toCustomPart } from "./recognize.js";
 
@@ -140,6 +141,7 @@ function renderBuild() {
           <span class="slot-label">${c.label}</span>
           <div class="name">${esc(p.brand)} ${esc(p.name)}</div>
           ${priceNote(p)}
+          ${modelControls(p)}
         </div>
         <div class="price">${eur(priceOf(p))}</div>
         <button class="icon-btn" data-remove="${c.id}" data-index="${i}" aria-label="${esc(p.name)} entfernen">×</button>
@@ -147,6 +149,34 @@ function renderBuild() {
     );
   }
   $("#build-list").innerHTML = rows.join("");
+}
+
+// Eigene 3D-Modelle je Teil: { partId: { buffer, name, rotation } }
+let customModels = {};
+
+function modelControls(p) {
+  const m = customModels[p.id];
+  if (!m) return `<div class="model-ctl"><button class="link small-link" data-model="${esc(p.id)}">3D-Modell laden</button></div>`;
+  return `<div class="model-ctl">3D: ${esc(m.name)} · <button class="link small-link" data-rotate="${esc(p.id)}">drehen</button> · <button class="link small-link" data-unmodel="${esc(p.id)}">entfernen</button></div>`;
+}
+
+function pickModelFile(partId) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".glb,model/gltf-binary";
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    if (!isGlb(buffer)) return alert("Bitte eine .glb-Datei wählen (glTF binär). Andere Formate vorher z. B. in Blender als .glb exportieren.");
+    customModels[partId] = { buffer, name: file.name, rotation: 0 };
+    try {
+      await saveModel(partId, customModels[partId]);
+    } catch {}
+    scene?.setCustomModel(partId, buffer);
+    renderBuild();
+  };
+  input.click();
 }
 
 function priceNote(p) {
@@ -249,6 +279,20 @@ function bindEvents() {
   }
 
   $("#build-list").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-model],[data-rotate],[data-unmodel]");
+    if (t?.dataset.model) return pickModelFile(t.dataset.model);
+    if (t?.dataset.rotate) {
+      const m = customModels[t.dataset.rotate];
+      m.rotation = (m.rotation + 1) % 4;
+      saveModel(t.dataset.rotate, m).catch(() => {});
+      return scene?.setRotation(t.dataset.rotate, m.rotation);
+    }
+    if (t?.dataset.unmodel) {
+      delete customModels[t.dataset.unmodel];
+      deleteModel(t.dataset.unmodel).catch(() => {});
+      scene?.setCustomModel(t.dataset.unmodel, null);
+      return renderBuild();
+    }
     const rm = e.target.closest("[data-remove]");
     if (rm) return removePart(rm.dataset.remove, Number(rm.dataset.index));
     const pick = e.target.closest("[data-pick]");
@@ -400,7 +444,14 @@ bindEvents();
 render();
 try {
   scene = new PcScene($("#viewport"));
+  customModels = await loadAllModels();
+  for (const [id, m] of Object.entries(customModels)) {
+    scene.customModels.set(id, m.buffer);
+    if (m.rotation) scene.rotations.set(id, m.rotation);
+  }
+  scene.manifest = await loadManifest();
   scene.update(state.build);
+  renderBuild();
 } catch (err) {
   $("#viewport").innerHTML = `<p class="empty">3D-Ansicht nicht verfügbar (WebGL fehlt): ${esc(err.message)}</p>`;
 }
