@@ -1,0 +1,43 @@
+# Home Assistant – Hauptkonfiguration
+#
+# Wird aus dem Repo nach /config synchronisiert (tools/ha-sync.sh).
+# Geheimes steht nur in /config/secrets.yaml auf dem Pi (Vorlage: secrets.yaml.example).
+# Name, Standort, Zeitzone und Einheiten stellst du in der Oberfläche ein –
+# stünden sie hier, wären sie in der Oberfläche gesperrt.
+
+homeassistant:
+  # Jede Datei in packages/ ist ein Themenpaket (Automationen, Helfer, Sensoren
+  # gemeinsam). Neues Thema = neue Datei, ohne diese Datei anzufassen.
+  packages: !include_dir_named packages
+
+# Standard-Integrationen (Energie-Dashboard, Verlauf, Assist, Backups, ...)
+default_config:
+
+frontend:
+  themes: !include_dir_merge_named themes
+
+http:
+  # Sperrt IPs nach wiederholten Fehlanmeldungen (Liste: /config/ip_bans.yaml).
+  ip_ban_enabled: true
+  login_attempts_threshold: 5
+
+recorder:
+  # Detailverlauf 10 Tage. Langzeitstatistiken (Energie Tag/Monat/Jahr) bleiben
+  # davon unberührt und werden dauerhaft gespeichert.
+  purge_keep_days: 10
+  # Seltener in die Datenbank schreiben (Standard 5 s): schont SSD/SD-Karte und
+  # spart CPU auf dem Pi. Nachteil: Verlauf erscheint bis zu 30 s verzögert.
+  commit_interval: 30
+  exclude:
+    entity_globs:
+      # Funkqualität ändert sich ständig und interessiert im Verlauf nicht.
+      - sensor.*_linkquality
+      - sensor.*_rssi
+
+logger:
+  default: warning
+
+# Von der Oberfläche verwaltete Dateien – nicht im Repo, nicht überschreiben.
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

@@ -1,0 +1,23 @@
+# Niemals ins Repo: Geheimnisse und Laufzeitdaten von Home Assistant
+secrets.yaml
+**/secrets.yaml
+.storage/
+*.db
+*.db-shm
+*.db-wal
+*.log
+ip_bans.yaml
+known_devices.yaml
+# Schlüssel
+*.pem
+*.key
+id_*
+*_deploy
+*_deploy.pub
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+__pycache__/
+.venv/

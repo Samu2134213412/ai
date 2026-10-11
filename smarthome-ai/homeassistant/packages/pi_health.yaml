@@ -1,0 +1,59 @@
+# Paket: Gesundheit des Pi
+#
+# Warnt, wenn der 2-GB-Pi dauerhaft an seine Grenzen kommt.
+# Voraussetzung: Integration „System Monitor“ (Einstellungen → Geräte & Dienste)
+# mit den Sensoren Arbeitsspeicher, Datenträger und Prozessortemperatur aktiviert.
+# Heißen die Sensoren bei dir anders, Entitäts-IDs unten anpassen.
+
+automation:
+  - id: pi_health_ram_high
+    alias: "Pi: Arbeitsspeicher dauerhaft knapp"
+    description: >-
+      Über 85 % RAM für 30 Minuten. Erste Hilfe: Add-ons prüfen
+      (Einstellungen → System → Hardware); siehe docs/01-architektur.md, RAM-Budget.
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.system_monitor_memory_usage
+        above: 85
+        for: "00:30:00"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: pi_ram_high
+          title: "Pi: Arbeitsspeicher knapp"
+          message: >-
+            Seit 30 Minuten über 85 %
+            (aktuell {{ states('sensor.system_monitor_memory_usage') }} %).
+
+  - id: pi_health_disk_high
+    alias: "Pi: Datenträger fast voll"
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.system_monitor_disk_usage
+        above: 80
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: pi_disk_high
+          title: "Pi: Datenträger fast voll"
+          message: >-
+            Belegt: {{ states('sensor.system_monitor_disk_usage') }} %.
+            Alte Backups löschen oder recorder.purge_keep_days senken.
+
+  - id: pi_health_temperature_high
+    alias: "Pi: zu warm"
+    description: Ab 80 °C drosselt der Pi 4 seinen Takt.
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.system_monitor_processor_temperature
+        above: 75
+        for: "00:10:00"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: pi_temperature_high
+          title: "Pi: zu warm"
+          message: >-
+            Prozessor seit 10 Minuten über 75 °C
+            ({{ states('sensor.system_monitor_processor_temperature') }} °C).
+            Gehäuse/Belüftung prüfen.
