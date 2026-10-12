@@ -20,10 +20,10 @@
   <rect x="270" y="52" width="100" height="16" fill="#795548"/>
   <text x="320" y="44" text-anchor="middle" fill="#333">Tür (du stehst hier für Foto 3)</text>
 
-  <!-- Dachfenster: von der Tür aus links = in der Draufsicht rechts -->
-  <rect x="514" y="110" width="62" height="60" fill="#bbdefb" stroke="#1976d2" stroke-width="2"/>
-  <text x="500" y="135" text-anchor="end" fill="#1976d2">Dachfenster</text>
-  <text x="500" y="151" text-anchor="end" fill="#1976d2">(klein, kipp)</text>
+  <!-- Dachfenster: vorne bei der Tür, auf der Seite von Bett/Kallax -->
+  <rect x="64" y="110" width="62" height="60" fill="#bbdefb" stroke="#1976d2" stroke-width="2"/>
+  <text x="140" y="135" fill="#1976d2">Dachfenster</text>
+  <text x="140" y="151" fill="#1976d2">(klein, kipp)</text>
 
   <!-- PC auf dem Boden -->
   <rect x="230" y="312" width="40" height="45" fill="#424242"/>

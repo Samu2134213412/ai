@@ -13,7 +13,7 @@ Antworten. In Klammern: welcher Meilenstein oder Schritt davon abhängt.
 | Repo | privat, `smarthome-ai` |
 | Haus | Doppelhaushälfte, Zimmer im Dachgeschoss; Umbauten (Bohren, Fenster) mit den Eltern absprechen |
 | Zimmer 1 (Fotos) | Arbeits-/Gaming-Zimmer, **nicht** das Schlafzimmer. Fängt als Erstes an |
-| Fenster | Ein kleines Dachfenster (Kippfenster) in der Schräge, neben der Tür |
+| Fenster | Ein kleines Dachfenster (Kippfenster) in der Schräge, vorne bei der Tür, auf der Seite von Bett/Kallax |
 | Heizung | Heizkörper hinter dem Schreibtisch |
 | Reihenfolge | Erst die **hintere** Raumhälfte (Schreibtisch, Licht, Giebelwand). Vorne (Tür, Fenster, Lüftung) erst nach Absprache mit den Eltern |
 | Wünsche dazu | Fernseher als virtuelles Fenster, mit Stift auf den Tisch schreiben, Gesten-Steuerung, Lüftung (später) |
