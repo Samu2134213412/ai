@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TB
-    subgraph IMMER["Immer an – Ziel gesamt unter 15 W"]
+    subgraph IMMER["Immer an – Ziel gesamt unter 17 W"]
         PI["Raspberry Pi 4 · 2 GB<br/>Home Assistant OS<br/>Mosquitto · Zigbee2MQTT<br/>Speech-to-Phrase · Piper<br/>Brain-Router · Tailscale"]
         ZB(["Zigbee-Geräte<br/>Licht · Steckdosen · Thermostate<br/>Rollos · Sensoren"])
         SAT["Voice-Satellit<br/>Wake-Word auf dem Gerät"]
@@ -80,9 +80,11 @@ Messsteckdosen; danach ersetze ich die Zahlen hier durch Messwerte.
 | Voice-Satellit | 1,5–2,5 W | pro Stück |
 | Zigbee-Messsteckdosen | 0,3–0,6 W | pro Stück (Eigenverbrauch!) |
 | ESP32-Sensoren am Netzteil | 0,5–1 W | pro Stück |
-| Tisch-Display (Tablet, Bildschirm aus) | 0,3–1 W | per Präsenz an/aus |
+| Tisch-Tablet (Bildschirm aus) | 0,3–1 W | per Präsenz an/aus |
+| LED-Netzteil + 2–3 Licht-Controller (Licht aus) | ≈ 1 W | ein gemeinsames 24-V-Netzteil |
+| Fernseher Netzwerk-Standby | ≈ 2 W | nötig fürs Einschalten per Netzwerk |
 | Batteriesensoren (Temperatur, Fenster) | ≈ 0 | |
-| **Summe Smart-Home-Schicht** | **≈ 10–14 W** | ≈ 7–10 kWh/Monat |
+| **Summe Smart-Home-Schicht** | **≈ 13–17 W** | ≈ 9–12 kWh/Monat |
 
 ### Bei Bedarf
 
@@ -94,6 +96,8 @@ Messsteckdosen; danach ersetze ich die Zahlen hier durch Messwerte.
 | GPU-Server Leerlauf / Last | 60–100 W / 500–600 W | nur wenn geweckt |
 | Bambu X2D druckend | 150–400 W | messen; Standby nach Druck ausschalten |
 | Aktive Lautsprecher Standby | 2–5 W | oft unterschätzt → per Steckdose aus |
+| Licht Schrägen (30–50 % weiß) | 15–40 W | abends/bei Präsenz |
+| Fernseher 43" (virtuelles Fenster) | 42–55 W | nur bei Präsenz |
 
 **Warum sich das Wecken lohnt:** Ein PC, der 10 h am Tag nur „bereitsteht“, kostet
 bei 90 W ≈ 0,9 kWh/Tag ≈ 27 kWh/Monat ≈ 9 €/Monat (bei 0,33 €/kWh). Der Pi

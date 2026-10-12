@@ -51,12 +51,29 @@ Beides lässt sich auch kombinieren (WireGuard als Notfallzugang).
 - Alles Geheime in `/config/secrets.yaml` auf dem Pi; im Repo liegt nur `secrets.yaml.example` mit Platzhaltern.
 - Der Pi holt das Repo mit einem **Deploy-Key (nur Lesen)** – kompromittierter Pi kann nichts ins Repo schreiben.
 
+## HTTPS im Heimnetz (ab M9 nötig)
+
+Browser geben Kamera und Mikrofon nur auf HTTPS-Seiten frei. Die Kamera-Gesten
+auf dem Tisch-Tablet brauchen deshalb Home Assistant per HTTPS – ohne dafür einen
+Port zu öffnen.
+
+| Weg | Wie | Bewertung |
+|---|---|---|
+| **Tailscale-HTTPS (Vorschlag)** | Option `proxy` im Tailscale-Add-on: HA ist unter `https://<name>.<tailnet>.ts.net` mit gültigem Zertifikat erreichbar, nur für Geräte im eigenen Tailnet. Das Tablet bekommt die Tailscale-App. | kein Port, keine Domain nötig; die nötigen `http`-Einstellungen nennt die Add-on-Doku |
+| Let's Encrypt per DNS-Challenge | eigene Domain + Add-on „Let's Encrypt“ mit DNS-Prüfung, in der FRITZ!Box die Domain vom DNS-Rebind-Schutz ausnehmen | kein Port, aber Domain + mehr Einrichtung |
+| Selbst signiertes Zertifikat | eigenes Zertifikat aufs Tablet | fummelig, Apps vertrauen ihm teils nicht |
+
+Funnel bleibt in jedem Fall **aus**.
+
 ## Kameras und Privatsphäre
 
 - Schreibtisch-Kamera hängt am PC (USB) und ist nur aktiv, wenn du eine Prüfung auslöst. Bilder werden standardmäßig nicht gespeichert.
 - 🖨 Mechanische Sichtschutzklappe für die Kamera.
 - Drucker-Kamera nur im LAN; von unterwegs über HA (VPN), nie über einen öffentlichen Link.
 - Mikrofon: Der Satellit überträgt Audio erst nach dem Wake-Word; Stummschalter am Gerät.
+- Gesten-Kamera am Tablet: Erkennung läuft nur auf dem Tablet, nur bei Präsenz, nichts wird gespeichert oder übertragen; sichtbare Anzeige, wann sie aktiv ist.
+- Fernseher (virtuelles Fenster) und eine eventuelle Außenkamera bekommen in der FRITZ!Box ein Profil **ohne Internet**. Updates: Profil kurz wechseln (geht auch per HA-Schalter der FRITZ!Box-Integration).
+- Außenkamera nur auf eigenes Grundstück oder Himmel richten, keine Aufzeichnung, Privatzonen nutzen – Nachbargrundstück und Straße sind tabu (DSGVO, BGH VI ZR 176/09 betraf genau eine Doppelhaushälfte).
 
 ## Updates
 

@@ -3,8 +3,9 @@
 Preise: Richtwerte in Euro (Stand Okt. 2026, Neuware außer wo „gebraucht“ steht).
 **Vor dem Kauf prüfen**, besonders Zigbee-Geräte auf
 [zigbee2mq.tt/supported-devices](https://www.zigbee2mqtt.io/supported-devices/).
-Konkrete Modelle für Licht, Rollos und Thermostate lege ich erst fest, wenn ich
-deine Raumfotos und Antworten habe ([Offene Fragen](00-offene-fragen.md)).
+Das Licht fürs Arbeitszimmer ist nach deinen Fotos geplant
+([11-arbeitszimmer.md](11-arbeitszimmer.md)). Thermostat und Fenster-Technik lege
+ich fest, wenn Ventil und Typenschild bekannt sind ([Offene Fragen](00-offene-fragen.md)).
 
 🖨 = kann/soll auf dem X2D gedruckt werden.
 
@@ -17,9 +18,9 @@ deine Raumfotos und Antworten habe ([Offene Fragen](00-offene-fragen.md)).
 | Passives Alu-Gehäuse für Pi 4 | Kühlung ohne Lüfter (Lüfter = Strom + Lärm) | 15–25 € | 🖨 Alternative: Gehäuse drucken + Kühlkörper (≈ 5 €) |
 | Zigbee-Koordinator USB (z. B. SONOFF ZBDongle-E, SMLIGHT SLZB-07 oder HA Connect ZBT-2) | Funkzentrale | 25–50 € | Mit **USB-Verlängerung 0,5–1 m** betreiben – USB 3 der SSD stört 2,4 GHz |
 | 4× Zigbee-Zwischenstecker **mit Messfunktion** | Strommessung: PC, Monitor+Lautsprecher, Pi/Router-Ecke, später Drucker | 50–90 € | PC-Stecker misst nur – niemals PC per Stecker abschalten! |
-| Licht | Raumlicht + Ersatz der hässlichen LED-Leiste | 40–120 € | **Offen** – nach Raumfotos |
+| Licht Arbeitszimmer: indirekt auf beide Schrägen (2× 24-V-COB-Streifen, 2× Gledopto GL-C-008P, 1× Mean Well GST120A24, 45°-Alu-Profile, Kleinteile) | Ersatz der lila Leiste, Tageslicht-Gefühl | 220–430 € | Sparvariante: erst eine Schräge, 120–220 €. Details: [11-arbeitszimmer.md](11-arbeitszimmer.md) |
 | Voice-Satellit: Home Assistant Voice Preview Edition (1 Stück) | Mikrofon, Lautsprecher, Wake-Word auf dem Gerät | 60–70 € | Alternative siehe Offene Fragen |
-| **Summe Muss** | | **≈ 225–405 €** | je nach Vorhandenem |
+| **Summe Muss** | | **≈ 405–715 €** | mit Spar-Licht ≈ 305–505 €; je nach Vorhandenem |
 
 ## Später (M5–M8)
 
@@ -28,9 +29,9 @@ deine Raumfotos und Antworten habe ([Offene Fragen](00-offene-fragen.md)).
 | 2× Zigbee-Heizkörperthermostat (z. B. SONOFF TRVZB) | Heizung | 60–80 € | Ventilanschluss prüfen (Foto) |
 | 2–3× Zigbee-Fensterkontakt | Heizung aus beim Lüften | 20–40 € | |
 | 2× Zigbee-Temperatur/Feuchte (z. B. SONOFF SNZB-02D) | Raumklima | 25–35 € | |
-| 2× CO₂-Sensor Selbstbau: ESP32-C3 + Sensirion SCD41 | Luftqualität, Lüft-Erinnerung | 50–80 € | 🖨 Gehäuse; ESPHome-Konfig baue ich |
+| 2× CO₂-Sensor Selbstbau: ESP32-C3 + Sensirion SCD41 (oder fertig mit Zigbee, 30–80 € pro Stück) | Luftqualität, Lüft-Erinnerung | 50–80 € | 🖨 Gehäuse; ESPHome-Konfig baue ich. **Einen davon gleich** fürs Arbeitszimmer: Messdaten sind das Argument für Phase 2 |
 | 2× Präsenz Selbstbau: ESP32 + HLK-LD2410C (mmWave) | „Jemand im Raum“ auch beim Stillsitzen | 20–40 € | 🖨 Gehäuse. Fertig-Alternative: Aqara FP1E ≈ 45 € |
-| Rollo-Antriebe | Rollos | 60–80 € pro Fenster | **Offen** – hängt von deinen Rollos ab |
+| Dachfenster: Motor/Rollo | Lüften, Hitzeschutz | offen | Phase 2 – hängt vom Typenschild ab, siehe Lüftung unten |
 | Zigbee-Rauchmelder | **Sicherheit beim Drucken** | 25–50 € | Für den Druckerraum Pflicht, bevor unbeaufsichtigt gedruckt wird |
 | Drucker-Abluft: Rohrlüfter 100 mm + Schlauch + Fensteradapter | ABS/ASA-Dämpfe | 40–80 € | 🖨 Fensteradapter. Nur nötig bei ABS/ASA/PC |
 | Zigbee-Luftqualität (z. B. IKEA VINDSTYRKA: PM2.5 + VOC) | Druckerraum | 35–45 € | |
@@ -43,14 +44,32 @@ deine Raumfotos und Antworten habe ([Offene Fragen](00-offene-fragen.md)).
 |---|---|
 | Gestell elektrisch (2 Motoren, RJ45-Steuerung) | 350–550 € |
 | Tischplatte | 80–350 € |
-| Steuerung + Präsenz + LED-Zonen (ESP32, LD2410C, LED-Streifen, Netzteil, Profil) | 65–120 € |
+| Steuerung + Präsenz + Wisch-Gesten + LED-Zonen (ESP32, LD2410C, APDS-9960, LED-Streifen, Netzteil, Profil) | 70–135 € |
 | Kabelwanne + schaltbare Zigbee-Steckdosen | 70–110 € |
 | Kabellose Ladefläche (Unter-Tisch-Qi) | 30–60 € |
 | Schiene für Kamera/Arm (Alu-Profil + Arm) | 40–80 € |
 | Kamera (USB-Webcam, von oben) | 50–150 € |
-| Touch-Panel (Android-Tablet 8–11") | 100–200 € (0 €, falls altes Tablet vorhanden) |
+| Stift-Tablet (Notizen + Panel + Kamera-Gesten) + Ladegerät | 420–520 € |
 | Kleinteile | 20–30 € |
-| **Summe** | **≈ 800–1.650 €** |
+| **Summe** | **≈ 1.130–2.000 €** |
+
+## Virtuelles Fenster (Arbeitszimmer, Phase 1) – Details in [11-arbeitszimmer.md](11-arbeitszimmer.md)
+
+| Teil | Preis | Hinweis |
+|---|---|---|
+| 43" LED-Fernseher mit LG webOS (50" falls Platz) | 280–380 € (50": 330–500 €) | kein OLED (Einbrennen), kein Casten (braucht Google-Cloud) |
+| Wandhalterung oder Standfuß | 20–150 € | nicht in die Schräge, nicht über den Heizkörper |
+| Kleiner LAN-Switch | ≈ 15 € | nur falls nur eine LAN-Dose da ist |
+| Optional: lokale Außenkamera (z. B. Reolink, PoE) | 130–180 € | nur eigenes Grundstück/Himmel; erst Nachbarn fragen |
+| **Summe** | **≈ 300–550 €** | ohne Kamera |
+
+## Lüftung (Arbeitszimmer, Phase 2 – erst nach Absprache mit den Eltern)
+
+| Teil | Preis | Hinweis |
+|---|---|---|
+| Fensterkontakt + Außentemperatur-Sensor | 20–40 € | HA sagt „jetzt lüften“ – kein Umbau |
+| Motor fürs Dachfenster | ab ≈ 300–400 € | nur wenn das Fenster passt (Typenschild!); Regenschutz muss im Motor sitzen |
+| Lüftungsgerät-Paar mit Wärmerückgewinnung durch die **Außen**-Giebelwand | ≈ 1.600–2.600 € eingebaut | 0,4–3,3 W pro Gerät; nie durch die Wand zum Nachbarn |
 
 ## Roboterarm (M11) – Details in [09-aufraeumen-roboterarm.md](09-aufraeumen-roboterarm.md)
 
@@ -73,8 +92,8 @@ deine Raumfotos und Antworten habe ([Offene Fragen](00-offene-fragen.md)).
 
 ## Was du selbst drucken kannst (🖨 Gesamtüberblick)
 
-Pi-Gehäuse, Sensor-Gehäuse (CO₂, Präsenz), Fensteradapter Abluft, Kabelkanal-
-Clips, LED-Profil-Endkappen/Halter, Tablet-Halterung, Kamera-Halter +
+Pi-Gehäuse, PC-Sockel, Sensor-Gehäuse (CO₂, Präsenz), Tablet-Rahmen, Blende für
+den Gesten-Sensor, Fensteradapter Abluft, Kabelkanal-Clips, LED-Profil-Endkappen/Halter, Tablet-Halterung, Kamera-Halter +
 Sichtschutz-Klappe, Halter für Qi-Lader, Ablage-Schalen für die Aufräum-Zonen,
 SO-101-Arm komplett, Lüfterhutzen für die P40-Karten. Der X2D hat 256 × 256 ×
 260 mm Bauraum – reicht für alle genannten Teile.

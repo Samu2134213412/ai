@@ -1,7 +1,7 @@
 # 00 – Offene Fragen
 
 Bevor ich Hardware vorschlage, die du nicht genannt hast, brauche ich diese
-Antworten. In Klammern: welcher Meilenstein davon abhängt.
+Antworten. In Klammern: welcher Meilenstein oder Schritt davon abhängt.
 
 ## Bereits geklärt
 
@@ -9,36 +9,38 @@ Antworten. In Klammern: welcher Meilenstein davon abhängt.
 |---|---|
 | PC | Windows, LAN-Kabel. Später optional eigener Server mit 2× Tesla P40, nicht dauerhaft an |
 | Pi 4 | 2 GB RAM |
-| Bestand | FRITZ!Box, eine LED-Leiste (soll neu geplant werden) |
+| Bestand | FRITZ!Box, eine lila LED-Leiste (wird ersetzt) |
 | Repo | privat, `smarthome-ai` |
+| Haus | Doppelhaushälfte, Zimmer im Dachgeschoss; Umbauten (Bohren, Fenster) mit den Eltern absprechen |
+| Zimmer 1 (Fotos) | Arbeits-/Gaming-Zimmer, **nicht** das Schlafzimmer. Fängt als Erstes an |
+| Fenster | Ein kleines Dachfenster (Kippfenster) in der Schräge, neben der Tür |
+| Heizung | Heizkörper hinter dem Schreibtisch |
+| Reihenfolge | Erst die **hintere** Raumhälfte (Schreibtisch, Licht, Giebelwand). Vorne (Tür, Fenster, Lüftung) erst nach Absprache mit den Eltern |
+| Wünsche dazu | Fernseher als virtuelles Fenster, mit Stift auf den Tisch schreiben, Gesten-Steuerung, Lüftung (später) |
 
 ## Offen
 
-### Räume (M2, M5, M8)
-1. **Fotos beider Zimmer** + grobe Maße (Länge × Breite, Fenster, Türen, Heizkörper, Steckdosen). Daraus: Lichtplanung, Sensorplätze, Grundriss fürs Dashboard.
-2. **Foto der LED-Leiste** inklusive Controller/Netzteil-Aufkleber. Je nach Typ kann sie mit einem Zigbee- oder WLED-Controller weiterleben.
-3. **Mietwohnung?** Wenn ja: nur Lösungen ohne Eingriff in die Hausinstallation.
-4. **Heizung:** Heizkörper mit Thermostatkopf? Foto vom Ventil (Anschlussgewinde).
-5. **Rollos:** Was ist vorhanden – Innenrollo mit Kette, Rollladen mit Gurt, Plissee, nichts?
-6. **Standorte:** In welchem Zimmer stehen FRITZ!Box/Pi, PC, Bett und später der Drucker?
+### Für Phase 1 (jetzt)
+1. **iPhone oder Android?** Entscheidet das Stift-Tablet: Galaxy Tab S10 FE oder iPad. (Schreibtisch)
+2. **Maße:** Raumlänge, Breite am Boden, Höhe der Kniestockwand, Länge der Schrankreihen links und rechts. (Licht, Grundriss)
+3. **Alte LED-Leiste:** Wie viele Adern/Kontakte hat sie, steht eine Spannung drauf (5/12/24 V), hängt sie an USB? (Licht)
+4. **Licht:** Farbiges Licht auf den Schrägen gewünscht oder vor allem Weiß, das sich über den Tag ändert? (Weiß-only ist heller und billiger)
+5. **Fernseher:** Von wo willst du ihn sehen – vom Schreibtisch (der Tisch zeigt gerade zur Tür, die Giebelwand ist hinter dir) oder vom Bett/Liege? Auch zum Zocken/Filme schauen oder nur als Fenster?
+6. **Welche Giebelwand grenzt an die Nachbarhälfte?** Wichtig für Fernseher-Halterung und später für die Lüftung.
+7. **Neuer Schreibtisch:** Budget und Plattenmaß (z. B. 160 × 80 oder 180 × 80)? Darf eine Tasche für das Tablet in die Platte gefräst werden?
+8. **Schreibst du in Druck- oder Schreibschrift?** Und Rechts- oder Linkshänder? (Stift-Zone, Handschrift-Erkennung)
+9. **Smartwatch** vorhanden? (Gesten-Stufe 0: Doppeltippen bestätigt HA-Meldungen)
+10. Ist das **Deckenpanel** am normalen Lichtschalter? (bleibt vorerst „Putzlicht“)
 
-### Sprache (M4)
-7. **Satellit:** Home Assistant Voice PE (Wake-Word auf dem Gerät, ≈ 65 €, mein Vorschlag) – oder openWakeWord auf dem Pi mit USB-Konferenzlautsprecher (≈ 30–60 €, belastet den 2-GB-Pi, funktioniert nur gut, wenn der Pi im Raum steht, in dem du sprichst)?
+### Netz und Grundsystem (M1)
+11. **FRITZ!Box-Modell** und hat sie einen **USB-Anschluss** (Backup-Ziel)?
+12. **VPN:** Tailscale (keine offenen Ports) oder FRITZ!Box-WireGuard (kein Drittanbieter, ein UDP-Port offen)?
+13. **Pi-Zubehör:** SSD, offizielles Netzteil, Gehäuse vorhanden? Wie alt ist der Pi ungefähr?
+14. **Sprache:** Voice PE (Wake-Word auf dem Gerät, ≈ 65 €) oder openWakeWord auf dem Pi mit USB-Mikro?
 
-### Netz und Strom (M1, M7)
-8. **FRITZ!Box-Modell** und hat sie einen **USB-Anschluss** (Backup-Ziel)?
-9. **Internetanschluss** mit eigener IPv4 oder DS-Lite (Kabel-Anschlüsse oft DS-Lite)? Relevant nur für FRITZ!Box-WireGuard.
-10. **VPN:** Tailscale (keine offenen Ports, Koordinationsserver beim Anbieter) oder FRITZ!Box-WireGuard (kein Drittanbieter, ein UDP-Port offen)?
-11. **Stromtarif:** fester Preis oder dynamisch (z. B. Tibber)? Nur dann ergibt „Drucken zu günstigen Zeiten“ Sinn.
-12. **Pi-Zubehör:** Hast du eine SSD, ein offizielles Netzteil, ein Gehäuse?
-
-### Drucker (M6)
-13. **Materialien:** nur PLA/PETG oder auch ABS/ASA (→ Abluft nötig)?
-
-### Schreibtisch (M9)
-14. **Budget** und **Plattenmaß** (z. B. 160 × 80 oder 180 × 80)?
-15. Steht der **PC am Schreibtisch**? (Kamera per USB am PC)
-16. Hast du ein **altes Tablet** für das Tisch-Display?
-
-### Pi-Hardware (M1)
-17. Wie alt ist dein Pi 4 ungefähr? (Ab 2020 bootet er ohne Umweg von USB-SSD.)
+### Später
+15. **Stromtarif:** fest oder dynamisch (z. B. Tibber)? (Druckplaner)
+16. **Drucker-Materialien:** nur PLA/PETG oder auch ABS/ASA? Und wo soll der Drucker stehen? (M6)
+17. **Typenschild des Dachfensters** (Foto) – wenn Phase 2 dran ist.
+18. **Andere Rechner auf dem Boden** (silberner Tower, schwarze Box): läuft einer davon dauerhaft? Weg oder weiterverwenden?
+19. **Zimmer 2 (Schlafzimmer):** Fotos, wenn wir dort weitermachen.

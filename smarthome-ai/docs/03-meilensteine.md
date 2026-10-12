@@ -13,14 +13,14 @@ Ziel: HA läuft stabil auf dem Pi, du erreichst es von unterwegs nur per VPN.
 - ✅ HA erreichbar im LAN und per Tailscale vom Handy (mobile Daten); keine Portfreigabe in der FRITZ!Box; Backup läuft; RAM-Auslastung notiert
 - Hardware: nur SSD (empfohlen), sonst nichts Neues
 
-## M2 – Zigbee, erstes Licht, Strommessung
+## M2 – Zigbee, Licht an den Schrägen, Strommessung
 
-Ziel: „Licht an/aus“ per App und Dashboard; Verbrauch aller gemessenen Geräte sichtbar, Tages-/Monatsstatistik.
+Ziel: Indirektes Licht im Arbeitszimmer per App/Dashboard, folgt tagsüber dem Sonnenstand; Verbrauch aller gemessenen Geräte sichtbar, Tages-/Monatsstatistik.
 
-- 🤖 Zigbee2MQTT-Konfiguration, Energie-Paket (Tages-/Monatszähler mit `utility_meter`), erstes Dashboard (dunkles Theme, Raum-Kacheln, Energie-Kachel)
-- 🧑 Geräte koppeln, Raumfotos liefern, Licht-Hardware nach meinem Vorschlag kaufen
-- ✅ Licht schaltbar; Energie-Dashboard zeigt PC, Pi, Monitor/Lautsprecher; Pi ≤ 6 W gemessen
-- Hardware: Zigbee-Stick, Messstecker, Licht
+- 🤖 Zigbee2MQTT-Konfiguration, Licht-Paket (Gruppe, Adaptive Lighting, Szenen-Grundgerüst), Energie-Paket (Tages-/Monatszähler mit `utility_meter`), erstes Dashboard (dunkles Theme, Raum-Kacheln, Energie-Kachel)
+- 🧑 Aufräumen + Kabelwanne (Phase 1, Schritt 1), Licht provisorisch testen und montieren, Geräte koppeln
+- ✅ Schrägen-Licht schaltbar und adaptiv; keine LED direkt sichtbar; Energie-Dashboard zeigt PC, Pi, Monitor/Lautsprecher; Pi ≤ 6 W gemessen; CO₂-Kurve läuft mit
+- Hardware: Zigbee-Stick, Messstecker, Licht-Set ([11-arbeitszimmer.md](11-arbeitszimmer.md)), ein CO₂-Sensor
 
 ## M3 – Gehirn: Wecken, Schlafen, Routing (Text)
 
@@ -54,7 +54,8 @@ Ziel: Heizung, Rollos, Sensoren, Präsenz; Szenen „Fokus“, „Gaming“, „
 - 🤖 ESPHome-Konfigurationen (CO₂, Präsenz), Heizungslogik mit Fensterkontakten, Präsenz-Logik (Strom sparen), Szenen
 - 🧑 Sensoren bauen (löten optional – es gibt steckbare Varianten), Gehäuse drucken, montieren
 - ✅ Szenen per Sprache, Dashboard und Zeitplan; Monitor/Lautsprecher gehen bei Abwesenheit aus
-- Hardware: Thermostate, Sensoren, Rollo-Antriebe, Rauchmelder
+- Hardware: Thermostat, Sensoren, Rauchmelder
+- Lüftung/Dachfenster gehören zu Phase 2 des Arbeitszimmers und starten erst nach Absprache mit den Eltern
 
 ## M6 – Bambu X2D (ab Weihnachten)
 
@@ -72,13 +73,18 @@ Ziel: „Plane mir einen Druck für ein Kabelhalter-Set“ → Teileliste, Reihe
 - 🤖 Planer-Dienst (auf dem PC beim Slicen, Ergebnis in HA), Slicer-CLI-Anbindung, Warteschlange, Planungs-Panel
 - ✅ Projekt mit ≥ 3 Teilen geplant; Filament-Prüfung gegen Inventar; Vorschlag für Startzeiten
 
-## M8 – Dashboard-Feinschliff
+## M8 – Dashboard-Feinschliff + virtuelles Fenster
 
-Ziel: Grundriss mit klickbaren Geräten, Glas-Optik, Tisch-Display-Ansicht, Druckplaner-Panel. Siehe [06-dashboard.md](06-dashboard.md).
+Ziel: Grundriss mit klickbaren Geräten, Glas-Optik, Tisch-Panel-Ansicht, Druckplaner-Panel ([06-dashboard.md](06-dashboard.md)). Dazu der Fernseher an der Giebelwand als virtuelles Fenster: HA wählt Clips nach Sonnenstand und Wetter, an nur bei Präsenz ([11-arbeitszimmer.md](11-arbeitszimmer.md)).
+
+Kann vorgezogen werden – der Fernseher hängt nur an M1 + Präsenzsensor.
 
 ## M9 – Neuer Schreibtisch
 
-Siehe [07-schreibtisch.md](07-schreibtisch.md). Kann zeitlich auch vor M6 kommen.
+Gestell, desk-controller (Höhe, Präsenz, LED-Zonen, Wisch-Gesten), Stift-Tablet als Notizblock und Panel, danach Kamera-Gesten auf dem Tablet. Siehe [07-schreibtisch.md](07-schreibtisch.md). Kann zeitlich auch vor M6 kommen.
+
+- Voraussetzung für Kamera-Gesten: HA im Heimnetz per HTTPS ([04-sicherheit.md](04-sicherheit.md))
+- ✅ Tisch per Sprache/Dashboard auf Speicherhöhen; Notiz per Stift landet in der HA-To-do-Liste; 4 Wisch-Gesten und 4–6 Kamera-Gesten lösen Szenen aus, ohne Fehlauslöser beim normalen Arbeiten
 
 ## M10 – Aufräum-System Stufe 1
 

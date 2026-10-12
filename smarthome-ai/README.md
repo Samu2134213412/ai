@@ -14,19 +14,23 @@ wieder. Keine Cloud nötig, kein Port ins Internet offen.
 |---|---|---|
 | M0 | Planung, Repo-Struktur | ✅ fertig |
 | M1 | Pi + Home Assistant + Fernzugriff per VPN | 🟡 Anleitung + Konfiguration fertig, Umsetzung bei dir |
-| M2 | Zigbee, Licht, Strommessung, Energie-Dashboard | ⏳ wartet auf Raumfotos + Hardware |
+| M2 | Zigbee, Licht an den Schrägen, Strommessung, Energie-Dashboard | 🟡 Licht geplant ([Arbeitszimmer](docs/11-arbeitszimmer.md)), wartet auf Maße + Hardware |
 | M3 | Gehirn wecken/schlafen + Routing (Text) | ⏳ |
 | M4 | Sprachsteuerung (2 Wake-Words) | ⏳ |
 | M5 | Raumautomation komplett, Szenen | ⏳ |
 | M6 | Bambu X2D Integration + Filament-Inventar | ⏳ ab Weihnachten |
 | M7 | Druckplaner (Mehrteil-Projekte, Warteschlange) | ⏳ |
-| M8 | Dashboard-Feinschliff (Grundriss, eigene Panels) | ⏳ |
-| M9 | Neuer Schreibtisch | ⏳ |
+| M8 | Dashboard-Feinschliff + virtuelles Fenster (TV) | ⏳ |
+| M9 | Neuer Schreibtisch mit Stift-Tablet und Gesten | 🟡 geplant, wartet auf Budget/Tablet-Wahl |
 | M10 | Aufräum-System Stufe 1 (Kamera + LED) | ⏳ |
 | M11 | Aufräum-System Stufe 2 (Roboterarm SO-101) | ⏳ |
 | M12 | Optional: GPU-Server 2× Tesla P40 | ⏳ jederzeit nach M3 |
 
 Details: [docs/03-meilensteine.md](docs/03-meilensteine.md)
+
+**Aktueller Fokus:** Arbeitszimmer, hintere Raumhälfte – aufräumen, Licht an den
+Schrägen, neuer Schreibtisch, virtuelles Fenster. Lüftung und Dachfenster folgen
+nach Absprache mit den Eltern.
 
 ## Dokumente
 
@@ -43,7 +47,9 @@ Details: [docs/03-meilensteine.md](docs/03-meilensteine.md)
 | [08 3D-Druck](docs/08-3d-druck.md) | X2D-Integration, Druckplaner, Filament-Inventar |
 | [09 Aufräumen & Roboterarm](docs/09-aufraeumen-roboterarm.md) | Kamera, Bildverarbeitung, LED-Zonen, SO-101 |
 | [10 GPU-Server](docs/10-gpu-server.md) | 2× Tesla P40, nur bei Bedarf an |
+| [11 Arbeitszimmer](docs/11-arbeitszimmer.md) | Raumplan mit Skizze: Licht, virtuelles Fenster, Aufräumen; Lüftung als Phase 2 |
 | [Setup M1](docs/setup/M1-pi-homeassistant.md) | Schritt-für-Schritt: Pi + Home Assistant |
+| [Messwerte](docs/messwerte.md) | Echte Messungen statt Schätzungen |
 
 ## Repo-Struktur
 
