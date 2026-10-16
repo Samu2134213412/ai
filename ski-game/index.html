@@ -97,11 +97,47 @@ canvas { display: block; touch-action: none; }
   font-family: var(--body); font-weight: 600; font-size: 12px; min-width: 64px; text-align: center;
   background: #fff; border: 1px solid #c7d6e4; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px;
 }
-#startBtn {
-  width: 100%; border: 0; border-radius: 10px; padding: 12px; cursor: pointer;
-  background: var(--signal); color: #fff; font-family: var(--display); font-style: italic; font-weight: 800; font-size: 26px; letter-spacing: 0.06em;
+.btn, .lvl { font: inherit; cursor: pointer; border-radius: 10px; }
+.btn {
+  border: 1px solid #c7d6e4; background: #fff; color: var(--ink); padding: 12px;
+  font-family: var(--display); font-style: italic; font-weight: 800; font-size: 22px; letter-spacing: 0.06em;
 }
-#startBtn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.btn.primary { background: var(--signal); border-color: var(--signal); color: #fff; }
+.btn:focus-visible, .lvl:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.btn:hover, .lvl:hover { filter: brightness(0.97); }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 14px; }
+.actions.one { grid-template-columns: 1fr; }
+.lvls { display: grid; gap: 8px; margin-bottom: 12px; }
+.lvl { display: grid; gap: 3px; text-align: left; border: 1px solid #c7d6e4; background: #fff; color: var(--ink); padding: 10px 12px; }
+.lvl .ln { font-family: var(--display); font-style: italic; font-weight: 800; font-size: 20px; }
+.lvl .ld { font-size: 13px; color: #4d6684; }
+.lvl .ls { font-size: 12px; font-weight: 600; color: #4d6684; }
+.lvl.done .ls { color: #1c8a4a; }
+.bh { margin: 6px 0; font-family: var(--display); font-style: italic; font-weight: 800; font-size: 20px; letter-spacing: 0.04em; }
+.board { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 3px; font-size: 14px; }
+.board li { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; padding: 5px 8px; background: #fff; border-radius: 6px; }
+.board li.me { background: #ffe6dc; font-weight: 600; }
+.board li.empty { display: block; color: #4d6684; background: none; padding: 0; }
+.board .rk { color: #4d6684; font-variant-numeric: tabular-nums; }
+.board .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .sc { font-family: var(--display); font-style: italic; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ctl { margin-top: 6px; font-size: 14px; }
+.ctl summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.ctl .keys { margin: 6px 0 4px; }
+.keys.plain li { display: block; }
+.msg { margin: 0 0 12px; font-weight: 600; color: var(--signal); }
+.msg.dim { color: #4d6684; }
+#bonus {
+  position: absolute; left: 50%; top: 58%; transform: translateX(-50%); opacity: 0; white-space: nowrap;
+  font-family: var(--display); font-style: italic; font-weight: 800; font-size: 22px; color: #fff; text-shadow: 0 2px 10px rgba(16, 35, 61, 0.55);
+}
+#bonus.show { animation: bonus 1s ease-out forwards; }
+@keyframes bonus {
+  0% { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  15% { opacity: 1; transform: translateX(-50%); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+}
 #touch {
   position: fixed; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: none; align-items: flex-end;
   justify-content: space-between; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
@@ -147,39 +183,21 @@ canvas { display: block; touch-action: none; }
   <div id="card">
     <div class="row"><span class="lab">Punkte</span><span id="score" class="val big">0</span></div>
     <div class="row"><span class="lab">Strecke</span><span id="dist" class="val">0 m</span></div>
-    <div class="row"><span class="lab">Bestwert</span><span id="best" class="val">0</span></div>
+    <div class="row"><span class="lab" id="goalLab">Bestwert</span><span id="goalVal" class="val">0</span></div>
   </div>
   <div id="speedo"><div class="lab">SPEED</div><div id="spd">0</div><div class="unit">km/h</div><div id="clock">00:00</div></div>
   <div id="trick"></div>
+  <div id="bonus"></div>
 </div>
 
-<button id="pauseBtn" aria-label="Pause">II</button>
+<button id="pauseBtn" aria-label="Pause" hidden>II</button>
 <div id="touch">
   <div class="grp"><button id="tL" aria-label="Links">◀</button><button id="tR" aria-label="Rechts">▶</button></div>
   <div class="grp"><div class="col"><button id="tU" aria-label="Hocke">▲</button><button id="tB" aria-label="Bremsen">▼</button></div><button id="tJ" aria-label="Springen">JUMP</button></div>
 </div>
 
 <div id="overlay">
-  <div class="panel">
-    <h1 id="ovTitle">POWDER LINE</h1>
-    <p class="sub" id="ovSub">Freeride-Abfahrt mit Kickern. Weich den Bäumen aus, spring über die Schanzen und lande deine Drehungen sauber.</p>
-    <div id="result" hidden></div>
-    <ul class="keys tch">
-      <li><kbd>◀ ▶</kbd> Kurven fahren, in der Luft drehen (oder linke/rechte Bildschirmhälfte halten)</li>
-      <li><kbd>▲</kbd> Hocke (schneller), in der Luft Frontflip</li>
-      <li><kbd>▼</kbd> Bremsen, in der Luft Backflip</li>
-      <li><kbd>JUMP</kbd> Springen (oder nach oben wischen), halten für Grab</li>
-      <li><kbd>II</kbd> Pause</li>
-    </ul>
-    <ul class="keys kb">
-      <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen</li>
-      <li><kbd>↑  W</kbd> Hocke (schneller), in der Luft Frontflip</li>
-      <li><kbd>↓  S</kbd> Bremsen, in der Luft Backflip</li>
-      <li><kbd>Leertaste</kbd> Springen, gedrückt halten für Grab</li>
-      <li><kbd>P</kbd> Pause</li>
-    </ul>
-    <button id="startBtn">DROP IN</button>
-  </div>
+  <div class="panel" id="panel"></div>
 </div>
 
 <script type="importmap">
@@ -189,7 +207,7 @@ canvas { display: block; touch-action: none; }
 import * as THREE from 'three';
 
 // ---------- constants ----------
-const CH_LEN = 100, CH_W = 360, SX = 90, SZ = 25, AHEAD = 5, MAX_TREES = 190;
+const CH_LEN = 100, CH_W = 360, SX = 90, SZ = 25, AHEAD = 5, MAX_TREES = 230, MAX_COINS = 48;
 const G = 9.81;
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -343,6 +361,9 @@ function treeGeometry() {
 }
 const treeGeo = treeGeometry();
 const treeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+const coinGeo = new THREE.OctahedronGeometry(0.42);
+coinGeo.scale(1, 1.35, 1);
+const coinMat = new THREE.MeshLambertMaterial({ color: 0xffc23d, emissive: 0x9a5200 });
 const rampMat = new THREE.MeshLambertMaterial({ color: 0xf6faff });
 const signalMat = new THREE.MeshLambertMaterial({ color: 0xff6b3d });
 const poleMat = new THREE.MeshLambertMaterial({ color: 0x2b2f3a });
@@ -376,10 +397,14 @@ class Chunk {
     this.trees.receiveShadow = true;
     this.trees.frustumCulled = false;
     this.rampGroup = new THREE.Group();
+    this.coinMesh = new THREE.InstancedMesh(coinGeo, coinMat, MAX_COINS);
+    this.coinMesh.frustumCulled = false;
+    this.coinMesh.count = 0;
+    this.coins = [];
     this.obstacles = [];
     this.ramps = [];
     this.idx = null;
-    scene.add(this.mesh, this.trees, this.rampGroup);
+    scene.add(this.mesh, this.trees, this.rampGroup, this.coinMesh);
   }
 
   build(idx) {
@@ -417,8 +442,13 @@ class Chunk {
     this.ramps = []; this.obstacles = [];
 
     const rng = mulberry32(idx * 7919 + runSeed * 104729 + 13);
-    // kickers
-    if (idx >= 1) {
+    const inChunk = (z) => z <= z0 && z > z0 - CH_LEN;
+    const coins = [];
+    if (level) {
+      for (const r of level.ramps) if (inChunk(r.z)) { this.ramps.push(r); this.rampGroup.add(buildRamp(r)); }
+      for (const k of level.coins) if (inChunk(k.z)) coins.push(k);
+    } else if (idx >= 1) {
+      // kickers
       const n = (rng() < 0.75 ? 1 : 0) + (rng() < 0.3 ? 1 : 0);
       for (let k = 0; k < n; k++) {
         const L = 11 + rng() * 4, z = z0 - 18 - rng() * (CH_LEN - 22 - L);
@@ -426,9 +456,17 @@ class Chunk {
         const r = { x: center(z) + (rng() - 0.5) * 34, z, L, w: 7 + rng() * 3, h: 2.6 + rng() * 1.8 };
         this.ramps.push(r);
         this.rampGroup.add(buildRamp(r));
+        kickerCoins(coins, r);
+      }
+      // crystal lines on the piste
+      const lines = rng() < 0.8 ? 1 + (rng() < 0.4 ? 1 : 0) : 0;
+      for (let l = 0; l < lines; l++) {
+        const zs = z0 - 6 - rng() * (CH_LEN - 30), off = (rng() - 0.5) * 40;
+        for (let j = 0; j < 5; j++) { const z = zs - j * 4.5; coins.push({ x: center(z) + off + Math.sin(j * 0.8) * 1.5, z, dy: 1.1 }); }
       }
     }
     const nearRamp = (x, z) => this.ramps.some((r) => Math.abs(x - r.x) < r.w + 3 && z < r.z + 35 && z > r.z - r.L - 30);
+    const nearCoin = (x, z) => coins.some((k) => Math.abs(k.x - x) < 2.6 && Math.abs(k.z - z) < 2.6);
 
     // trees
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), tint = new THREE.Color();
@@ -444,11 +482,13 @@ class Chunk {
       count++;
       if (solid) this.obstacles.push({ x, z, y, r: 0.75 * sc + 0.2, top: 5.6 * sc });
     };
-    if (idx >= 2) {
+    if (level) {
+      for (const t of level.trees) if (inChunk(t.z)) place(t.x, t.z, t.s, true);
+    } else if (idx >= 2) {
       const n = Math.min(12, 2 + Math.floor(idx / 3));
       for (let k = 0; k < n; k++) {
         const z = z0 - rng() * CH_LEN, x = center(z) + (rng() - 0.5) * 58;
-        if (!nearRamp(x, z)) place(x, z, 0.8 + rng() * 0.6, true);
+        if (!nearRamp(x, z) && !nearCoin(x, z)) place(x, z, 0.8 + rng() * 0.6, true);
       }
     }
     while (count < MAX_TREES - 4) {
@@ -459,6 +499,8 @@ class Chunk {
       place(x, z, 0.75 + rng() * 1.0, d < 60);
       if (rng() < 0.25) place(x + (rng() - 0.5) * 6, z + (rng() - 0.5) * 6, 0.6 + rng() * 0.6, d < 60);
     }
+    this.coins = coins.slice(0, MAX_COINS).map((k) => ({ x: k.x, z: k.z, y: terrainH(k.x, k.z) + k.dy, taken: false }));
+    this.coinMesh.count = this.coins.length;
     this.trees.count = count;
     this.trees.instanceMatrix.needsUpdate = true;
     if (this.trees.instanceColor) this.trees.instanceColor.needsUpdate = true;
@@ -658,17 +700,136 @@ function updateFlakes(dt) {
   flakeGeo.attributes.position.needsUpdate = true;
 }
 
+// ---------- levels ----------
+const START_Z = -4;
+// keep a kicker inside one terrain chunk so groundAt finds all of it
+function fitRamp(z, L) {
+  const idx = Math.floor(-z / CH_LEN);
+  if (-z < idx * CH_LEN + 2) z = -(idx * CH_LEN + 2);
+  if (-z + L > (idx + 1) * CH_LEN - 2) z = -((idx + 1) * CH_LEN + 2);
+  return z;
+}
+function kickerCoins(coins, r) {
+  const lip = r.z - r.L;
+  [[4, 1.6], [9, 2.6], [14, 2.8], [19, 2.2]].forEach(([d, dy]) => coins.push({ x: r.x, z: lip - d, dy: r.h + dy }));
+}
+const LEVELS = [
+  {
+    id: 1, name: 'Waldschneise', len: 900, vMin: 15, vMax: 19, goal: 'finish',
+    desc: 'Ein Baumwall nach dem anderen, jeweils mit einer schmalen Lücke. Komm ohne Baumkontakt ins Ziel.',
+    gen(rng) {
+      const trees = [], coins = [];
+      let gap = 0;
+      for (let z = -60; z > -this.len + 30; z -= 17) {
+        gap = clamp(gap + (rng() - 0.5) * 16, -20, 20);
+        const c = center(z);
+        for (let o = -36; o <= 40; o += 4.2) {
+          if (Math.abs(o - gap) < 4.3) continue;
+          trees.push({ x: c + o + (rng() - 0.5) * 0.8, z: z + (rng() - 0.5) * 1.6, s: 0.85 + rng() * 0.4 });
+        }
+        coins.push({ x: c + gap, z: z + 8.5, dy: 1.2 });
+      }
+      return { trees, coins, ramps: [], gates: [] };
+    },
+  },
+  {
+    id: 2, name: 'Kicker-Park', len: 1000, vMin: 17, goal: 'tricks', target: 6000,
+    desc: 'Sieben große Kicker. Hol mindestens 6.000 Trickpunkte, bevor du im Ziel bist. Nur Drehungen und Flips zählen für die Combo.',
+    gen(rng) {
+      const trees = [], coins = [], ramps = [];
+      for (let k = 0; k < 7; k++) {
+        const z = fitRamp(-100 - k * 130, 13);
+        const r = { x: center(z) + (rng() - 0.5) * 12, z, L: 13, w: 9, h: 3.8 + rng() * 0.5 };
+        ramps.push(r); kickerCoins(coins, r);
+      }
+      for (let k = 0; k < ramps.length; k++) {
+        const r = ramps[k], nx = ramps[k + 1];
+        for (let j = 0; j < 6; j++) {
+          const z = r.z - r.L - 10 - rng() * 100, x = center(z) + (rng() - 0.5) * 56;
+          const inLanding = z > r.z - r.L - 50 && Math.abs(x - r.x) < 10;
+          const inRunIn = nx && z < nx.z + 45 && z > nx.z - nx.L - 2 && Math.abs(x - nx.x) < 9;
+          if (!inLanding && !inRunIn && z > -this.len + 10) trees.push({ x, z, s: 0.9 + rng() * 0.4 });
+        }
+      }
+      return { trees, coins, ramps, gates: [] };
+    },
+  },
+  {
+    id: 3, name: 'Slalom-Hang', len: 1150, vMin: 17, goal: 'gates',
+    desc: 'Fahr durch jedes Tor und spring über die zwei Buschreihen. Ein verpasstes Tor beendet den Lauf.',
+    gen(rng) {
+      const trees = [], coins = [], ramps = [], gates = [];
+      for (const kz of [-430, -830]) {
+        const z = fitRamp(kz, 14);
+        const r = { x: center(z), z, L: 14, w: 12, h: 3.6 };
+        ramps.push(r); kickerCoins(coins, r);
+        const rowZ = r.z - r.L - 9, c = center(rowZ);
+        for (let o = -46; o <= 64; o += 1.5) trees.push({ x: c + o, z: rowZ + (rng() - 0.5) * 1.2, s: 0.42 + rng() * 0.08 });
+      }
+      let side = 1;
+      for (let z = -70; z > -this.len + 40; z -= 40) {
+        if (ramps.some((r) => z < r.z + 50 && z > r.z - r.L - 60)) continue;
+        side = -side;
+        gates.push({ x: center(z) + side * (4 + rng() * 4), z, w: 4.6, red: side > 0 });
+      }
+      return { trees, coins, ramps, gates };
+    },
+  },
+];
+let levelProgress = {};
+try { levelProgress = JSON.parse(localStorage.getItem('powderline-levels') || '{}'); } catch (e) { /* storage unavailable */ }
+function saveProgress() { try { localStorage.setItem('powderline-levels', JSON.stringify(levelProgress)); } catch (e) { /* ignore */ } }
+
+const levelGroup = new THREE.Group();
+scene.add(levelGroup);
+const gatePoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.9, 6);
+const gateFlagGeo = new THREE.PlaneGeometry(0.7, 0.5);
+const gateMats = { red: new THREE.MeshLambertMaterial({ color: 0xe0312b, side: THREE.DoubleSide }), blue: new THREE.MeshLambertMaterial({ color: 0x1f5fd1, side: THREE.DoubleSide }) };
+function buildLevelDeco() {
+  for (const ch of [...levelGroup.children]) {
+    levelGroup.remove(ch);
+    ch.traverse((o) => { if (o.userData.own) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
+  }
+  if (!level) return;
+  for (const g of level.gates) {
+    const mat = g.red ? gateMats.red : gateMats.blue;
+    for (const s of [-1, 1]) {
+      const x = g.x + (s * g.w) / 2, y = terrainH(x, g.z);
+      const pole = new THREE.Mesh(gatePoleGeo, mat); pole.position.set(x, y + 0.95, g.z); pole.castShadow = true;
+      const flag = new THREE.Mesh(gateFlagGeo, mat); flag.position.set(x - s * 0.38, y + 1.55, g.z);
+      levelGroup.add(pole, flag);
+    }
+  }
+  const z = level.finishZ, c = center(z), y = terrainH(c, z);
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128;
+  const cx = cv.getContext('2d');
+  for (let i = 0; i < 64; i++) for (let j = 0; j < 2; j++) { cx.fillStyle = (i + j) % 2 ? '#10233d' : '#ffffff'; cx.fillRect(i * 16, j * 16, 16, 16); }
+  cx.fillStyle = '#ff6b3d'; cx.fillRect(0, 32, 1024, 96);
+  cx.fillStyle = '#ffffff'; cx.font = 'italic 800 80px "Barlow Condensed", Impact, sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.fillText(`ZIEL  ·  LEVEL ${level.id}`, 512, 82);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(26, 3.2), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+  banner.userData.own = true;
+  banner.position.set(c, y + 6, z);
+  levelGroup.add(banner);
+  for (const s of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 7.6, 8), poleMat);
+    post.userData.own = true;
+    post.position.set(c + s * 13, terrainH(c + s * 13, z) + 3.8, z);
+    levelGroup.add(post);
+  }
+}
+
 // ---------- game state ----------
 const P = {};
-let state = 'menu', best = 0;
+let state = 'menu', best = 0, mode = 'endless', level = null, levelIdx = -1;
 try { best = +localStorage.getItem('powderline-best') || 0; } catch (e) { /* storage unavailable */ }
-$('best').textContent = best.toLocaleString('de-DE');
 
 function resetPlayer() {
-  const z = -4;
+  const z = START_Z;
   Object.assign(P, {
     x: center(z), z, y: terrainH(center(z), z), v: 0, vy: 0, heading: 0, air: false, airT: 0, spin: 0, spinV: 0, flip: 0, flipV: 0, grabT: 0,
-    tumble: 0, dist: 0, trick: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z,
+    dist: 0, pts: 0, trickPts: 0, combo: 0, comboT: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z, shake: 0, steerIn: 0,
   });
   skier.rotation.set(0, 0, 0);
   body.rotation.set(0, 0, 0); body.position.set(0, 0, 0); body.scale.set(1, 1, 1);
@@ -676,18 +837,187 @@ function resetPlayer() {
 resetPlayer();
 updateChunks(true);
 
+// ---------- leaderboard (shared when the page runs on claude.ai, else this device only) ----------
+const LB = { online: false, db: null, user: null, uid: null, rows: [], names: {}, myBest: 0 };
+let localBoard = [];
+try { localBoard = JSON.parse(localStorage.getItem('powderline-board') || '[]'); } catch (e) { /* storage unavailable */ }
+(async () => {
+  if (!window.claude?.use) return;
+  try {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    if (!db || !user) return;
+    const uid = await user.id();
+    if (!uid) return;
+    Object.assign(LB, { online: true, db, user, uid });
+    try { const mine = await db.doc(`scores/${uid}`).get(); if (mine.exists) LB.myBest = +mine.data().score || 0; } catch (e) { /* not readable */ }
+    db.collection('scores').orderBy('score', 'desc').limit(10).onSnapshot(async (snap) => {
+      LB.rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      renderBoard();
+      try {
+        const ps = await user.profiles(LB.rows.map((r) => r.id));
+        for (const id in ps) LB.names[id] = ps[id].name;
+        renderBoard();
+      } catch (e) { /* names stay generic */ }
+    }, () => {});
+    renderBoard();
+  } catch (e) { /* stay on the local board */ }
+})();
+function submitScore(score, dist) {
+  localBoard.push({ score, dist: Math.floor(dist), at: Date.now() });
+  localBoard.sort((a, b) => b.score - a.score);
+  localBoard = localBoard.slice(0, 10);
+  try { localStorage.setItem('powderline-board', JSON.stringify(localBoard)); } catch (e) { /* ignore */ }
+  if (LB.online && score > LB.myBest) {
+    LB.myBest = score;
+    LB.db.doc(`scores/${LB.uid}`).set({ score, dist: Math.floor(dist), at: Date.now() }).catch(() => {});
+  }
+}
+function renderBoard() {
+  const el = document.getElementById('board');
+  if (!el) return;
+  const title = document.getElementById('boardTitle');
+  if (title) title.textContent = LB.online ? 'Bestenliste' : 'Bestenliste (dieses Gerät)';
+  const rows = LB.online ? LB.rows : localBoard;
+  el.replaceChildren();
+  if (!rows.length) {
+    const li = document.createElement('li'); li.className = 'empty';
+    li.textContent = 'Noch keine Einträge. Fahr den ersten Endlos-Lauf!';
+    el.append(li); return;
+  }
+  rows.forEach((r, i) => {
+    const li = document.createElement('li');
+    const me = LB.online && r.id === LB.uid;
+    if (me) li.className = 'me';
+    const rank = document.createElement('span'); rank.className = 'rk'; rank.textContent = i + 1;
+    const name = document.createElement('span'); name.className = 'nm';
+    name.textContent = LB.online ? (me ? 'Du' : LB.names[r.id] || 'Spieler') : new Date(r.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ` · ${r.dist} m`;
+    const sc = document.createElement('span'); sc.className = 'sc'; sc.textContent = (+r.score || 0).toLocaleString('de-DE');
+    li.append(rank, name, sc);
+    el.append(li);
+  });
+}
+
+// ---------- menus ----------
+const CONTROLS = `<details class="ctl"><summary>Steuerung</summary>
+  <ul class="keys tch">
+    <li><kbd>◀ ▶</kbd> Kurven fahren, in der Luft drehen (oder linke/rechte Bildschirmhälfte halten)</li>
+    <li><kbd>▲</kbd> Hocke (schneller), in der Luft Frontflip</li>
+    <li><kbd>▼</kbd> Bremsen, in der Luft Backflip</li>
+    <li><kbd>JUMP</kbd> Springen (oder nach oben wischen), halten für Grab</li>
+    <li><kbd>II</kbd> Pause</li>
+  </ul>
+  <ul class="keys kb">
+    <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen</li>
+    <li><kbd>↑  W</kbd> Hocke (schneller), in der Luft Frontflip</li>
+    <li><kbd>↓  S</kbd> Bremsen, in der Luft Backflip</li>
+    <li><kbd>Leertaste</kbd> Springen, gedrückt halten für Grab</li>
+    <li><kbd>P</kbd> Pause</li>
+  </ul></details>`;
+const POINTS = `<details class="ctl"><summary>So gibt es Punkte</summary><ul class="keys plain">
+    <li><b>1 Punkt</b> pro Meter Strecke</li>
+    <li><b>Drehungen und Flips</b>: 360 ab 450, Backflip/Frontflip ab 700, Doppelte mehr</li>
+    <li><b>Combo</b>: jeder weitere Trick hintereinander zählt ×1,5, ×2 … bis ×3</li>
+    <li><b>Grab</b>, <b>Clean-Landung</b> und <b>Airtime</b> geben Bonus</li>
+    <li><b>Kristalle</b> +50, <b>knapp am Baum vorbei</b> +25</li>
+    <li>Verdrehte Landung oder Baum = Lauf vorbei</li>
+  </ul></details>`;
+const BOARD = '<h2 class="bh" id="boardTitle">Bestenliste</h2><ol class="board" id="board"></ol>';
+function showPanel(html) {
+  $('panel').innerHTML = html;
+  $('overlay').hidden = false;
+  $('pauseBtn').hidden = true;
+  $('panel').scrollTop = 0;
+  renderBoard();
+}
+function hideOverlay() { $('overlay').hidden = true; $('pauseBtn').hidden = false; }
+function showMenu() {
+  state = 'menu';
+  showPanel(`<h1>POWDER LINE</h1>
+    <p class="sub">Freeride-Abfahrt mit Kickern, Flips und Bäumen. Je schneller und wilder, desto mehr Punkte.</p>
+    <div class="actions"><button class="btn primary" data-act="endless">ENDLOS</button><button class="btn" data-act="levels">LEVELS</button></div>
+    ${BOARD}${POINTS}${CONTROLS}`);
+}
+function showLevels() {
+  state = 'menu';
+  const items = LEVELS.map((L, i) => {
+    const pr = levelProgress[L.id];
+    const status = pr?.done ? `Geschafft · Bestwert ${pr.best.toLocaleString('de-DE')}` : 'Noch nicht geschafft';
+    return `<button class="lvl${pr?.done ? ' done' : ''}${i === 0 ? ' primary' : ''}" data-act="level:${i}">
+      <span class="ln">LEVEL ${L.id} · ${L.name.toUpperCase()}</span><span class="ld">${L.desc}</span><span class="ls">${status}</span></button>`;
+  }).join('');
+  showPanel(`<h1>LEVELS</h1><p class="sub">Vorgebaute Strecken mit festem Ziel. Bäume, Bruchlandungen und verpasste Ziele beenden den Versuch.</p>
+    <div class="lvls">${items}</div><div class="actions one"><button class="btn" data-act="menu">ZURÜCK</button></div>${CONTROLS}`);
+}
+function resultHtml(score) {
+  return `<div id="result"><div><small>Punkte</small><strong>${score.toLocaleString('de-DE')}</strong></div>` +
+    `<div><small>Strecke</small><strong>${Math.floor(P.dist)} m</strong></div>` +
+    `<div><small>Zeit</small><strong>${fmtTime(P.time)}</strong></div></div>`;
+}
+function toMenu() {
+  mode = 'endless'; level = null; levelIdx = -1;
+  buildLevelDeco(); resetPlayer(); updateChunks(true); lastHud = '';
+  showMenu();
+}
+function act(a) {
+  if (a === 'endless') startRun('endless');
+  else if (a === 'levels') { if (state !== 'menu') toMenu(); showLevels(); }
+  else if (a === 'menu') toMenu();
+  else if (a === 'retry') startRun(mode, levelIdx);
+  else if (a === 'next') startRun('level', levelIdx + 1);
+  else if (a === 'resume') togglePause();
+  else if (a.startsWith('level:')) startRun('level', +a.slice(6));
+}
+$('panel').addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b) act(b.dataset.act); });
+
+function startRun(m, li) {
+  mode = m;
+  levelIdx = m === 'level' ? li : -1;
+  if (m === 'level') {
+    const def = LEVELS[li];
+    level = { ...def, ...def.gen(mulberry32(def.id * 977 + 3)), finishZ: START_Z - def.len, nextGate: 0, passed: 0 };
+    runSeed = 1000 + def.id;
+  } else {
+    level = null;
+    runSeed++;
+  }
+  buildLevelDeco();
+  resetPlayer();
+  updateChunks(true);
+  state = 'run';
+  input.jumpPressed = false;
+  P.v = 6;
+  lastHud = '';
+  $('brand').querySelector('.b2').textContent = level ? `/ LEVEL ${level.id}` : '/ ENDLOS';
+  $('goalLab').textContent = !level ? 'Bestwert' : level.goal === 'tricks' ? 'Tricks' : level.goal === 'gates' ? 'Tore' : 'Ziel';
+  hideOverlay();
+}
+function togglePause() {
+  if (state === 'run') {
+    state = 'pause';
+    showPanel(`<h1>PAUSE</h1><p class="sub">${level ? `Level ${level.id} · ${level.name}` : 'Endlos-Modus'}</p>
+      <div class="actions"><button class="btn primary" data-act="resume">WEITER</button><button class="btn" data-act="menu">MENÜ</button></div>${CONTROLS}`);
+  } else if (state === 'pause') {
+    state = 'run';
+    hideOverlay();
+  }
+}
+
 // ---------- input ----------
 const input = { left: false, right: false, up: false, down: false, jumpHeld: false, jumpPressed: false };
 const keyMap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', Space: 'jumpHeld' };
+const touchBtn = { left: false, right: false };
+const zones = new Map();
 addEventListener('keydown', (e) => {
   const k = keyMap[e.code];
   if (k) { e.preventDefault(); if (k === 'jumpHeld' && !input.jumpHeld) input.jumpPressed = true; input[k] = true; }
-  if (e.code === 'Space' || e.code === 'Enter') { if (state === 'menu' || (state === 'over' && P.deadT > 0.6)) start(); }
+  if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !$('overlay').hidden && (state !== 'over' || P.deadT > 0.6)) {
+    e.preventDefault();
+    $('panel').querySelector('.primary')?.click();
+  }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
 addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) input[k] = false; });
 addEventListener('blur', () => { for (const k in input) input[k] = false; zones.clear(); touchBtn.left = touchBtn.right = false; });
-const touchBtn = { left: false, right: false };
 const hold = (id, key) => {
   const el = $(id);
   el.addEventListener('pointerdown', (e) => {
@@ -701,7 +1031,6 @@ const hold = (id, key) => {
 };
 hold('tL', 'left'); hold('tR', 'right'); hold('tJ', 'jumpHeld'); hold('tB', 'down'); hold('tU', 'up');
 // touch anywhere on the slope: hold left/right half to steer, swipe up to jump
-const zones = new Map();
 const canvasEl = renderer.domElement;
 function syncZones() {
   let l = false, r = false;
@@ -711,7 +1040,7 @@ function syncZones() {
 canvasEl.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse') return;
   e.preventDefault();
-  if (state === 'menu') return;
+  if (state !== 'run') return;
   zones.set(e.pointerId, { side: e.clientX < innerWidth / 2 ? -1 : 1, y: e.clientY, t: performance.now() });
   try { canvasEl.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
   syncZones();
@@ -726,115 +1055,133 @@ canvasEl.addEventListener('pointercancel', zoneEnd);
 $('pauseBtn').addEventListener('click', () => togglePause());
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'run') togglePause(); });
 addEventListener('contextmenu', (e) => e.preventDefault());
-$('startBtn').addEventListener('click', () => { if (state === 'pause') togglePause(); else start(); });
 
-function start() {
-  if (state === 'over') { runSeed++; resetPlayer(); updateChunks(true); }
-  state = 'run';
-  input.jumpPressed = false;
-  P.v = Math.max(P.v, 4);
-  $('overlay').hidden = true;
-  $('startBtn').blur();
-}
-function togglePause() {
-  if (state === 'run') {
-    state = 'pause';
-    $('ovTitle').textContent = 'PAUSE';
-    $('ovSub').textContent = 'Drück P oder den Button, um weiterzufahren.';
-    $('result').hidden = true;
-    $('startBtn').textContent = 'WEITER';
-    $('overlay').hidden = false;
-  } else if (state === 'pause') {
-    state = 'run';
-    $('overlay').hidden = true;
-  }
-}
-
-let popTimer = 0;
+// ---------- scoring ----------
 function popup(main, sub, bad) {
   const el = $('trick');
   el.innerHTML = `<b>${main}</b><span>${sub}</span>`;
   el.classList.toggle('bad', !!bad);
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 }
+function toast(text) {
+  const el = $('bonus');
+  el.textContent = text;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
 
 function land() {
   const air = P.airT, spins = Math.round(P.spin / (Math.PI * 2)), off = Math.abs(P.spin - spins * Math.PI * 2);
   const flips = Math.round(P.flip / (Math.PI * 2)), fOff = Math.abs(P.flip - flips * Math.PI * 2);
-  if (air > 0.45 || Math.abs(P.spin) > 1 || Math.abs(P.flip) > 0.8) {
-    if (off > 0.85 || fOff > 0.75) {
-      P.tumble = 1.1; P.v *= 0.3;
-      popup('STURZ', 'Landung verdreht', true);
-    } else {
-      let pts = Math.floor(air * 120);
-      const parts = [];
-      const deg = Math.abs(spins) * 360;
-      if (deg) { parts.push(String(deg)); pts += Math.abs(spins) * 450 + (Math.abs(spins) - 1) * 250; }
-      if (flips) {
-        const n = Math.abs(flips), mult = ['', '', 'DOUBLE ', 'TRIPLE '][n] ?? `${n}x `;
-        parts.unshift(mult + (flips > 0 ? 'BACKFLIP' : 'FRONTFLIP'));
-        pts += n * 700 + (n - 1) * 400;
-      }
-      if (P.grabT > 0.25) { parts.push('GRAB'); pts += Math.floor(P.grabT * 260); }
-      if (!parts.length) parts.push(air > 1.4 ? 'BIG AIR' : 'AIR');
-      if (off < 0.25 && fOff < 0.25 && (deg || flips || air > 1)) { pts += 100; parts.push('CLEAN'); }
-      P.trick += pts;
-      popup(parts.join(' · '), `+${pts}`);
+  if (air > 0.7 || Math.abs(P.spin) > 1 || Math.abs(P.flip) > 0.8) {
+    if (off > 0.85 || fOff > 0.75) { crash('landing'); return; }
+    let pts = Math.floor(air * 120);
+    const parts = [];
+    const deg = Math.abs(spins) * 360;
+    if (flips) {
+      const n = Math.abs(flips), mult = ['', '', 'DOUBLE ', 'TRIPLE '][n] ?? `${n}x `;
+      parts.push(mult + (flips > 0 ? 'BACKFLIP' : 'FRONTFLIP'));
+      pts += n * 700 + (n - 1) * 400;
     }
+    if (deg) { parts.push(String(deg)); pts += Math.abs(spins) * 450 + (Math.abs(spins) - 1) * 250; }
+    if (P.grabT > 0.25) { parts.push('GRAB'); pts += Math.floor(P.grabT * 260); }
+    if (!parts.length) parts.push(air > 1.4 ? 'BIG AIR' : 'AIR');
+    if (off < 0.25 && fOff < 0.25 && (deg || flips || air > 1)) { pts += 100; parts.push('CLEAN'); }
+    let mult = 1;
+    if (deg || flips) {
+      P.combo = Math.min(5, P.combo + 1); P.comboT = 9;
+      mult = 1 + 0.5 * (P.combo - 1);
+    }
+    pts = Math.round(pts * mult);
+    P.pts += pts; P.trickPts += pts;
+    popup(parts.join(' · '), `+${pts.toLocaleString('de-DE')}` + (mult > 1 ? `  ×${String(mult).replace('.', ',')}` : ''));
     for (let i = 0; i < 40; i++) emit(P.x, P.y + 0.1, P.z, 0, 2, 0, 5);
   }
   P.spin = 0; P.spinV = 0; P.flip = 0; P.flipV = 0; P.airT = 0; P.grabT = 0;
 }
 
-function crash() {
+const CRASH_TEXT = {
+  tree: ['BAUM ERWISCHT', 'Volle Fahrt in die Tanne.'],
+  landing: ['BRUCHLANDUNG', 'Der Trick war nicht fertig, als die Ski aufgesetzt haben.'],
+  gate: ['TOR VERPASST', 'Im Slalom zählt jedes Tor.'],
+};
+function crash(reason) {
   state = 'over';
-  P.deadT = 0; P.v = 0;
-  for (let i = 0; i < 60; i++) emit(P.x, P.y + 1, P.z, 0, 3, 0, 6);
-  const score = Math.floor(P.dist) + P.trick;
-  const isBest = score > best;
-  if (isBest) { best = score; try { localStorage.setItem('powderline-best', String(best)); } catch (e) { /* ignore */ } }
+  P.deadT = 0; P.v = 0; P.shake = reason === 'gate' ? 0 : 0.7;
+  if (reason !== 'gate') for (let i = 0; i < 80; i++) emit(P.x, P.y + 0.6, P.z, 0, 3.5, 0, 7);
+  navigator.vibrate?.(reason === 'gate' ? 60 : [80, 40, 120]);
+  const score = Math.floor(P.dist) + P.pts;
+  let extra = '';
+  if (!level) {
+    const isBest = score > best;
+    if (isBest) { best = score; try { localStorage.setItem('powderline-best', String(best)); } catch (e) { /* ignore */ } }
+    submitScore(score, P.dist);
+    extra = isBest ? '<p class="msg">Neuer Bestwert!</p>' : `<p class="msg dim">Dein Bestwert: ${best.toLocaleString('de-DE')}</p>`;
+  } else {
+    extra = `<p class="msg dim">Level ${level.id} · ${level.name}: noch ${Math.max(0, Math.ceil(P.z - level.finishZ))} m bis ins Ziel.</p>`;
+  }
+  const [title, sub] = CRASH_TEXT[reason];
   setTimeout(() => {
-    $('ovTitle').textContent = 'BAUM ERWISCHT';
-    $('ovSub').textContent = 'Der Lauf ist vorbei. Noch eine Abfahrt?';
-    const r = $('result');
-    r.innerHTML = `<div><small>Punkte</small><strong>${score.toLocaleString('de-DE')}</strong></div>` +
-      `<div><small>Strecke</small><strong>${Math.floor(P.dist)} m</strong></div>` +
-      `<div><small>Zeit</small><strong>${fmtTime(P.time)}</strong></div>` +
-      (isBest ? '<div class="msg">Neuer Bestwert!</div>' : `<div class="msg" style="color:#4d6684">Bestwert: ${best.toLocaleString('de-DE')}</div>`);
-    r.hidden = false;
-    $('startBtn').textContent = 'NOCHMAL';
-    $('overlay').hidden = false;
-    $('best').textContent = best.toLocaleString('de-DE');
-  }, 1300);
+    showPanel(`<h1>${title}</h1><p class="sub">${sub} Zurück an den Start.</p>${resultHtml(score)}${extra}
+      <div class="actions"><button class="btn primary" data-act="retry">NOCHMAL</button><button class="btn" data-act="${level ? 'levels' : 'menu'}">${level ? 'LEVELS' : 'MENÜ'}</button></div>
+      ${level ? '' : BOARD}`);
+  }, reason === 'gate' ? 500 : 1300);
+}
+
+function finishLevel() {
+  state = 'done';
+  const score = Math.floor(P.dist) + P.pts;
+  let ok = true, why = '';
+  if (level.goal === 'tricks' && P.trickPts < level.target) {
+    ok = false;
+    why = `Nur ${P.trickPts.toLocaleString('de-DE')} von ${level.target.toLocaleString('de-DE')} Trickpunkten.`;
+  }
+  const hasNext = levelIdx + 1 < LEVELS.length;
+  if (ok) {
+    const pr = levelProgress[level.id] || { done: false, best: 0 };
+    pr.done = true; pr.best = Math.max(pr.best, score);
+    levelProgress[level.id] = pr; saveProgress();
+    for (let i = 0; i < 60; i++) emit(P.x, P.y + 1, P.z, 0, 5, 0, 8);
+  }
+  setTimeout(() => {
+    showPanel(ok
+      ? `<h1>GESCHAFFT</h1><p class="sub">Level ${level.id} · ${level.name} ist geschafft.</p>${resultHtml(score)}
+        <div class="actions">${hasNext ? '<button class="btn primary" data-act="next">NÄCHSTES LEVEL</button>' : '<button class="btn primary" data-act="levels">LEVELS</button>'}
+        <button class="btn" data-act="retry">NOCHMAL</button></div>`
+      : `<h1>ZIEL VERFEHLT</h1><p class="sub">${why} Zurück an den Start.</p>${resultHtml(score)}
+        <div class="actions"><button class="btn primary" data-act="retry">NOCHMAL</button><button class="btn" data-act="levels">LEVELS</button></div>`);
+  }, 900);
+}
+
+function speedLimits() {
+  const ramp = Math.min(1, P.time / 2.5);
+  if (level) return [level.vMin * ramp, level.vMax ?? 45];
+  return [Math.min(30, 13 + P.dist * 0.004) * ramp, 45];
 }
 
 function step(dt) {
   P.time += dt;
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  if (P.tumble > 0) P.tumble -= dt;
-  const ctrl = P.tumble > 0 ? 0 : 1;
+  if (P.comboT > 0 && (P.comboT -= dt) <= 0) P.combo = 0;
+  const [vMin, vMax] = speedLimits();
 
   if (!P.air) {
-    P.heading += steer * ctrl * 1.9 * dt;
+    P.heading += steer * 1.9 * dt;
     if (!steer) P.heading -= P.heading * 0.4 * dt;
     P.heading = clamp(P.heading, -1.4, 1.4);
     const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
     const s = (groundAt(P.x, P.z) - groundAt(P.x + fx * 1.5, P.z + fz * 1.5)) / 1.5;
     const sinA = clamp(s / Math.sqrt(1 + s * s), -0.7, 0.6);
-    let a = G * sinA - 0.3 - (input.up && ctrl ? 0.0021 : 0.0039) * P.v * P.v
-      - Math.abs(steer) * ctrl * 0.9 * Math.min(1, P.v / 10) - (input.down && ctrl ? 7 : 0);
-    if (P.tumble > 0) a -= 5;
-    P.v = clamp(P.v + a * dt, 0, 45);
+    const a = G * sinA - 0.3 - (input.up ? 0.0021 : 0.0039) * P.v * P.v - (input.down ? 7 : 0);
+    P.v = clamp(P.v + a * dt, vMin, vMax);
   } else {
     // rotation builds up smoothly: about 1.6 s for a full 360 / flip
     const pitchIn = (input.down ? 1 : 0) - (input.up ? 1 : 0);
     const ka = 1 - Math.exp(-dt * 6);
-    P.spinV = lerp(P.spinV, steer * ctrl * 3.9, ka);
-    P.flipV = lerp(P.flipV, pitchIn * ctrl * 4.2, ka);
+    P.spinV = lerp(P.spinV, steer * 3.9, ka);
+    P.flipV = lerp(P.flipV, pitchIn * 4.2, ka);
     P.spin += P.spinV * dt;
     P.flip += P.flipV * dt;
     if (input.jumpHeld) P.grabT += dt;
-    P.v = Math.max(0, P.v - 0.0012 * P.v * P.v * dt);
   }
 
   const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
@@ -845,7 +1192,7 @@ function step(dt) {
 
   if (!P.air) {
     const ball = P.y + P.vy * dt - 0.5 * G * dt * dt;
-    if (input.jumpPressed && ctrl) {
+    if (input.jumpPressed) {
       P.air = true; P.airT = 0; P.vy = (gNew - gOld) / dt + 5.4; P.y = gNew + 0.02;
     } else if (ball > gNew + 0.1) {
       P.air = true; P.airT = 0; P.y = ball; P.vy -= G * dt;
@@ -854,19 +1201,40 @@ function step(dt) {
     }
   } else {
     P.vy -= G * dt; P.y += P.vy * dt; P.airT += dt;
-    if (P.y <= gNew) { P.y = gNew; P.air = false; land(); P.vy = (gNew - gOld) / dt; }
+    if (P.y <= gNew) {
+      P.y = gNew; P.air = false;
+      land();
+      if (state !== 'run') return;
+      P.vy = (gNew - gOld) / dt;
+    }
   }
   input.jumpPressed = false;
 
   P.dist = Math.max(P.dist, P.startZ - P.z);
 
-  // tree collisions
+  // trees: crash on contact, bonus for a close pass
   for (const ch of chunks) {
     if (P.z > ch.z0 + 6 || P.z < ch.z0 - CH_LEN - 6) continue;
     for (const o of ch.obstacles) {
-      const dx = P.x - o.x, dz = P.z - o.z, rr = o.r + 0.3;
-      if (dx * dx + dz * dz < rr * rr && P.y - o.y < o.top) { crash(); return; }
+      const dx = P.x - o.x, dz = P.z - o.z, rr = o.r + 0.3, d2 = dx * dx + dz * dz;
+      if (d2 > (rr + 1.4) * (rr + 1.4) || P.y - o.y >= o.top) continue;
+      if (d2 < rr * rr) { crash('tree'); return; }
+      if (!o.nm && P.v > 8) { o.nm = true; P.pts += 25; toast('KNAPP VORBEI +25'); }
     }
+    for (const k of ch.coins) {
+      if (k.taken) continue;
+      const dx = P.x - k.x, dz = P.z - k.z, dy = P.y + 0.9 - k.y;
+      if (dx * dx + dz * dz < 2.1 && Math.abs(dy) < 2) { k.taken = true; P.pts += 50; toast('KRISTALL +50'); for (let i = 0; i < 12; i++) emit(k.x, k.y, k.z, 0, 1, 0, 3); }
+    }
+  }
+
+  if (level) {
+    while (level.nextGate < level.gates.length && P.z <= level.gates[level.nextGate].z) {
+      const g = level.gates[level.nextGate++];
+      if (Math.abs(P.x - g.x) <= g.w / 2) { level.passed++; P.pts += 100; toast(`TOR ${level.passed}/${level.gates.length} +100`); }
+      else if (level.goal === 'gates') { crash('gate'); return; }
+    }
+    if (P.z <= level.finishZ) { finishLevel(); return; }
   }
 
   // snow spray from the skis
@@ -881,6 +1249,15 @@ function step(dt) {
     }
   }
   P.steerIn = steer;
+}
+
+// after the finish line: glide out and stop
+function coast(dt) {
+  P.v = Math.max(0, P.v - 9 * dt);
+  P.heading *= 1 - 2 * dt;
+  P.x += Math.sin(P.heading) * P.v * dt; P.z -= Math.cos(P.heading) * P.v * dt;
+  P.vy = 0; P.air = false; P.y = groundAt(P.x, P.z);
+  P.spin = 0; P.flip = 0; P.steerIn = 0;
 }
 
 // ---------- visuals ----------
@@ -912,7 +1289,7 @@ function updateVisuals(dt) {
     const v = new THREE.Vector3(0, PIVOT, 0).applyEuler(skier.rotation);
     skier.position.set(P.x, P.y + PIVOT, P.z).sub(v);
   }
-  skier.rotation.z = P.tumble > 0 ? Math.sin(P.time * 22) * 0.45 : 0;
+  skier.rotation.z = 0;
   body.rotation.z = -P.steerVis * 0.4;
   const grab = P.air && input.jumpHeld;
   const crouch = grab ? 0.72 : (!P.air && input.up && state === 'run') ? 0.84 : 1;
@@ -932,6 +1309,11 @@ function updateCamera(dt) {
   camera.position.x = lerp(camera.position.x, tx, kk);
   camera.position.z = lerp(camera.position.z, tz, kk);
   camera.position.y = lerp(camera.position.y, ty, kk);
+  if (P.shake > 0) {
+    P.shake -= dt;
+    const a = Math.max(0, P.shake) * 0.5;
+    camera.position.x += (Math.random() - 0.5) * a; camera.position.y += (Math.random() - 0.5) * a;
+  }
   camLook.set(P.x + fx * 6, P.y + 0.7, P.z + fz * 6);
   camera.lookAt(camLook);
   const fov = 62 + (portrait ? (1 - camera.aspect) * 40 : 0) + Math.min(16, P.v * 0.4);
@@ -946,15 +1328,35 @@ function updateCamera(dt) {
 function fmtTime(t) { const m = Math.floor(t / 60), s = Math.floor(t % 60); return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; }
 let lastHud = '';
 function updateHud() {
-  const kmh = Math.round(P.v * 3.6), score = Math.floor(P.dist) + P.trick;
+  const kmh = Math.round(P.v * 3.6), score = Math.floor(P.dist) + P.pts;
+  let goal;
+  if (!level) goal = Math.max(best, score).toLocaleString('de-DE');
+  else if (level.goal === 'tricks') goal = `${P.trickPts.toLocaleString('de-DE')} / ${level.target.toLocaleString('de-DE')}`;
+  else if (level.goal === 'gates') goal = `${level.passed} / ${level.gates.length}`;
+  else goal = `${Math.max(0, Math.ceil(P.z - level.finishZ))} m`;
   const d = P.dist >= 1000 ? `${(P.dist / 1000).toFixed(2).replace('.', ',')} km` : `${Math.floor(P.dist)} m`;
-  const key = `${kmh}|${score}|${d}|${Math.floor(P.time)}`;
+  const key = `${kmh}|${score}|${d}|${Math.floor(P.time)}|${goal}`;
   if (key === lastHud) return;
   lastHud = key;
   $('spd').textContent = kmh;
   $('score').textContent = score.toLocaleString('de-DE');
   $('dist').textContent = d;
   $('clock').textContent = fmtTime(P.time);
+  $('goalVal').textContent = goal;
+}
+
+const coinM = new THREE.Matrix4(), coinQ = new THREE.Quaternion(), coinS = new THREE.Vector3(), coinP = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+function updateCoins(t) {
+  for (const ch of chunks) {
+    if (!ch.coins.length) continue;
+    ch.coins.forEach((k, i) => {
+      coinQ.setFromAxisAngle(Y, t * 2.2 + i);
+      coinS.setScalar(k.taken ? 0 : 1);
+      coinM.compose(coinP.set(k.x, k.y + Math.sin(t * 3 + i) * 0.15, k.z), coinQ, coinS);
+      ch.coinMesh.setMatrixAt(i, coinM);
+    });
+    ch.coinMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // ---------- loop ----------
@@ -962,7 +1364,8 @@ const clock = new THREE.Clock();
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (state === 'run') { step(dt); updateChunks(false); }
+  if (state === 'run') { step(dt); updateChunks(false); } else if (state === 'done') coast(dt);
+  updateCoins(clock.elapsedTime);
   updateVisuals(dt);
   updateSpray(dt);
   updateCamera(dt);
@@ -975,5 +1378,6 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 updateCamera(1);
+showMenu();
 frame();
 </script>
