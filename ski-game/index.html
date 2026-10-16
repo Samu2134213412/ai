@@ -1,7 +1,10 @@
 <!doctype html>
 <html lang="de">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#86acd6">
 <title>Powder Line</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +22,8 @@
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
   color-scheme: light;
 }
-html, body { height: 100%; margin: 0; overflow: hidden; background: #b9d1e6; color: var(--ink); font-family: var(--body); }
+html, body { height: 100%; margin: 0; overflow: hidden; background: #b9d1e6; color: var(--ink); font-family: var(--body);
+  overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
 canvas { display: block; touch-action: none; }
 [hidden] { display: none !important; }
 #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
@@ -71,6 +75,14 @@ canvas { display: block; touch-action: none; }
 .panel {
   background: rgba(244, 248, 252, 0.94); color: var(--ink); border-radius: 14px; padding: 26px 28px 24px;
   max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(16, 35, 61, 0.35);
+  max-height: calc(100% - 8px); overflow-y: auto; box-sizing: border-box; touch-action: pan-y;
+}
+#overlay { box-sizing: border-box; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.keys.tch { display: none; }
+#pauseBtn {
+  position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+  width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.7);
+  background: rgba(16, 35, 61, 0.35); color: #fff; font: 800 16px var(--body); cursor: pointer; touch-action: none;
 }
 .panel h1 { margin: 0; font-family: var(--display); font-style: italic; font-weight: 800; font-size: 46px; line-height: 1; letter-spacing: 0.02em; }
 .panel .sub { margin: 4px 0 16px; font-size: 14px; color: #4d6684; }
@@ -91,7 +103,7 @@ canvas { display: block; touch-action: none; }
 }
 #startBtn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 #touch {
-  position: fixed; left: 0; right: 0; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); display: none;
+  position: fixed; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: none; align-items: flex-end;
   justify-content: space-between; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
   pointer-events: none;
 }
@@ -101,7 +113,25 @@ canvas { display: block; touch-action: none; }
   background: rgba(16, 35, 61, 0.35); color: #fff; font-size: 22px; font-family: var(--display); font-weight: 800; font-style: italic;
   touch-action: none; -webkit-user-select: none; user-select: none;
 }
-@media (pointer: coarse) { #touch { display: flex; } }
+#touch button.on { background: rgba(255, 107, 61, 0.75); border-color: #fff; }
+#touch #tJ { width: 84px; height: 84px; font-size: 24px; background: rgba(255, 107, 61, 0.55); }
+#touch .col { display: flex; flex-direction: column; gap: 10px; }
+@media (pointer: coarse) {
+  #touch { display: flex; }
+  .keys.kb { display: none; }
+  .keys.tch { display: grid; }
+  #card { top: calc(44px + env(safe-area-inset-top, 0px)); bottom: auto; min-width: 0; padding: 6px 10px; gap: 2px; }
+  #card .val { font-size: 16px; }
+  #card .val.big { font-size: 22px; }
+  #speedo { top: calc(8px + env(safe-area-inset-top, 0px)); bottom: auto; }
+  #spd { font-size: 64px; }
+  #speedo .lab { font-size: 12px; }
+  #speedo .unit { font-size: 15px; }
+  #clock { font-size: 17px; }
+  #trick { top: 34%; }
+}
+@media (pointer: coarse) and (max-width: 400px) { #touch button { width: 58px; height: 58px; } #touch #tJ { width: 76px; height: 76px; } #brand .b2 { display: none; } }
+@media (pointer: coarse) and (max-height: 450px) { #brand { display: none; } #card { top: calc(8px + env(safe-area-inset-top, 0px)); } }
 @media (max-width: 600px) {
   #spd { font-size: 72px; }
   #brand .b1 { font-size: 20px; }
@@ -123,9 +153,10 @@ canvas { display: block; touch-action: none; }
   <div id="trick"></div>
 </div>
 
+<button id="pauseBtn" aria-label="Pause">II</button>
 <div id="touch">
   <div class="grp"><button id="tL" aria-label="Links">◀</button><button id="tR" aria-label="Rechts">▶</button></div>
-  <div class="grp"><button id="tB" aria-label="Bremsen">▼</button><button id="tJ" aria-label="Springen">JUMP</button></div>
+  <div class="grp"><div class="col"><button id="tU" aria-label="Hocke">▲</button><button id="tB" aria-label="Bremsen">▼</button></div><button id="tJ" aria-label="Springen">JUMP</button></div>
 </div>
 
 <div id="overlay">
@@ -133,7 +164,14 @@ canvas { display: block; touch-action: none; }
     <h1 id="ovTitle">POWDER LINE</h1>
     <p class="sub" id="ovSub">Freeride-Abfahrt mit Kickern. Weich den Bäumen aus, spring über die Schanzen und lande deine Drehungen sauber.</p>
     <div id="result" hidden></div>
-    <ul class="keys">
+    <ul class="keys tch">
+      <li><kbd>◀ ▶</kbd> Kurven fahren, in der Luft drehen (oder linke/rechte Bildschirmhälfte halten)</li>
+      <li><kbd>▲</kbd> Hocke (schneller), in der Luft Grab</li>
+      <li><kbd>▼</kbd> Bremsen</li>
+      <li><kbd>JUMP</kbd> Springen (oder nach oben wischen), halten für Grab</li>
+      <li><kbd>II</kbd> Pause</li>
+    </ul>
+    <ul class="keys kb">
       <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen</li>
       <li><kbd>↑  W</kbd> Hocke (schneller), in der Luft Grab</li>
       <li><kbd>↓  S</kbd> Bremsen</li>
@@ -175,8 +213,9 @@ function terrainH(x, z) {
 const rampProfile = (t) => t * (0.55 + 0.45 * t);
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const MOBILE = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 600;
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -190,7 +229,7 @@ const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 40
 scene.add(new THREE.HemisphereLight(0xe8f2ff, 0x8a9cc0, 1.8));
 const sun = new THREE.DirectionalLight(0xfff3e2, 2.1);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 260 });
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.04;
@@ -598,7 +637,7 @@ function updateSpray(dt) {
   sprayGeo.attributes.position.needsUpdate = true;
 }
 // ambient snowfall around the camera
-const FN = 1000, FBOX = 90;
+const FN = MOBILE ? 450 : 1000, FBOX = 90;
 const flakeBase = new Float32Array(FN * 3).map(() => Math.random() * FBOX);
 const flakePos = new Float32Array(FN * 3);
 const flakeGeo = new THREE.BufferGeometry();
@@ -647,14 +686,46 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
 addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) input[k] = false; });
-addEventListener('blur', () => { for (const k in input) input[k] = false; });
+addEventListener('blur', () => { for (const k in input) input[k] = false; zones.clear(); touchBtn.left = touchBtn.right = false; });
+const touchBtn = { left: false, right: false };
 const hold = (id, key) => {
   const el = $(id);
-  el.addEventListener('pointerdown', (e) => { e.preventDefault(); if (key === 'jumpHeld') input.jumpPressed = true; input[key] = true; el.setPointerCapture(e.pointerId); });
-  const up = () => (input[key] = false);
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); if (key === 'jumpHeld') input.jumpPressed = true; input[key] = true;
+    if (key in touchBtn) touchBtn[key] = true;
+    el.classList.add('on'); try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+    navigator.vibrate?.(8);
+  });
+  const up = () => { input[key] = false; if (key in touchBtn) { touchBtn[key] = false; syncZones(); } el.classList.remove('on'); };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
 };
-hold('tL', 'left'); hold('tR', 'right'); hold('tJ', 'jumpHeld'); hold('tB', 'down');
+hold('tL', 'left'); hold('tR', 'right'); hold('tJ', 'jumpHeld'); hold('tB', 'down'); hold('tU', 'up');
+// touch anywhere on the slope: hold left/right half to steer, swipe up to jump
+const zones = new Map();
+const canvasEl = renderer.domElement;
+function syncZones() {
+  let l = false, r = false;
+  for (const z of zones.values()) { if (z.side < 0) l = true; else r = true; }
+  input.left = l || touchBtn.left; input.right = r || touchBtn.right;
+}
+canvasEl.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse') return;
+  e.preventDefault();
+  if (state === 'menu') return;
+  zones.set(e.pointerId, { side: e.clientX < innerWidth / 2 ? -1 : 1, y: e.clientY, t: performance.now() });
+  try { canvasEl.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  syncZones();
+});
+canvasEl.addEventListener('pointermove', (e) => {
+  const z = zones.get(e.pointerId);
+  if (z && z.y - e.clientY > 45 && performance.now() - z.t < 400) { input.jumpPressed = true; z.y = -1e9; }
+});
+const zoneEnd = (e) => { if (zones.delete(e.pointerId)) syncZones(); };
+canvasEl.addEventListener('pointerup', zoneEnd);
+canvasEl.addEventListener('pointercancel', zoneEnd);
+$('pauseBtn').addEventListener('click', () => togglePause());
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'run') togglePause(); });
+addEventListener('contextmenu', (e) => e.preventDefault());
 $('startBtn').addEventListener('click', () => { if (state === 'pause') togglePause(); else start(); });
 
 function start() {
@@ -835,7 +906,8 @@ function updateCamera(dt) {
   const k = 1 - Math.exp(-dt * 5);
   camYaw = lerp(camYaw, P.heading * 0.55, 1 - Math.exp(-dt * 3));
   const fx = Math.sin(camYaw), fz = -Math.cos(camYaw);
-  const dist = state === 'menu' ? 6.5 : 7.5;
+  const portrait = camera.aspect < 1;
+  const dist = (state === 'menu' ? 6.5 : 7.5) + (portrait ? 1.5 : 0);
   const tx = P.x - fx * dist, tz = P.z - fz * dist;
   const ty = Math.max(P.y + 3.6, groundAt(tx, tz) + 1.8);
   const kk = state === 'menu' ? 1 : k;
@@ -844,7 +916,7 @@ function updateCamera(dt) {
   camera.position.y = lerp(camera.position.y, ty, kk);
   camLook.set(P.x + fx * 6, P.y + 0.7, P.z + fz * 6);
   camera.lookAt(camLook);
-  const fov = 62 + Math.min(16, P.v * 0.4);
+  const fov = 62 + (portrait ? (1 - camera.aspect) * 40 : 0) + Math.min(16, P.v * 0.4);
   if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = lerp(camera.fov, fov, k); camera.updateProjectionMatrix(); }
 
   sky.position.copy(camera.position);
