@@ -127,6 +127,11 @@ canvas { display: block; touch-action: none; }
 .keys.plain li { display: block; }
 .msg { margin: 0 0 12px; font-weight: 600; color: var(--signal); }
 .msg.dim { color: #4d6684; }
+#switchTag {
+  position: absolute; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); white-space: nowrap;
+  background: var(--signal); color: #fff; border-radius: 999px; padding: 4px 12px;
+  font-family: var(--display); font-style: italic; font-weight: 800; font-size: 16px; letter-spacing: 0.06em;
+}
 #bonus {
   position: absolute; left: 50%; top: 58%; transform: translateX(-50%); opacity: 0; white-space: nowrap;
   font-family: var(--display); font-style: italic; font-weight: 800; font-size: 22px; color: #fff; text-shadow: 0 2px 10px rgba(16, 35, 61, 0.55);
@@ -188,6 +193,7 @@ canvas { display: block; touch-action: none; }
   <div id="speedo"><div class="lab">SPEED</div><div id="spd">0</div><div class="unit">km/h</div><div id="clock">00:00</div></div>
   <div id="trick"></div>
   <div id="bonus"></div>
+  <div id="switchTag" hidden>SWITCH · LENKUNG INVERTIERT</div>
 </div>
 
 <button id="pauseBtn" aria-label="Pause" hidden>II</button>
@@ -829,7 +835,7 @@ function resetPlayer() {
   const z = START_Z;
   Object.assign(P, {
     x: center(z), z, y: terrainH(center(z), z), v: 0, vy: 0, heading: 0, air: false, airT: 0, spin: 0, spinV: 0, flip: 0, flipV: 0, grabT: 0,
-    dist: 0, pts: 0, trickPts: 0, combo: 0, comboT: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z, shake: 0, steerIn: 0,
+    dist: 0, pts: 0, trickPts: 0, combo: 0, comboT: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z, shake: 0, steerIn: 0, switch: false, swAcc: 0,
   });
   skier.rotation.set(0, 0, 0);
   body.rotation.set(0, 0, 0); body.position.set(0, 0, 0); body.scale.set(1, 1, 1);
@@ -900,14 +906,14 @@ function renderBoard() {
 // ---------- menus ----------
 const CONTROLS = `<details class="ctl"><summary>Steuerung</summary>
   <ul class="keys tch">
-    <li><kbd>◀ ▶</kbd> Kurven fahren, in der Luft drehen (oder linke/rechte Bildschirmhälfte halten)</li>
+    <li><kbd>◀ ▶</kbd> Kurven fahren, in der Luft drehen (oder linke/rechte Bildschirmhälfte halten). Rückwärts (Switch) ist die Lenkung invertiert</li>
     <li><kbd>▲</kbd> Hocke (schneller), in der Luft Frontflip</li>
     <li><kbd>▼</kbd> Bremsen, in der Luft Backflip</li>
     <li><kbd>JUMP</kbd> Springen (oder nach oben wischen), halten für Grab</li>
     <li><kbd>II</kbd> Pause</li>
   </ul>
   <ul class="keys kb">
-    <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen</li>
+    <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen. Rückwärts (Switch) ist die Lenkung invertiert</li>
     <li><kbd>↑  W</kbd> Hocke (schneller), in der Luft Frontflip</li>
     <li><kbd>↓  S</kbd> Bremsen, in der Luft Backflip</li>
     <li><kbd>Leertaste</kbd> Springen, gedrückt halten für Grab</li>
@@ -915,7 +921,8 @@ const CONTROLS = `<details class="ctl"><summary>Steuerung</summary>
   </ul></details>`;
 const POINTS = `<details class="ctl"><summary>So gibt es Punkte</summary><ul class="keys plain">
     <li><b>1 Punkt</b> pro Meter Strecke</li>
-    <li><b>Drehungen und Flips</b>: 360 ab 450, Backflip/Frontflip ab 700, Doppelte mehr</li>
+    <li><b>Drehungen und Flips</b>: 180 ab 225, 360 ab 450, Backflip/Frontflip ab 700, Doppelte mehr</li>
+    <li><b>Switch</b>: Landest du nach einer halben Drehung (180, 540 …), fährst du rückwärts. Dann ist die Lenkung invertiert, dafür gibt es +10 Punkte pro Sekunde. Noch eine 180 dreht dich zurück.</li>
     <li><b>Combo</b>: jeder weitere Trick hintereinander zählt ×1,5, ×2 … bis ×3</li>
     <li><b>Grab</b>, <b>Clean-Landung</b> und <b>Airtime</b> geben Bonus</li>
     <li><b>Kristalle</b> +50, <b>knapp am Baum vorbei</b> +25</li>
@@ -986,6 +993,8 @@ function startRun(m, li) {
   state = 'run';
   input.jumpPressed = false;
   P.v = 6;
+  // start glued to the slope, so the first frame does not count as a jump
+  P.vy = ((groundAt(P.x, P.z - 0.5) - groundAt(P.x, P.z)) / 0.5) * P.v;
   lastHud = '';
   $('brand').querySelector('.b2').textContent = level ? `/ LEVEL ${level.id}` : '/ ENDLOS';
   $('goalLab').textContent = !level ? 'Bestwert' : level.goal === 'tricks' ? 'Tricks' : level.goal === 'gates' ? 'Tore' : 'Ziel';
@@ -1070,19 +1079,20 @@ function toast(text) {
 }
 
 function land() {
-  const air = P.airT, spins = Math.round(P.spin / (Math.PI * 2)), off = Math.abs(P.spin - spins * Math.PI * 2);
+  const air = P.airT, halves = Math.round(P.spin / Math.PI), off = Math.abs(P.spin - halves * Math.PI);
   const flips = Math.round(P.flip / (Math.PI * 2)), fOff = Math.abs(P.flip - flips * Math.PI * 2);
   if (air > 0.7 || Math.abs(P.spin) > 1 || Math.abs(P.flip) > 0.8) {
     if (off > 0.85 || fOff > 0.75) { crash('landing'); return; }
     let pts = Math.floor(air * 120);
     const parts = [];
-    const deg = Math.abs(spins) * 360;
+    const deg = Math.abs(halves) * 180;
     if (flips) {
       const n = Math.abs(flips), mult = ['', '', 'DOUBLE ', 'TRIPLE '][n] ?? `${n}x `;
       parts.push(mult + (flips > 0 ? 'BACKFLIP' : 'FRONTFLIP'));
       pts += n * 700 + (n - 1) * 400;
     }
-    if (deg) { parts.push(String(deg)); pts += Math.abs(spins) * 450 + (Math.abs(spins) - 1) * 250; }
+    if (deg) { parts.push(String(deg)); pts += Math.abs(halves) * 225 + Math.max(0, Math.abs(halves) - 2) * 125; }
+    if (Math.abs(halves) % 2 === 1) { P.switch = !P.switch; parts.push(P.switch ? 'SWITCH' : 'ZURÜCK NORMAL'); }
     if (P.grabT > 0.25) { parts.push('GRAB'); pts += Math.floor(P.grabT * 260); }
     if (!parts.length) parts.push(air > 1.4 ? 'BIG AIR' : 'AIR');
     if (off < 0.25 && fOff < 0.25 && (deg || flips || air > 1)) { pts += 100; parts.push('CLEAN'); }
@@ -1160,7 +1170,9 @@ function speedLimits() {
 
 function step(dt) {
   P.time += dt;
-  const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  // riding switch (backwards): steering on the snow is mirrored, air spins are not
+  const rawSteer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const steer = P.switch && !P.air ? -rawSteer : rawSteer;
   if (P.comboT > 0 && (P.comboT -= dt) <= 0) P.combo = 0;
   const [vMin, vMax] = speedLimits();
 
@@ -1211,6 +1223,10 @@ function step(dt) {
   input.jumpPressed = false;
 
   P.dist = Math.max(P.dist, P.startZ - P.z);
+  if (P.switch && !P.air) {
+    P.swAcc += dt * 10;
+    if (P.swAcc >= 1) { const n = Math.floor(P.swAcc); P.swAcc -= n; P.pts += n; }
+  }
 
   // trees: crash on contact, bonus for a close pass
   for (const ch of chunks) {
@@ -1275,7 +1291,7 @@ function updateVisuals(dt) {
     skier.rotation.x = lerp(skier.rotation.x, 0.3, k);
     return;
   }
-  skier.rotation.y = -(P.heading + P.spin);
+  skier.rotation.y = -(P.heading + P.spin + (P.switch ? Math.PI : 0));
   if (!P.air) {
     const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
     const s = (groundAt(P.x - fx, P.z - fz) - groundAt(P.x + fx, P.z + fz)) / 2;
@@ -1283,14 +1299,15 @@ function updateVisuals(dt) {
   } else {
     P.pitch = lerp(P.pitch, P.grabT > 0 ? 0.15 : -0.1, 1 - Math.exp(-dt * 3));
   }
-  skier.rotation.x = P.pitch + P.flip;
+  skier.rotation.x = (P.switch ? -P.pitch : P.pitch) + P.flip;
   // flip around the body's middle instead of the feet
   if (P.flip) {
     const v = new THREE.Vector3(0, PIVOT, 0).applyEuler(skier.rotation);
     skier.position.set(P.x, P.y + PIVOT, P.z).sub(v);
   }
   skier.rotation.z = 0;
-  body.rotation.z = -P.steerVis * 0.4;
+  body.rotation.z = -P.steerVis * 0.4 * (P.switch ? -1 : 1);
+  $('switchTag').hidden = !(P.switch && state === 'run');
   const grab = P.air && input.jumpHeld;
   const crouch = grab ? 0.72 : (!P.air && input.up && state === 'run') ? 0.84 : 1;
   body.scale.y = lerp(body.scale.y, crouch, k);
