@@ -166,16 +166,16 @@ canvas { display: block; touch-action: none; }
     <div id="result" hidden></div>
     <ul class="keys tch">
       <li><kbd>◀ ▶</kbd> Kurven fahren, in der Luft drehen (oder linke/rechte Bildschirmhälfte halten)</li>
-      <li><kbd>▲</kbd> Hocke (schneller), in der Luft Grab</li>
-      <li><kbd>▼</kbd> Bremsen</li>
+      <li><kbd>▲</kbd> Hocke (schneller), in der Luft Frontflip</li>
+      <li><kbd>▼</kbd> Bremsen, in der Luft Backflip</li>
       <li><kbd>JUMP</kbd> Springen (oder nach oben wischen), halten für Grab</li>
       <li><kbd>II</kbd> Pause</li>
     </ul>
     <ul class="keys kb">
       <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen</li>
-      <li><kbd>↑  W</kbd> Hocke (schneller), in der Luft Grab</li>
-      <li><kbd>↓  S</kbd> Bremsen</li>
-      <li><kbd>Leertaste</kbd> Springen</li>
+      <li><kbd>↑  W</kbd> Hocke (schneller), in der Luft Frontflip</li>
+      <li><kbd>↓  S</kbd> Bremsen, in der Luft Backflip</li>
+      <li><kbd>Leertaste</kbd> Springen, gedrückt halten für Grab</li>
       <li><kbd>P</kbd> Pause</li>
     </ul>
     <button id="startBtn">DROP IN</button>
@@ -423,7 +423,7 @@ class Chunk {
       for (let k = 0; k < n; k++) {
         const L = 11 + rng() * 4, z = z0 - 18 - rng() * (CH_LEN - 22 - L);
         if (this.ramps.some((r) => Math.abs(r.z - z) < 30)) continue;
-        const r = { x: center(z) + (rng() - 0.5) * 34, z, L, w: 7 + rng() * 3, h: 2.2 + rng() * 1.6 };
+        const r = { x: center(z) + (rng() - 0.5) * 34, z, L, w: 7 + rng() * 3, h: 2.6 + rng() * 1.8 };
         this.ramps.push(r);
         this.rampGroup.add(buildRamp(r));
       }
@@ -667,7 +667,7 @@ $('best').textContent = best.toLocaleString('de-DE');
 function resetPlayer() {
   const z = -4;
   Object.assign(P, {
-    x: center(z), z, y: terrainH(center(z), z), v: 0, vy: 0, heading: 0, air: false, airT: 0, spin: 0, grabT: 0,
+    x: center(z), z, y: terrainH(center(z), z), v: 0, vy: 0, heading: 0, air: false, airT: 0, spin: 0, spinV: 0, flip: 0, flipV: 0, grabT: 0,
     tumble: 0, dist: 0, trick: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z,
   });
   skier.rotation.set(0, 0, 0);
@@ -760,8 +760,9 @@ function popup(main, sub, bad) {
 
 function land() {
   const air = P.airT, spins = Math.round(P.spin / (Math.PI * 2)), off = Math.abs(P.spin - spins * Math.PI * 2);
-  if (air > 0.45 || Math.abs(P.spin) > 1) {
-    if (off > 0.85) {
+  const flips = Math.round(P.flip / (Math.PI * 2)), fOff = Math.abs(P.flip - flips * Math.PI * 2);
+  if (air > 0.45 || Math.abs(P.spin) > 1 || Math.abs(P.flip) > 0.8) {
+    if (off > 0.85 || fOff > 0.75) {
       P.tumble = 1.1; P.v *= 0.3;
       popup('STURZ', 'Landung verdreht', true);
     } else {
@@ -769,15 +770,20 @@ function land() {
       const parts = [];
       const deg = Math.abs(spins) * 360;
       if (deg) { parts.push(String(deg)); pts += Math.abs(spins) * 450 + (Math.abs(spins) - 1) * 250; }
+      if (flips) {
+        const n = Math.abs(flips), mult = ['', '', 'DOUBLE ', 'TRIPLE '][n] ?? `${n}x `;
+        parts.unshift(mult + (flips > 0 ? 'BACKFLIP' : 'FRONTFLIP'));
+        pts += n * 700 + (n - 1) * 400;
+      }
       if (P.grabT > 0.25) { parts.push('GRAB'); pts += Math.floor(P.grabT * 260); }
-      if (!deg && !parts.length) parts.push(air > 1.4 ? 'BIG AIR' : 'AIR');
-      if (off < 0.25 && (deg || air > 1)) { pts += 100; parts.push('CLEAN'); }
+      if (!parts.length) parts.push(air > 1.4 ? 'BIG AIR' : 'AIR');
+      if (off < 0.25 && fOff < 0.25 && (deg || flips || air > 1)) { pts += 100; parts.push('CLEAN'); }
       P.trick += pts;
       popup(parts.join(' · '), `+${pts}`);
     }
     for (let i = 0; i < 40; i++) emit(P.x, P.y + 0.1, P.z, 0, 2, 0, 5);
   }
-  P.spin = 0; P.airT = 0; P.grabT = 0;
+  P.spin = 0; P.spinV = 0; P.flip = 0; P.flipV = 0; P.airT = 0; P.grabT = 0;
 }
 
 function crash() {
@@ -820,8 +826,14 @@ function step(dt) {
     if (P.tumble > 0) a -= 5;
     P.v = clamp(P.v + a * dt, 0, 45);
   } else {
-    P.spin += steer * 6.6 * dt;
-    if (input.up || input.jumpHeld) P.grabT += dt;
+    // rotation builds up smoothly: about 1.6 s for a full 360 / flip
+    const pitchIn = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    const ka = 1 - Math.exp(-dt * 6);
+    P.spinV = lerp(P.spinV, steer * ctrl * 3.9, ka);
+    P.flipV = lerp(P.flipV, pitchIn * ctrl * 4.2, ka);
+    P.spin += P.spinV * dt;
+    P.flip += P.flipV * dt;
+    if (input.jumpHeld) P.grabT += dt;
     P.v = Math.max(0, P.v - 0.0012 * P.v * P.v * dt);
   }
 
@@ -877,6 +889,7 @@ let camYaw = 0;
 function updateVisuals(dt) {
   const k = 1 - Math.exp(-dt * 8);
   skier.position.set(P.x, P.y, P.z);
+  const PIVOT = 0.95;
   const steer = state === 'run' && !P.air ? P.steerIn || 0 : 0;
   P.steerVis = lerp(P.steerVis, steer, k);
   if (state === 'over') {
@@ -893,10 +906,15 @@ function updateVisuals(dt) {
   } else {
     P.pitch = lerp(P.pitch, P.grabT > 0 ? 0.15 : -0.1, 1 - Math.exp(-dt * 3));
   }
-  skier.rotation.x = P.pitch;
+  skier.rotation.x = P.pitch + P.flip;
+  // flip around the body's middle instead of the feet
+  if (P.flip) {
+    const v = new THREE.Vector3(0, PIVOT, 0).applyEuler(skier.rotation);
+    skier.position.set(P.x, P.y + PIVOT, P.z).sub(v);
+  }
   skier.rotation.z = P.tumble > 0 ? Math.sin(P.time * 22) * 0.45 : 0;
   body.rotation.z = -P.steerVis * 0.4;
-  const grab = P.air && (input.up || input.jumpHeld);
+  const grab = P.air && input.jumpHeld;
   const crouch = grab ? 0.72 : (!P.air && input.up && state === 'run') ? 0.84 : 1;
   body.scale.y = lerp(body.scale.y, crouch, k);
   body.rotation.x = lerp(body.rotation.x, grab ? -0.35 : 0, k);
