@@ -127,6 +127,14 @@ canvas { display: block; touch-action: none; }
 .keys.plain li { display: block; }
 .msg { margin: 0 0 12px; font-weight: 600; color: var(--signal); }
 .msg.dim { color: #4d6684; }
+#fsBtn {
+  position: fixed; z-index: 5; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(50% + 30px);
+  width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.7);
+  background: rgba(16, 35, 61, 0.35); color: #fff; cursor: pointer; touch-action: none; padding: 0;
+  display: grid; place-items: center;
+}
+#fsBtn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+#fsBtn:focus-visible, #pauseBtn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 #switchTag {
   position: absolute; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); white-space: nowrap;
   background: var(--signal); color: #fff; border-radius: 999px; padding: 4px 12px;
@@ -197,6 +205,7 @@ canvas { display: block; touch-action: none; }
 </div>
 
 <button id="pauseBtn" aria-label="Pause" hidden>II</button>
+<button id="fsBtn" aria-label="Vollbild" hidden><svg viewBox="0 0 24 24"><path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
 <div id="touch">
   <div class="grp"><button id="tL" aria-label="Links">◀</button><button id="tR" aria-label="Rechts">▶</button></div>
   <div class="grp"><div class="col"><button id="tU" aria-label="Hocke">▲</button><button id="tB" aria-label="Bremsen">▼</button></div><button id="tJ" aria-label="Springen">JUMP</button></div>
@@ -1036,7 +1045,7 @@ const CONTROLS = `<details class="ctl"><summary>Steuerung</summary>
     <li><kbd>▲</kbd> Hocke (schneller), in der Luft Frontflip</li>
     <li><kbd>▼</kbd> Bremsen, in der Luft Backflip</li>
     <li><kbd>JUMP</kbd> Springen (oder nach oben wischen), halten für Grab</li>
-    <li><kbd>II</kbd> Pause</li>
+    <li><kbd>II</kbd> Pause, Button daneben: Vollbild</li>
   </ul>
   <ul class="keys kb">
     <li><kbd>← →  A D</kbd> Kurven fahren, in der Luft drehen. Rückwärts (Switch) ist die Lenkung invertiert</li>
@@ -1044,6 +1053,7 @@ const CONTROLS = `<details class="ctl"><summary>Steuerung</summary>
     <li><kbd>↓  S</kbd> Bremsen, in der Luft Backflip</li>
     <li><kbd>Leertaste</kbd> Springen, gedrückt halten für Grab</li>
     <li><kbd>P</kbd> Pause</li>
+    <li><kbd>F</kbd> Vollbild an/aus (oder Button oben)</li>
   </ul></details>`;
 const POINTS = `<details class="ctl"><summary>So gibt es Punkte</summary><ul class="keys plain">
     <li><b>1 Punkt</b> pro Meter Strecke</li>
@@ -1152,7 +1162,8 @@ addEventListener('keydown', (e) => {
     e.preventDefault();
     $('panel').querySelector('.primary')?.click();
   }
-  if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+  if (e.code === 'KeyP' || (e.code === 'Escape' && !fsElement())) togglePause();
+  if (e.code === 'KeyF' && fsSupported) toggleFullscreen();
 });
 addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) input[k] = false; });
 addEventListener('blur', () => { for (const k in input) input[k] = false; zones.clear(); touchBtn.left = touchBtn.right = false; });
@@ -1191,6 +1202,26 @@ const zoneEnd = (e) => { if (zones.delete(e.pointerId)) syncZones(); };
 canvasEl.addEventListener('pointerup', zoneEnd);
 canvasEl.addEventListener('pointercancel', zoneEnd);
 $('pauseBtn').addEventListener('click', () => togglePause());
+// fullscreen: works in desktop browsers and on Android; iPhone Safari does not offer it for web pages
+const docEl = document.documentElement;
+const fsSupported = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen) && (document.fullscreenEnabled ?? document.webkitFullscreenEnabled ?? true);
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+async function toggleFullscreen() {
+  try {
+    if (fsElement()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else await (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl, { navigationUI: 'hide' });
+  } catch (e) { toast('Vollbild ist hier nicht verfügbar'); }
+}
+function syncFsIcon() {
+  $('fsIcon').setAttribute('d', fsElement() ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
+  $('fsBtn').setAttribute('aria-label', fsElement() ? 'Vollbild beenden' : 'Vollbild');
+}
+if (fsSupported) {
+  $('fsBtn').hidden = false;
+  $('fsBtn').addEventListener('click', () => { toggleFullscreen(); $('fsBtn').blur(); });
+  document.addEventListener('fullscreenchange', syncFsIcon);
+  document.addEventListener('webkitfullscreenchange', syncFsIcon);
+}
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'run') togglePause(); });
 addEventListener('contextmenu', (e) => e.preventDefault());
 
