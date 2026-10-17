@@ -370,6 +370,75 @@ const treeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const coinGeo = new THREE.OctahedronGeometry(0.42);
 coinGeo.scale(1, 1.35, 1);
 const coinMat = new THREE.MeshLambertMaterial({ color: 0xffc23d, emissive: 0x9a5200 });
+const MAX_ROCKS = 24;
+const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+rockGeo.scale(1, 0.75, 1);
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x77808f, roughness: 1, flatShading: true });
+const railGeo = new THREE.CylinderGeometry(0.07, 0.07, 1, 8);
+const railMat = new THREE.MeshStandardMaterial({ color: 0xd5dde6, metalness: 0.7, roughness: 0.3 });
+const railPostGeo = new THREE.CylinderGeometry(0.06, 0.06, 1, 6);
+const boostTex = (() => {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#18c6e8'; cx.fillRect(0, 0, 64, 128);
+  cx.strokeStyle = '#ffffff'; cx.lineWidth = 10; cx.lineJoin = 'miter';
+  for (const y of [18, 58, 98]) { cx.beginPath(); cx.moveTo(8, y + 24); cx.lineTo(32, y); cx.lineTo(56, y + 24); cx.stroke(); }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapT = THREE.RepeatWrapping;
+  return t;
+})();
+const boostMat = new THREE.MeshBasicMaterial({ map: boostTex, transparent: true, opacity: 0.92, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+// rail height above the snow: a short ramp-in, then 0.85 m
+const RAIL_H = 0.85;
+function railY(r, t) {
+  const d = t * r.len, x = r.x1 + r.dx * d, z = r.z1 + r.dz * d;
+  return terrainH(x, z) + Math.min(RAIL_H, 0.1 + d * 0.4);
+}
+function buildRail(r) {
+  const grp = new THREE.Group();
+  const pts = [];
+  const n = Math.ceil(r.len);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, d = t * r.len;
+    pts.push(new THREE.Vector3(r.x1 + r.dx * d, railY(r, t), r.z1 + r.dz * d));
+  }
+  const up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[i + 1], dir = b.clone().sub(a), len = dir.length();
+    const seg = new THREE.Mesh(railGeo, railMat);
+    seg.position.copy(a).add(b).multiplyScalar(0.5);
+    seg.scale.y = len + 0.02;
+    seg.quaternion.setFromUnitVectors(up, dir.normalize());
+    seg.castShadow = true;
+    grp.add(seg);
+  }
+  for (let i = 2; i <= n; i += 4) {
+    const a = pts[i], g = terrainH(a.x, a.z), h = a.y - g;
+    const post = new THREE.Mesh(railPostGeo, poleMat);
+    post.position.set(a.x, g + h / 2, a.z); post.scale.y = h;
+    grp.add(post);
+  }
+  return grp;
+}
+function buildBoost(b) {
+  const v = [], uv = [];
+  const corner = (sx, t) => {
+    const x = b.x + sx * b.w / 2, z = b.z - t * b.L;
+    return [x, terrainH(x, z) + 0.06, z];
+  };
+  const N = 4;
+  for (let i = 0; i < N; i++) {
+    const t0 = i / N, t1 = (i + 1) / N;
+    const a = corner(-1, t0), c = corner(1, t0), d = corner(1, t1), e = corner(-1, t1);
+    v.push(...a, ...c, ...d, ...a, ...d, ...e);
+    uv.push(0, t0 * 2, 1, t0 * 2, 1, t1 * 2, 0, t0 * 2, 1, t1 * 2, 0, t1 * 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  const m = new THREE.Mesh(g, boostMat);
+  m.userData.own = true;
+  return m;
+}
 const rampMat = new THREE.MeshLambertMaterial({ color: 0xf6faff });
 const signalMat = new THREE.MeshLambertMaterial({ color: 0xff6b3d });
 const poleMat = new THREE.MeshLambertMaterial({ color: 0x2b2f3a });
@@ -406,11 +475,16 @@ class Chunk {
     this.coinMesh = new THREE.InstancedMesh(coinGeo, coinMat, MAX_COINS);
     this.coinMesh.frustumCulled = false;
     this.coinMesh.count = 0;
+    this.rocks = new THREE.InstancedMesh(rockGeo, rockMat, MAX_ROCKS);
+    this.rocks.castShadow = this.rocks.receiveShadow = true;
+    this.rocks.frustumCulled = false;
+    this.rocks.count = 0;
+    this.rails = []; this.boosts = [];
     this.coins = [];
     this.obstacles = [];
     this.ramps = [];
     this.idx = null;
-    scene.add(this.mesh, this.trees, this.rampGroup, this.coinMesh);
+    scene.add(this.mesh, this.trees, this.rampGroup, this.coinMesh, this.rocks);
   }
 
   build(idx) {
@@ -445,7 +519,7 @@ class Chunk {
       if (ch.userData.own) ch.geometry.dispose();
       ch.traverse?.((o) => { if (o.userData.own) o.geometry.dispose(); });
     }
-    this.ramps = []; this.obstacles = [];
+    this.ramps = []; this.obstacles = []; this.rails = []; this.boosts = [];
 
     const rng = mulberry32(idx * 7919 + runSeed * 104729 + 13);
     const inChunk = (z) => z <= z0 && z > z0 - CH_LEN;
@@ -471,7 +545,32 @@ class Chunk {
         for (let j = 0; j < 5; j++) { const z = zs - j * 4.5; coins.push({ x: center(z) + off + Math.sin(j * 0.8) * 1.5, z, dy: 1.1 }); }
       }
     }
-    const nearRamp = (x, z) => this.ramps.some((r) => Math.abs(x - r.x) < r.w + 3 && z < r.z + 35 && z > r.z - r.L - 30);
+    if (!level && idx >= 1) {
+      const busy = (z, len) => this.ramps.some((r) => z - len < r.z + 25 && z > r.z - r.L - 30);
+      // grind rails
+      if (rng() < 0.6) {
+        const len = 16 + rng() * 10, h = (rng() - 0.5) * 0.4;
+        const z1 = z0 - 8 - rng() * (CH_LEN - 20 - len);
+        if (!busy(z1, len)) {
+          const r = { x1: center(z1) + (rng() - 0.5) * 30, z1, len, heading: h, dx: Math.sin(h), dz: -Math.cos(h) };
+          this.rails.push(r);
+          this.rampGroup.add(buildRail(r));
+          for (let j = 1; j <= 4; j++) { const d = r.len * (j / 5); const x = r.x1 + r.dx * d, z = r.z1 + r.dz * d; coins.push({ x, z, dy: RAIL_H + 1.2 }); }
+        }
+      }
+      // boost pads
+      const nb = 1 + (rng() < 0.4 ? 1 : 0);
+      for (let k = 0; k < nb; k++) {
+        const z = z0 - 5 - rng() * (CH_LEN - 15);
+        if (busy(z, 8)) continue;
+        const b = { x: center(z) + (rng() - 0.5) * 36, z, w: 3.4, L: 6 };
+        this.boosts.push(b);
+        this.rampGroup.add(buildBoost(b));
+      }
+    }
+    const nearRamp = (x, z) => this.ramps.some((r) => Math.abs(x - r.x) < r.w + 3 && z < r.z + 35 && z > r.z - r.L - 30)
+      || this.boosts.some((b) => Math.abs(x - b.x) < 4 && z < b.z + 20 && z > b.z - b.L - 12)
+      || this.rails.some((r) => { const ax = x - r.x1, az = z - r.z1, al = ax * r.dx + az * r.dz; return al > -20 && al < r.len + 12 && Math.abs(ax * r.dz - az * r.dx) < 3; });
     const nearCoin = (x, z) => coins.some((k) => Math.abs(k.x - x) < 2.6 && Math.abs(k.z - z) < 2.6);
 
     // trees
@@ -491,12 +590,39 @@ class Chunk {
     if (level) {
       for (const t of level.trees) if (inChunk(t.z)) place(t.x, t.z, t.s, true);
     } else if (idx >= 2) {
-      const n = Math.min(12, 2 + Math.floor(idx / 3));
+      // difficulty grows with every chunk (100 m)
+      const n = Math.min(30, 2 + Math.floor(idx * 0.6));
       for (let k = 0; k < n; k++) {
         const z = z0 - rng() * CH_LEN, x = center(z) + (rng() - 0.5) * 58;
         if (!nearRamp(x, z) && !nearCoin(x, z)) place(x, z, 0.8 + rng() * 0.6, true);
       }
+      // tree walls with one gap, more likely the further you get
+      if (idx >= 8 && rng() < Math.min(0.6, (idx - 7) * 0.05)) {
+        const z = z0 - 20 - rng() * (CH_LEN - 40), c = center(z), gap = (rng() - 0.5) * 36;
+        const gw = Math.max(3.6, 5.5 - (idx - 8) * 0.06);
+        for (let o = -36; o <= 40; o += 3.8) {
+          if (Math.abs(o - gap) < gw) continue;
+          if (!nearRamp(c + o, z)) place(c + o, z + (rng() - 0.5) * 1.2, 0.8 + rng() * 0.4, true);
+        }
+      }
     }
+    // rocks: low, you can jump over them
+    let rockCount = 0;
+    if (!level && idx >= 5) {
+      const nr = Math.min(MAX_ROCKS, Math.floor((idx - 4) * 0.7));
+      const rq = new THREE.Quaternion(), rs = new THREE.Vector3(), rp = new THREE.Vector3(), rm = new THREE.Matrix4();
+      for (let k = 0; k < nr; k++) {
+        const z = z0 - rng() * CH_LEN, x = center(z) + (rng() - 0.5) * 56;
+        if (nearRamp(x, z) || nearCoin(x, z)) continue;
+        const sc = 0.7 + rng() * 0.6, y = terrainH(x, z) - 0.15;
+        rq.setFromEuler(new THREE.Euler(rng(), rng() * 6, rng()));
+        rm.compose(rp.set(x, y, z), rq, rs.set(sc * 1.2, sc, sc));
+        this.rocks.setMatrixAt(rockCount++, rm);
+        this.obstacles.push({ x, z, y, r: sc * 1.0, top: sc * 0.85 });
+      }
+    }
+    this.rocks.count = rockCount;
+    this.rocks.instanceMatrix.needsUpdate = true;
     while (count < MAX_TREES - 4) {
       const z = z0 - rng() * CH_LEN, side = rng() < 0.5 ? -1 : 1;
       const d = 31 + Math.pow(rng(), 1.7) * 150;
@@ -835,7 +961,7 @@ function resetPlayer() {
   const z = START_Z;
   Object.assign(P, {
     x: center(z), z, y: terrainH(center(z), z), v: 0, vy: 0, heading: 0, air: false, airT: 0, spin: 0, spinV: 0, flip: 0, flipV: 0, grabT: 0,
-    dist: 0, pts: 0, trickPts: 0, combo: 0, comboT: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z, shake: 0, steerIn: 0, switch: false, swAcc: 0,
+    dist: 0, pts: 0, trickPts: 0, combo: 0, comboT: 0, time: 0, steerVis: 0, pitch: 0, deadT: 0, startZ: z, shake: 0, steerIn: 0, switch: false, swAcc: 0, rail: null, railT: 0, grindT: 0, railCD: 0, boostT: 0,
   });
   skier.rotation.set(0, 0, 0);
   body.rotation.set(0, 0, 0); body.position.set(0, 0, 0); body.scale.set(1, 1, 1);
@@ -925,7 +1051,10 @@ const POINTS = `<details class="ctl"><summary>So gibt es Punkte</summary><ul cla
     <li><b>Switch</b>: Landest du nach einer halben Drehung (180, 540 …), fährst du rückwärts. Dann ist die Lenkung invertiert, dafür gibt es +10 Punkte pro Sekunde. Noch eine 180 dreht dich zurück.</li>
     <li><b>Combo</b>: jeder weitere Trick hintereinander zählt ×1,5, ×2 … bis ×3</li>
     <li><b>Grab</b>, <b>Clean-Landung</b> und <b>Airtime</b> geben Bonus</li>
+    <li><b>Rails</b>: drauf fahren oder springen und sliden, ab 150 (je länger, desto mehr). Mit JUMP abspringen</li>
+    <li><b>Boost-Pads</b> (blaue Pfeile): kurz deutlich schneller</li>
     <li><b>Kristalle</b> +50, <b>knapp am Baum vorbei</b> +25</li>
+    <li>Endlos wird es mit jedem Meter schwerer: mehr Bäume, Felsen, Baumwände und mehr Tempo</li>
     <li>Verdrehte Landung oder Baum = Lauf vorbei</li>
   </ul></details>`;
 const BOARD = '<h2 class="bh" id="boardTitle">Bestenliste</h2><ol class="board" id="board"></ol>';
@@ -1168,57 +1297,115 @@ function speedLimits() {
   return [Math.min(30, 13 + P.dist * 0.004) * ramp, 45];
 }
 
+function grind(dt) {
+  const r = P.rail;
+  P.v = clamp(P.v - 0.5 * dt, speedLimits()[0] * 0.9, 40);
+  P.railT += (P.v * dt) / r.len;
+  P.grindT += dt;
+  const t = Math.min(1, P.railT), d = t * r.len;
+  P.x = r.x1 + r.dx * d; P.z = r.z1 + r.dz * d;
+  const yNew = railY(r, t);
+  const vyRail = (yNew - P.y) / dt;
+  P.y = yNew;
+  P.heading = r.heading;
+  P.air = false; P.spin = 0; P.flip = 0;
+  if (Math.random() < 0.8) emit(P.x, P.y + 0.05, P.z, (Math.random() - 0.5) * 3, 1.5, (Math.random() - 0.5) * 3, 1);
+  if (input.jumpPressed || P.railT >= 1) {
+    const pts = Math.round((150 + Math.floor(P.grindT * 140)) * (1 + 0.5 * P.combo));
+    P.combo = Math.min(5, P.combo + 1); P.comboT = 9;
+    P.pts += pts; P.trickPts += pts;
+    popup(P.grindT > 1.2 ? 'LONG RAIL' : 'RAIL', `+${pts.toLocaleString('de-DE')}`);
+    P.rail = null; P.railCD = 0.35;
+    P.air = true; P.airT = 0; P.vy = vyRail + (input.jumpPressed ? 5.4 : 1.2);
+  }
+}
+function tryMountRail() {
+  if (P.railCD > 0) return;
+  for (const ch of chunks) {
+    if (P.z > ch.z0 + 30 || P.z < ch.z0 - CH_LEN - 30) continue;
+    for (const r of ch.rails) {
+      const ax = P.x - r.x1, az = P.z - r.z1, along = ax * r.dx + az * r.dz;
+      if (along < 0 || along > r.len - 1) continue;
+      if (Math.abs(ax * r.dz - az * r.dx) > 0.65) continue;
+      const t = along / r.len, ry = railY(r, t);
+      if (P.y < ry - 0.45 || P.y > ry + 0.8 || (P.air && P.vy > 1.5)) continue;
+      if (P.air) { land(); if (state !== 'run') return; }
+      P.rail = r; P.railT = t; P.grindT = 0; P.y = ry; P.air = false;
+      toast('GRIND');
+      return;
+    }
+  }
+}
+
 function step(dt) {
   P.time += dt;
+  if (P.boostT > 0) P.boostT -= dt;
+  if (P.railCD > 0) P.railCD -= dt;
   // riding switch (backwards): steering on the snow is mirrored, air spins are not
   const rawSteer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   const steer = P.switch && !P.air ? -rawSteer : rawSteer;
   if (P.comboT > 0 && (P.comboT -= dt) <= 0) P.combo = 0;
   const [vMin, vMax] = speedLimits();
 
-  if (!P.air) {
-    P.heading += steer * 1.9 * dt;
-    if (!steer) P.heading -= P.heading * 0.4 * dt;
-    P.heading = clamp(P.heading, -1.4, 1.4);
-    const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
-    const s = (groundAt(P.x, P.z) - groundAt(P.x + fx * 1.5, P.z + fz * 1.5)) / 1.5;
-    const sinA = clamp(s / Math.sqrt(1 + s * s), -0.7, 0.6);
-    const a = G * sinA - 0.3 - (input.up ? 0.0021 : 0.0039) * P.v * P.v - (input.down ? 7 : 0);
-    P.v = clamp(P.v + a * dt, vMin, vMax);
+  if (P.rail) {
+    grind(dt);
   } else {
-    // rotation builds up smoothly: about 1.6 s for a full 360 / flip
-    const pitchIn = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-    const ka = 1 - Math.exp(-dt * 6);
-    P.spinV = lerp(P.spinV, steer * 3.9, ka);
-    P.flipV = lerp(P.flipV, pitchIn * 4.2, ka);
-    P.spin += P.spinV * dt;
-    P.flip += P.flipV * dt;
-    if (input.jumpHeld) P.grabT += dt;
-  }
-
-  const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
-  const gOld = groundAt(P.x, P.z);
-  P.x += fx * P.v * dt; P.z += fz * P.v * dt;
-  const c = center(P.z); P.x = clamp(P.x, c - 130, c + 130);
-  const gNew = groundAt(P.x, P.z);
-
-  if (!P.air) {
-    const ball = P.y + P.vy * dt - 0.5 * G * dt * dt;
-    if (input.jumpPressed) {
-      P.air = true; P.airT = 0; P.vy = (gNew - gOld) / dt + 5.4; P.y = gNew + 0.02;
-    } else if (ball > gNew + 0.1) {
-      P.air = true; P.airT = 0; P.y = ball; P.vy -= G * dt;
+    if (!P.air) {
+      P.heading += steer * 1.9 * dt;
+      if (!steer) P.heading -= P.heading * 0.4 * dt;
+      P.heading = clamp(P.heading, -1.4, 1.4);
+      const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
+      const s = (groundAt(P.x, P.z) - groundAt(P.x + fx * 1.5, P.z + fz * 1.5)) / 1.5;
+      const sinA = clamp(s / Math.sqrt(1 + s * s), -0.7, 0.6);
+      const a = G * sinA - 0.3 - (input.up ? 0.0021 : 0.0039) * P.v * P.v - (input.down ? 7 : 0) + (P.boostT > 0 ? 18 : 0);
+      P.v = clamp(P.v + a * dt, vMin, P.boostT > 0 ? 42 : Math.max(vMax, Math.min(P.v, 42)));
     } else {
-      P.vy = (gNew - gOld) / dt; P.y = gNew;
+      // rotation builds up smoothly: about 1.6 s for a full 360 / flip
+      const pitchIn = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+      const ka = 1 - Math.exp(-dt * 6);
+      P.spinV = lerp(P.spinV, steer * 3.9, ka);
+      P.flipV = lerp(P.flipV, pitchIn * 4.2, ka);
+      P.spin += P.spinV * dt;
+      P.flip += P.flipV * dt;
+      if (input.jumpHeld) P.grabT += dt;
     }
-  } else {
-    P.vy -= G * dt; P.y += P.vy * dt; P.airT += dt;
-    if (P.y <= gNew) {
-      P.y = gNew; P.air = false;
-      land();
-      if (state !== 'run') return;
-      P.vy = (gNew - gOld) / dt;
+
+    const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
+    const gOld = groundAt(P.x, P.z);
+    P.x += fx * P.v * dt; P.z += fz * P.v * dt;
+    const c = center(P.z); P.x = clamp(P.x, c - 130, c + 130);
+    const gNew = groundAt(P.x, P.z);
+
+    if (!P.air) {
+      const ball = P.y + P.vy * dt - 0.5 * G * dt * dt;
+      if (input.jumpPressed) {
+        P.air = true; P.airT = 0; P.vy = (gNew - gOld) / dt + 5.4; P.y = gNew + 0.02;
+      } else if (ball > gNew + 0.1) {
+        P.air = true; P.airT = 0; P.y = ball; P.vy -= G * dt;
+      } else {
+        P.vy = (gNew - gOld) / dt; P.y = gNew;
+      }
+    } else {
+      P.vy -= G * dt; P.y += P.vy * dt; P.airT += dt;
+      if (P.y <= gNew) {
+        P.y = gNew; P.air = false;
+        land();
+        if (state !== 'run') return;
+        P.vy = (gNew - gOld) / dt;
+      }
     }
+    // boost pads
+    if (!P.air) for (const ch of chunks) {
+      if (P.z > ch.z0 + 8 || P.z < ch.z0 - CH_LEN - 8) continue;
+      for (const b of ch.boosts) {
+        if (Math.abs(P.x - b.x) < b.w / 2 && P.z <= b.z && P.z >= b.z - b.L) {
+          if (!(P.boostT > 0.8)) { toast('BOOST!'); navigator.vibrate?.(20); }
+          P.boostT = 1.8;
+        }
+      }
+    }
+    tryMountRail();
+    if (state !== 'run') return;
   }
   input.jumpPressed = false;
 
@@ -1254,7 +1441,8 @@ function step(dt) {
   }
 
   // snow spray from the skis
-  if (!P.air && P.v > 3) {
+  if (!P.air && !P.rail && P.v > 3) {
+    const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
     const rx = Math.cos(P.heading), rz = Math.sin(P.heading);
     spray.acc += P.v * dt * (1.2 + Math.abs(steer) * 5 + (input.down ? 7 : 0));
     while (spray.acc >= 1) {
@@ -1264,7 +1452,8 @@ function step(dt) {
         -fx * P.v * 0.12 - rx * steer * P.v * 0.22, 1 + Math.abs(steer) * 1.5, -fz * P.v * 0.12 - rz * steer * P.v * 0.22, 1.4);
     }
   }
-  P.steerIn = steer;
+  if (P.boostT > 0) emit(P.x, P.y + 0.4, P.z, (Math.random() - 0.5) * 2, 1, (Math.random() - 0.5) * 2, 1);
+  P.steerIn = P.rail ? 0 : steer;
 }
 
 // after the finish line: glide out and stop
@@ -1291,7 +1480,8 @@ function updateVisuals(dt) {
     skier.rotation.x = lerp(skier.rotation.x, 0.3, k);
     return;
   }
-  skier.rotation.y = -(P.heading + P.spin + (P.switch ? Math.PI : 0));
+  P.railYaw = lerp(P.railYaw || 0, P.rail ? Math.PI / 2 : 0, k);
+  skier.rotation.y = -(P.heading + P.spin + (P.switch ? Math.PI : 0) + P.railYaw);
   if (!P.air) {
     const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
     const s = (groundAt(P.x - fx, P.z - fz) - groundAt(P.x + fx, P.z + fz)) / 2;
