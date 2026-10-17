@@ -1175,13 +1175,33 @@ function togglePause() {
 }
 
 // ---------- input ----------
-const input = { left: false, right: false, up: false, down: false, jumpHeld: false, jumpPressed: false };
+// Every finger, button and key is a separate "hold" source. For steering the newest press wins,
+// so pressing right while still holding left turns right instead of cancelling out.
+const input = { steer: 0, up: false, down: false, jumpHeld: false, jumpPressed: false };
+const holds = new Map(); // source id -> action, in press order
+function recomputeInput() {
+  input.steer = 0; input.up = input.down = input.jumpHeld = false;
+  for (const a of holds.values()) {
+    if (a === 'left') input.steer = -1;
+    else if (a === 'right') input.steer = 1;
+    else input[a] = true;
+  }
+}
+function press(id, action) {
+  if (action === 'jumpHeld' && ![...holds.values()].includes('jumpHeld')) input.jumpPressed = true;
+  holds.delete(id); holds.set(id, action);
+  recomputeInput();
+}
+function release(id) { if (holds.delete(id)) recomputeInput(); }
+function releaseAll(prefix) {
+  for (const id of [...holds.keys()]) if (!prefix || id.startsWith(prefix)) holds.delete(id);
+  recomputeInput();
+  document.querySelectorAll('#touch button.on').forEach((b) => b.classList.remove('on'));
+}
 const keyMap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', Space: 'jumpHeld' };
-const touchBtn = { left: false, right: false };
-const zones = new Map();
 addEventListener('keydown', (e) => {
   const k = keyMap[e.code];
-  if (k) { e.preventDefault(); if (k === 'jumpHeld' && !input.jumpHeld) input.jumpPressed = true; input[k] = true; }
+  if (k) { e.preventDefault(); if (!e.repeat) press('k' + e.code, k); }
   if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !$('overlay').hidden && (state !== 'over' || P.deadT > 0.6)) {
     e.preventDefault();
     $('panel').querySelector('.primary')?.click();
@@ -1189,42 +1209,45 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || (e.code === 'Escape' && !fsElement())) togglePause();
   if (e.code === 'KeyF') { if (fsSupported) toggleFullscreen(); else fsUnavailable(); }
 });
-addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) input[k] = false; });
-addEventListener('blur', () => { for (const k in input) input[k] = false; zones.clear(); touchBtn.left = touchBtn.right = false; });
-const hold = (id, key) => {
-  const el = $(id);
+addEventListener('keyup', (e) => release('k' + e.code));
+addEventListener('blur', () => releaseAll());
+const hold = (id, action) => {
+  const el = $(id), owners = new Set();
   el.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); if (key === 'jumpHeld') input.jumpPressed = true; input[key] = true;
-    if (key in touchBtn) touchBtn[key] = true;
-    el.classList.add('on'); try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+    e.preventDefault();
+    owners.add(e.pointerId);
+    press('p' + e.pointerId, action);
+    el.classList.add('on');
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
     navigator.vibrate?.(8);
   });
-  const up = () => { input[key] = false; if (key in touchBtn) { touchBtn[key] = false; syncZones(); } el.classList.remove('on'); };
-  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  const up = (e) => {
+    if (!owners.delete(e.pointerId)) return;
+    release('p' + e.pointerId);
+    if (!owners.size) el.classList.remove('on');
+  };
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, up);
 };
 hold('tL', 'left'); hold('tR', 'right'); hold('tJ', 'jumpHeld'); hold('tB', 'down'); hold('tU', 'up');
 // touch anywhere on the slope: hold left/right half to steer, swipe up to jump
 const canvasEl = renderer.domElement;
-function syncZones() {
-  let l = false, r = false;
-  for (const z of zones.values()) { if (z.side < 0) l = true; else r = true; }
-  input.left = l || touchBtn.left; input.right = r || touchBtn.right;
-}
+const swipes = new Map();
 canvasEl.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse') return;
   e.preventDefault();
   if (state !== 'run') return;
-  zones.set(e.pointerId, { side: e.clientX < innerWidth / 2 ? -1 : 1, y: e.clientY, t: performance.now() });
+  press('p' + e.pointerId, e.clientX < innerWidth / 2 ? 'left' : 'right');
+  swipes.set(e.pointerId, { y: e.clientY, t: performance.now() });
   try { canvasEl.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
-  syncZones();
 });
 canvasEl.addEventListener('pointermove', (e) => {
-  const z = zones.get(e.pointerId);
-  if (z && z.y - e.clientY > 45 && performance.now() - z.t < 400) { input.jumpPressed = true; z.y = -1e9; }
+  const z = swipes.get(e.pointerId);
+  if (z && z.y - e.clientY > 45 && performance.now() - z.t < 400) { input.jumpPressed = true; swipes.delete(e.pointerId); }
 });
-const zoneEnd = (e) => { if (zones.delete(e.pointerId)) syncZones(); };
-canvasEl.addEventListener('pointerup', zoneEnd);
-canvasEl.addEventListener('pointercancel', zoneEnd);
+const zoneEnd = (e) => { swipes.delete(e.pointerId); release('p' + e.pointerId); };
+for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) canvasEl.addEventListener(ev, zoneEnd);
+// safety net: when no finger touches the screen any more, nothing can still be held
+for (const ev of ['touchend', 'touchcancel']) document.addEventListener(ev, (e) => { if (!e.touches.length) releaseAll('p'); }, { passive: true });
 $('pauseBtn').addEventListener('click', () => togglePause());
 // fullscreen: works in desktop browsers and on Android; iPhone Safari does not offer it for web pages
 const docEl = document.documentElement;
@@ -1405,6 +1428,7 @@ const CRASH_TEXT = {
   tree: ['BAUM ERWISCHT', 'Volle Fahrt in die Tanne.'],
   landing: ['BRUCHLANDUNG', 'Der Trick war nicht fertig, als die Ski aufgesetzt haben.'],
   gate: ['TOR VERPASST', 'Im Slalom zählt jedes Tor.'],
+  ramp: ['SCHANZE GERAMMT', 'Von der Seite ist eine Schanze eine Wand. Nimm sie von vorne.'],
 };
 function crash(reason) {
   state = 'over';
@@ -1508,7 +1532,7 @@ function step(dt) {
   if (P.boostT > 0) P.boostT -= dt;
   if (P.railCD > 0) P.railCD -= dt;
   // riding switch (backwards): steering on the snow is mirrored, air spins are not
-  const rawSteer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const rawSteer = input.steer;
   const steer = P.switch && !P.air ? -rawSteer : rawSteer;
   if (P.comboT > 0 && (P.comboT -= dt) <= 0) P.combo = 0;
   const [vMin, vMax] = speedLimits();
@@ -1518,7 +1542,11 @@ function step(dt) {
   } else {
     if (!P.air) {
       P.heading += steer * 1.9 * dt;
-      if (!steer) P.heading -= P.heading * 0.4 * dt;
+      if (!steer) {
+        // let go: the skis settle back to the fall line of the piste instead of drifting off
+        const pisteHeading = Math.atan(-(center(P.z - 1) - center(P.z + 1)) / 2);
+        P.heading += (pisteHeading - P.heading) * Math.min(1, 1.6 * dt);
+      }
       P.heading = clamp(P.heading, -1.4, 1.4);
       const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
       const s = (groundAt(P.x, P.z) - groundAt(P.x + fx * 1.5, P.z + fz * 1.5)) / 1.5;
@@ -1538,6 +1566,7 @@ function step(dt) {
 
     const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
     const gOld = groundAt(P.x, P.z);
+    const yPrev = P.y;
     P.x += fx * P.v * dt; P.z += fz * P.v * dt;
     const c = center(P.z); P.x = clamp(P.x, c - 130, c + 130);
     const gNew = groundAt(P.x, P.z);
@@ -1550,7 +1579,7 @@ function step(dt) {
       } else if (ball > gNew + 0.1) {
         P.air = true; P.airT = 0; P.y = ball; P.vy -= G * dt;
       } else {
-        P.vy = (gNew - gOld) / dt; P.y = gNew;
+        P.vy = Math.min((gNew - gOld) / dt, P.v * 0.75); P.y = gNew;
       }
     } else {
       P.vy -= G * dt; P.y += P.vy * dt; P.airT += dt;
@@ -1559,6 +1588,16 @@ function step(dt) {
         land();
         if (state !== 'run') return;
         P.vy = (gNew - gOld) / dt;
+      }
+    }
+    // kickers are solid from the sides: sliding in sideways is a crash, not a launch
+    if (!P.rail) for (const ch of chunks) {
+      if (P.z > ch.z0 + 2 || P.z < ch.z0 - CH_LEN - 2) continue;
+      for (const r of ch.ramps) {
+        if (P.z > r.z || P.z < r.z - r.L || Math.abs(P.x - r.x) >= r.w / 2) continue;
+        const prevX = P.x - Math.sin(P.heading) * P.v * dt;
+        const lift = rampLift(r, (r.z - P.z) / r.L);
+        if (Math.abs(prevX - r.x) >= r.w / 2 && lift > 0.45 && yPrev < terrainH(P.x, P.z) + lift - 0.25) { P.y = yPrev; crash('ramp'); return; }
       }
     }
     // boost pads
@@ -1675,9 +1714,9 @@ function updateCamera(dt) {
   camYaw = lerp(camYaw, P.heading * 0.55, 1 - Math.exp(-dt * 3));
   const fx = Math.sin(camYaw), fz = -Math.cos(camYaw);
   const portrait = camera.aspect < 1;
-  const dist = (state === 'menu' ? 6.5 : 7.5) + (portrait ? 1.5 : 0);
+  const dist = (state === 'menu' ? 7 : 8.5) + (portrait ? 1.5 : 0);
   const tx = P.x - fx * dist, tz = P.z - fz * dist;
-  const ty = Math.max(P.y + 3.6, groundAt(tx, tz) + 1.8);
+  const ty = Math.max(P.y + 5.4 + (portrait ? 1 : 0), groundAt(tx, tz) + 2.5);
   const kk = state === 'menu' ? 1 : k;
   camera.position.x = lerp(camera.position.x, tx, kk);
   camera.position.z = lerp(camera.position.z, tz, kk);
@@ -1687,7 +1726,7 @@ function updateCamera(dt) {
     const a = Math.max(0, P.shake) * 0.5;
     camera.position.x += (Math.random() - 0.5) * a; camera.position.y += (Math.random() - 0.5) * a;
   }
-  camLook.set(P.x + fx * 6, P.y + 0.7, P.z + fz * 6);
+  camLook.set(P.x + fx * 11, P.y + 0.2, P.z + fz * 11);
   camera.lookAt(camLook);
   const fov = 62 + (portrait ? (1 - camera.aspect) * 40 : 0) + Math.min(16, P.v * 0.4);
   if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = lerp(camera.fov, fov, k); camera.updateProjectionMatrix(); }
