@@ -4,7 +4,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Powder Line">
 <meta name="theme-color" content="#86acd6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
 <title>Powder Line</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -127,19 +132,29 @@ canvas { display: block; touch-action: none; }
 .keys.plain li { display: block; }
 .msg { margin: 0 0 12px; font-weight: 600; color: var(--signal); }
 .msg.dim { color: #4d6684; }
-#fsBtn {
-  position: fixed; z-index: 5; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(50% + 30px);
+#topBtns { position: fixed; z-index: 5; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(50% + 30px); display: flex; gap: 8px; }
+#fsBtn, #sndBtn {
   width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.7);
   background: rgba(16, 35, 61, 0.35); color: #fff; cursor: pointer; touch-action: none; padding: 0;
   display: grid; place-items: center;
 }
-#fsBtn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
-#fsBtn:focus-visible, #pauseBtn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+@media (max-width: 520px) {
+  /* narrow phones: stack the buttons under the pause button so they clear the score card and the speedometer */
+  #topBtns { left: 50%; transform: translateX(-50%); top: calc(60px + env(safe-area-inset-top, 0px)); flex-direction: column; }
+  #fsBtn, #sndBtn { width: 40px; height: 40px; }
+}
+#fsBtn svg, #sndBtn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+#fsBtn:focus-visible, #sndBtn:focus-visible, #pauseBtn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 #bonus {
   position: absolute; left: 50%; top: 58%; transform: translateX(-50%); opacity: 0; white-space: nowrap;
   font-family: var(--display); font-style: italic; font-weight: 800; font-size: 22px; color: #fff; text-shadow: 0 2px 10px rgba(16, 35, 61, 0.55);
 }
 #bonus.show { animation: bonus 1s ease-out forwards; }
+#note {
+  position: fixed; z-index: 6; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  width: min(340px, calc(100% - 32px)); box-sizing: border-box; padding: 10px 14px; border-radius: 10px;
+  background: rgba(16, 35, 61, 0.9); color: #fff; font-size: 14px; line-height: 1.4; text-align: center;
+}
 @keyframes bonus {
   0% { opacity: 0; transform: translateX(-50%) translateY(8px); }
   15% { opacity: 1; transform: translateX(-50%); }
@@ -199,7 +214,11 @@ canvas { display: block; touch-action: none; }
 </div>
 
 <button id="pauseBtn" aria-label="Pause" hidden>II</button>
-<button id="fsBtn" aria-label="Vollbild" hidden><svg viewBox="0 0 24 24"><path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+<div id="topBtns">
+  <button id="fsBtn" aria-label="Vollbild" hidden><svg viewBox="0 0 24 24"><path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  <button id="sndBtn" aria-label="Ton aus"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path id="sndIcon" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></button>
+</div>
+<div id="note" hidden></div>
 <div id="touch">
   <div class="grp"><button id="tL" aria-label="Links">◀</button><button id="tR" aria-label="Rechts">▶</button></div>
   <div class="grp"><div class="col"><button id="tU" aria-label="Hocke">▲</button><button id="tB" aria-label="Bremsen">▼</button></div><button id="tJ" aria-label="Springen">JUMP</button></div>
@@ -1108,6 +1127,7 @@ function toMenu() {
   showMenu();
 }
 function act(a) {
+  Sound.click();
   if (a === 'endless') startRun('endless');
   else if (a === 'levels') { if (state !== 'menu') toMenu(); showLevels(); }
   else if (a === 'menu') toMenu();
@@ -1141,6 +1161,7 @@ function startRun(m, li) {
   $('brand').querySelector('.b2').textContent = level ? `/ LEVEL ${level.id}` : '/ ENDLOS';
   $('goalLab').textContent = !level ? 'Bestwert' : level.goal === 'tricks' ? 'Tricks' : level.goal === 'gates' ? 'Tore' : 'Ziel';
   hideOverlay();
+  navigator.wakeLock?.request('screen').catch(() => {});
 }
 function togglePause() {
   if (state === 'run') {
@@ -1166,7 +1187,7 @@ addEventListener('keydown', (e) => {
     $('panel').querySelector('.primary')?.click();
   }
   if (e.code === 'KeyP' || (e.code === 'Escape' && !fsElement())) togglePause();
-  if (e.code === 'KeyF' && fsSupported) toggleFullscreen();
+  if (e.code === 'KeyF') { if (fsSupported) toggleFullscreen(); else fsUnavailable(); }
 });
 addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) input[k] = false; });
 addEventListener('blur', () => { for (const k in input) input[k] = false; zones.clear(); touchBtn.left = touchBtn.right = false; });
@@ -1213,20 +1234,127 @@ async function toggleFullscreen() {
   try {
     if (fsElement()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     else await (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl, { navigationUI: 'hide' });
-  } catch (e) { toast('Vollbild ist hier nicht verfügbar'); }
+  } catch (e) { fsUnavailable(); }
+}
+let noteTimer = 0;
+function note(text, ms = 5000) {
+  const el = $('note');
+  el.textContent = text; el.hidden = false;
+  clearTimeout(noteTimer); noteTimer = setTimeout(() => (el.hidden = true), ms);
+}
+$('note').addEventListener('click', () => ($('note').hidden = true));
+function fsUnavailable() {
+  note(window.self !== window.top
+    ? 'Vollbild wird hier vom Fenster blockiert, in dem das Spiel läuft (z. B. die Claude-App). Öffne das Spiel direkt im Handy-Browser und füg es zum Startbildschirm hinzu, dann läuft es ohne Leisten.'
+    : 'Dein Browser erlaubt hier kein Vollbild. Tipp: Über „Zum Startbildschirm hinzufügen“ startet das Spiel ohne Browserleisten.');
 }
 function syncFsIcon() {
   $('fsIcon').setAttribute('d', fsElement() ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
   $('fsBtn').setAttribute('aria-label', fsElement() ? 'Vollbild beenden' : 'Vollbild');
 }
+const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+if (!standalone) {
+  // on phones the button stays visible even without the API, so a tap explains what to do instead
+  $('fsBtn').hidden = !(fsSupported || MOBILE);
+  $('fsBtn').addEventListener('click', () => { if (fsSupported) toggleFullscreen(); else fsUnavailable(); $('fsBtn').blur(); });
+}
 if (fsSupported) {
-  $('fsBtn').hidden = false;
-  $('fsBtn').addEventListener('click', () => { toggleFullscreen(); $('fsBtn').blur(); });
   document.addEventListener('fullscreenchange', syncFsIcon);
   document.addEventListener('webkitfullscreenchange', syncFsIcon);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'run') togglePause(); });
 addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ---------- sound (synthesized with Web Audio, no files) ----------
+const Sound = (() => {
+  let ctx = null, master, noise, windGain, windFilter, grindGain, muted = false;
+  try { muted = localStorage.getItem('powderline-muted') === '1'; } catch (e) { /* storage unavailable */ }
+  const now = () => ctx.currentTime;
+  function loopNoise(filterType, freq, q) {
+    const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = filterType; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(f).connect(g).connect(master); src.start();
+    return [g, f];
+  }
+  function init() {
+    if (ctx) { if (ctx.state !== 'running') ctx.resume().catch(() => {}); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ctx = new AC(); } catch (e) { return; }
+    master = ctx.createGain(); master.gain.value = muted ? 0 : 0.7;
+    const comp = ctx.createDynamicsCompressor();
+    master.connect(comp).connect(ctx.destination);
+    noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    [windGain, windFilter] = loopNoise('lowpass', 600, 0.7);
+    [grindGain] = loopNoise('bandpass', 2600, 9);
+  }
+  function hit({ type = 'bandpass', f0 = 1000, f1 = f0, q = 1, dur = 0.3, vol = 0.4, delay = 0 }) {
+    if (!ctx) return;
+    const t = now() + delay;
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.03, dur / 4)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(master);
+    src.start(t, Math.random()); src.stop(t + dur + 0.05);
+  }
+  function tone({ f0 = 440, f1 = f0, dur = 0.2, type = 'sine', vol = 0.3, delay = 0 }) {
+    if (!ctx) return;
+    const t = now() + delay;
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.05);
+  }
+  const notes = (list, type, vol, step) => list.forEach((f, i) => tone({ f0: f, dur: 0.22, type, vol, delay: i * step }));
+  return {
+    init,
+    get muted() { return muted; },
+    toggleMute() {
+      muted = !muted;
+      try { localStorage.setItem('powderline-muted', muted ? '1' : '0'); } catch (e) { /* ignore */ }
+      if (ctx) master.gain.setTargetAtTime(muted ? 0 : 0.7, now(), 0.05);
+      return muted;
+    },
+    // continuous: snow hiss grows with speed and carving, air rush while flying, metal hiss on rails
+    update(speed, carve, mode) {
+      if (!ctx) return;
+      const t = now(), s = Math.min(1, speed / 32);
+      let wv = 0, wf = 500;
+      if (mode === 'snow') { wv = 0.05 + s * 0.22 + carve * 0.18; wf = 450 + s * 1400 + carve * 2200; }
+      else if (mode === 'air') { wv = 0.04 + s * 0.12; wf = 300 + s * 600; }
+      else if (mode === 'rail') { wv = 0.04; wf = 500; }
+      windGain.gain.setTargetAtTime(wv, t, 0.08);
+      windFilter.frequency.setTargetAtTime(wf, t, 0.08);
+      grindGain.gain.setTargetAtTime(mode === 'rail' ? 0.35 : 0, t, 0.04);
+    },
+    jump() { hit({ type: 'bandpass', f0: 500, f1: 2200, q: 1.5, dur: 0.35, vol: 0.35 }); },
+    land(hard) { tone({ f0: 120, f1: 45, dur: 0.25, vol: hard ? 0.7 : 0.45 }); hit({ type: 'lowpass', f0: 1800, f1: 300, dur: 0.3, vol: hard ? 0.5 : 0.3 }); },
+    trick(big) { notes(big ? [523, 659, 784, 1047] : [587, 784, 988], 'triangle', 0.18, 0.07); },
+    coin() { tone({ f0: 1318, dur: 0.09, type: 'square', vol: 0.08 }); tone({ f0: 1976, dur: 0.16, type: 'square', vol: 0.08, delay: 0.07 }); },
+    boost() { tone({ f0: 220, f1: 880, dur: 0.45, type: 'sawtooth', vol: 0.12 }); hit({ type: 'highpass', f0: 800, f1: 4000, dur: 0.5, vol: 0.25 }); },
+    grind() { tone({ f0: 1800, f1: 1400, dur: 0.12, type: 'square', vol: 0.06 }); hit({ type: 'bandpass', f0: 3000, q: 6, dur: 0.15, vol: 0.4 }); },
+    nearMiss() { hit({ type: 'bandpass', f0: 2500, f1: 700, q: 2, dur: 0.25, vol: 0.3 }); },
+    gate() { tone({ f0: 1046, dur: 0.1, type: 'triangle', vol: 0.15 }); },
+    crash() { hit({ type: 'lowpass', f0: 3000, f1: 150, dur: 0.9, vol: 0.8 }); tone({ f0: 90, f1: 30, dur: 0.6, vol: 0.8 }); },
+    fail() { notes([392, 330, 262], 'triangle', 0.16, 0.14); },
+    win() { notes([523, 659, 784, 1047, 1319], 'triangle', 0.2, 0.1); },
+    click() { tone({ f0: 900, dur: 0.05, type: 'triangle', vol: 0.1 }); },
+  };
+})();
+function syncSndIcon() {
+  $('sndIcon').setAttribute('d', Sound.muted ? 'M16 9l5 6M21 9l-5 6' : 'M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11');
+  $('sndBtn').setAttribute('aria-label', Sound.muted ? 'Ton an' : 'Ton aus');
+}
+syncSndIcon();
+$('sndBtn').addEventListener('click', () => { Sound.init(); Sound.toggleMute(); syncSndIcon(); $('sndBtn').blur(); });
+// browsers only allow audio after the first tap or key press
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => Sound.init(), { capture: true });
 
 // ---------- scoring ----------
 function popup(main, sub, bad) {
@@ -1266,6 +1394,7 @@ function land() {
     }
     pts = Math.round(pts * mult);
     P.pts += pts; P.trickPts += pts;
+    if (deg || flips || P.grabT > 0.25) Sound.trick(pts >= 1000); else Sound.land(air > 1.2);
     popup(parts.join(' · '), `+${pts.toLocaleString('de-DE')}` + (mult > 1 ? `  ×${String(mult).replace('.', ',')}` : ''));
     for (let i = 0; i < 40; i++) emit(P.x, P.y + 0.1, P.z, 0, 2, 0, 5);
   }
@@ -1279,6 +1408,7 @@ const CRASH_TEXT = {
 };
 function crash(reason) {
   state = 'over';
+  if (reason === 'gate') Sound.fail(); else Sound.crash();
   P.deadT = 0; P.v = 0; P.shake = reason === 'gate' ? 0 : 0.7;
   if (reason !== 'gate') for (let i = 0; i < 80; i++) emit(P.x, P.y + 0.6, P.z, 0, 3.5, 0, 7);
   navigator.vibrate?.(reason === 'gate' ? 60 : [80, 40, 120]);
@@ -1309,6 +1439,7 @@ function finishLevel() {
     why = `Nur ${P.trickPts.toLocaleString('de-DE')} von ${level.target.toLocaleString('de-DE')} Trickpunkten.`;
   }
   const hasNext = levelIdx + 1 < LEVELS.length;
+  if (ok) Sound.win(); else Sound.fail();
   if (ok) {
     const pr = levelProgress[level.id] || { done: false, best: 0 };
     pr.done = true; pr.best = Math.max(pr.best, score);
@@ -1348,6 +1479,7 @@ function grind(dt) {
     const pts = Math.round((150 + Math.floor(P.grindT * 140)) * (1 + 0.5 * P.combo));
     P.combo = Math.min(5, P.combo + 1); P.comboT = 9;
     P.pts += pts; P.trickPts += pts;
+    Sound.trick(pts >= 1000);
     popup(P.grindT > 1.2 ? 'LONG RAIL' : 'RAIL', `+${pts.toLocaleString('de-DE')}`);
     P.rail = null; P.railCD = 0.35;
     P.air = true; P.airT = 0; P.vy = vyRail + (input.jumpPressed ? 5.4 : 1.2);
@@ -1365,7 +1497,7 @@ function tryMountRail() {
       if (P.y < ry - 0.45 || P.y > ry + 0.8 || (P.air && P.vy > 1.5)) continue;
       if (P.air) { land(); if (state !== 'run') return; }
       P.rail = r; P.railT = t; P.grindT = 0; P.y = ry; P.air = false;
-      toast('GRIND');
+      toast('GRIND'); Sound.grind();
       return;
     }
   }
@@ -1414,6 +1546,7 @@ function step(dt) {
       const ball = P.y + P.vy * dt - 0.5 * G * dt * dt;
       if (input.jumpPressed) {
         P.air = true; P.airT = 0; P.vy = (gNew - gOld) / dt + 5.4; P.y = gNew + 0.02;
+        Sound.jump();
       } else if (ball > gNew + 0.1) {
         P.air = true; P.airT = 0; P.y = ball; P.vy -= G * dt;
       } else {
@@ -1433,7 +1566,7 @@ function step(dt) {
       if (P.z > ch.z0 + 8 || P.z < ch.z0 - CH_LEN - 8) continue;
       for (const b of ch.boosts) {
         if (Math.abs(P.x - b.x) < b.w / 2 && P.z <= b.z && P.z >= b.z - b.L) {
-          if (!(P.boostT > 0.8)) { toast('BOOST!'); navigator.vibrate?.(20); }
+          if (!(P.boostT > 0.8)) { toast('BOOST!'); Sound.boost(); navigator.vibrate?.(20); }
           P.boostT = 1.8;
         }
       }
@@ -1456,19 +1589,19 @@ function step(dt) {
       const dx = P.x - o.x, dz = P.z - o.z, rr = o.r + 0.3, d2 = dx * dx + dz * dz;
       if (d2 > (rr + 1.4) * (rr + 1.4) || P.y - o.y >= o.top) continue;
       if (d2 < rr * rr) { crash('tree'); return; }
-      if (!o.nm && P.v > 8) { o.nm = true; P.pts += 25; toast('KNAPP VORBEI +25'); }
+      if (!o.nm && P.v > 8) { o.nm = true; P.pts += 25; toast('KNAPP VORBEI +25'); Sound.nearMiss(); }
     }
     for (const k of ch.coins) {
       if (k.taken) continue;
       const dx = P.x - k.x, dz = P.z - k.z, dy = P.y + 0.9 - k.y;
-      if (dx * dx + dz * dz < 2.1 && Math.abs(dy) < 2) { k.taken = true; P.pts += 50; toast('KRISTALL +50'); for (let i = 0; i < 12; i++) emit(k.x, k.y, k.z, 0, 1, 0, 3); }
+      if (dx * dx + dz * dz < 2.1 && Math.abs(dy) < 2) { k.taken = true; P.pts += 50; toast('KRISTALL +50'); Sound.coin(); for (let i = 0; i < 12; i++) emit(k.x, k.y, k.z, 0, 1, 0, 3); }
     }
   }
 
   if (level) {
     while (level.nextGate < level.gates.length && P.z <= level.gates[level.nextGate].z) {
       const g = level.gates[level.nextGate++];
-      if (Math.abs(P.x - g.x) <= g.w / 2) { level.passed++; P.pts += 100; toast(`TOR ${level.passed}/${level.gates.length} +100`); }
+      if (Math.abs(P.x - g.x) <= g.w / 2) { level.passed++; P.pts += 100; Sound.gate(); toast(`TOR ${level.passed}/${level.gates.length} +100`); }
       else if (level.goal === 'gates') { crash('gate'); return; }
     }
     if (P.z <= level.finishZ) { finishLevel(); return; }
@@ -1611,6 +1744,8 @@ function frame() {
   updateCamera(dt);
   updateFlakes(dt);
   updateHud();
+  Sound.update(P.v, (P.steerIn ? 0.6 : 0) + (input.down ? 1 : 0),
+    state !== 'run' ? 'off' : P.rail ? 'rail' : P.air ? 'air' : 'snow');
   renderer.render(scene, camera);
 }
 addEventListener('resize', () => {
