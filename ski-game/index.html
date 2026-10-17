@@ -135,11 +135,6 @@ canvas { display: block; touch-action: none; }
 }
 #fsBtn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 #fsBtn:focus-visible, #pauseBtn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
-#switchTag {
-  position: absolute; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); white-space: nowrap;
-  background: var(--signal); color: #fff; border-radius: 999px; padding: 4px 12px;
-  font-family: var(--display); font-style: italic; font-weight: 800; font-size: 16px; letter-spacing: 0.06em;
-}
 #bonus {
   position: absolute; left: 50%; top: 58%; transform: translateX(-50%); opacity: 0; white-space: nowrap;
   font-family: var(--display); font-style: italic; font-weight: 800; font-size: 22px; color: #fff; text-shadow: 0 2px 10px rgba(16, 35, 61, 0.55);
@@ -201,7 +196,6 @@ canvas { display: block; touch-action: none; }
   <div id="speedo"><div class="lab">SPEED</div><div id="spd">0</div><div class="unit">km/h</div><div id="clock">00:00</div></div>
   <div id="trick"></div>
   <div id="bonus"></div>
-  <div id="switchTag" hidden>SWITCH · LENKUNG INVERTIERT</div>
 </div>
 
 <button id="pauseBtn" aria-label="Pause" hidden>II</button>
@@ -244,6 +238,8 @@ function terrainH(x, z) {
   return h;
 }
 const rampProfile = (t) => t * (0.55 + 0.45 * t);
+// height of the kicker surface above the snow; a few cm extra so it never sinks into the coarser terrain mesh
+const rampLift = (r, t) => rampProfile(t) * r.h + 0.1 * Math.min(1, t * 6);
 
 // ---------- renderer / scene ----------
 const MOBILE = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 600;
@@ -448,8 +444,7 @@ function buildBoost(b) {
   m.userData.own = true;
   return m;
 }
-const rampMat = new THREE.MeshLambertMaterial({ color: 0xf6faff });
-const signalMat = new THREE.MeshLambertMaterial({ color: 0xff6b3d });
+const rampMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const poleMat = new THREE.MeshLambertMaterial({ color: 0x2b2f3a });
 const flagGeo = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, -0.7, 0, 0.9, -0.35, 0], 3)); g.computeVertexNormals(); return g; })();
 const flagMat = new THREE.MeshLambertMaterial({ color: 0xff6b3d, side: THREE.DoubleSide });
@@ -649,36 +644,44 @@ class Chunk {
 }
 
 function buildRamp(r) {
-  const N = 10, v = [];
-  const pt = (t, side, top) => {
-    const z = r.z - t * r.L, x = r.x + (side * r.w) / 2;
-    return [x, terrainH(x, z) + (top ? rampProfile(t) * r.h : -0.5), z];
+  const N = 14, M = 4, v = [], col = [];
+  const TOP = [0.97, 0.985, 1], SIDE = [0.8, 0.87, 0.95], LIP = [1, 0.42, 0.24];
+  const lipT = 1 - 0.5 / r.L;
+  // a point on the kicker: across u in [-1, 1], along t in [0, 1]; top surface or base well below the snow
+  const pt = (t, u, top) => {
+    const z = r.z - t * r.L, x = r.x + (u * r.w) / 2;
+    return [x, terrainH(x, z) + (top ? rampLift(r, t) : -0.9), z];
   };
-  const quad = (a, b, c, d) => v.push(...a, ...b, ...c, ...a, ...c, ...d);
-  for (let i = 0; i < N; i++) {
-    const t0 = i / N, t1 = (i + 1) / N;
-    const L0 = pt(t0, -1, 1), R0 = pt(t0, 1, 1), L1 = pt(t1, -1, 1), R1 = pt(t1, 1, 1);
-    quad(L0, R0, R1, L1);
-    quad(pt(t0, -1, 0), L0, L1, pt(t1, -1, 0));
-    quad(pt(t1, 1, 0), R1, R0, pt(t0, 1, 0));
+  const quad = (a, b, c, d, color) => { v.push(...a, ...b, ...c, ...a, ...c, ...d); for (let k = 0; k < 6; k++) col.push(...color); };
+  const ts = [];
+  for (let i = 0; i <= N; i++) ts.push(i / N);
+  ts.splice(ts.findIndex((t) => t > lipT), 0, lipT);
+  for (let i = 0; i < ts.length - 1; i++) {
+    const t0 = ts[i], t1 = ts[i + 1], color = t0 >= lipT ? LIP : TOP;
+    for (let j = 0; j < M; j++) {
+      const u0 = -1 + (2 * j) / M, u1 = -1 + (2 * (j + 1)) / M;
+      quad(pt(t0, u0, 1), pt(t0, u1, 1), pt(t1, u1, 1), pt(t1, u0, 1), color);
+    }
+    quad(pt(t0, -1, 0), pt(t0, -1, 1), pt(t1, -1, 1), pt(t1, -1, 0), SIDE);
+    quad(pt(t1, 1, 0), pt(t1, 1, 1), pt(t0, 1, 1), pt(t0, 1, 0), SIDE);
   }
-  quad(pt(1, 1, 0), pt(1, -1, 0), pt(1, -1, 1), pt(1, 1, 1));
+  // front wall under the lip: orange stripe on top, then the side colour
+  for (let j = 0; j < M; j++) {
+    const u0 = -1 + (2 * j) / M, u1 = -1 + (2 * (j + 1)) / M;
+    const a = pt(1, u1, 1), b = pt(1, u0, 1);
+    const a2 = [a[0], a[1] - 0.3, a[2]], b2 = [b[0], b[1] - 0.3, b[2]];
+    quad(a2, b2, b, a, LIP);
+    quad(pt(1, u1, 0), pt(1, u0, 0), b2, a2, SIDE);
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
   const grp = new THREE.Group();
   const mesh = new THREE.Mesh(g, rampMat);
   mesh.castShadow = mesh.receiveShadow = true;
   mesh.userData.own = true;
   grp.add(mesh);
-  // orange lip line
-  const lipZ = r.z - r.L, lipY = terrainH(r.x, lipZ) + r.h;
-  const lipG = new THREE.BoxGeometry(r.w, 0.08, 0.35);
-  const lip = new THREE.Mesh(lipG, signalMat);
-  lip.userData.own = true;
-  lip.position.set(r.x, lipY + 0.02, lipZ + 0.18);
-  lip.rotation.x = Math.atan(r.h * 1.45 / r.L - 0.3) * 0.5;
-  grp.add(lip);
   // flags at the run-in
   for (const side of [-1, 1]) {
     const fx = r.x + side * (r.w / 2 + 1.2), fz = r.z + 2, fy = terrainH(fx, fz);
@@ -710,7 +713,7 @@ function groundAt(x, z) {
   for (const ch of chunks) {
     if (z > ch.z0 + 1 || z < ch.z0 - CH_LEN - 1) continue;
     for (const r of ch.ramps) {
-      if (Math.abs(x - r.x) < r.w / 2 && z <= r.z && z >= r.z - r.L) h += rampProfile((r.z - z) / r.L) * r.h;
+      if (Math.abs(x - r.x) < r.w / 2 && z <= r.z && z >= r.z - r.L) h += rampLift(r, (r.z - z) / r.L);
     }
   }
   return h;
@@ -1528,7 +1531,6 @@ function updateVisuals(dt) {
   }
   skier.rotation.z = 0;
   body.rotation.z = -P.steerVis * 0.4 * (P.switch ? -1 : 1);
-  $('switchTag').hidden = !(P.switch && state === 'run');
   const grab = P.air && input.jumpHeld;
   const crouch = grab ? 0.72 : (!P.air && input.up && state === 'run') ? 0.84 : 1;
   body.scale.y = lerp(body.scale.y, crouch, k);
