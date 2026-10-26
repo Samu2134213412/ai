@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anzeigen-Picker</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <span class="logo">Anzeigen<b>Picker</b></span>
+      <span class="tagline">PC-Teile von Kleinanzeigen zusammenstellen – Preis, Versand &amp; Scam-Check</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card listbar">
+      <div class="listbar-row">
+        <svg class="listbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h11a2 2 0 0 1 2 2v11h-2V5H8zM5 7h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm0 2v10h10V9z"/></svg>
+        <input id="list-name" class="list-name" maxlength="80" aria-label="Name der Liste" value="Meine PC-Liste">
+        <div class="listbar-actions">
+          <button type="button" class="ghost" data-act="copy-text" title="Liste als Text in die Zwischenablage">Text kopieren</button>
+          <button type="button" class="ghost" data-act="export" title="Liste als Datei speichern">Export</button>
+          <button type="button" class="ghost" data-act="import" title="Gespeicherte Liste laden">Import</button>
+          <button type="button" class="ghost danger" data-act="clear">Leeren</button>
+          <input type="file" id="file-import" accept="application/json,.json" hidden>
+        </div>
+      </div>
+      <div class="statusbar">
+        <div id="risk-status" class="risk-status" role="status"></div>
+        <div id="total-status" class="total-status"></div>
+      </div>
+    </section>
+
+    <form id="quick-add" class="quick-add" autocomplete="off">
+      <input id="quick-url" type="text" placeholder="Kleinanzeigen-Link einfügen – wird automatisch einsortiert" aria-label="Kleinanzeigen-Link">
+      <button type="submit" class="primary">+ Hinzufügen</button>
+    </form>
+
+    <div class="table-wrap">
+      <table class="parts">
+        <thead>
+          <tr>
+            <th class="c-cat">Komponente</th>
+            <th class="c-sel">Auswahl</th>
+            <th class="num">Preis</th>
+            <th class="num">Versand</th>
+            <th class="num">Gesamt</th>
+            <th class="num">Marktpreis</th>
+            <th>Risiko</th>
+            <th>Wo</th>
+            <th class="c-x"><span class="sr-only">Aktionen</span></th>
+          </tr>
+        </thead>
+        <tbody id="parts-body"></tbody>
+        <tfoot id="parts-foot"></tfoot>
+      </table>
+    </div>
+
+    <p class="disclaimer">
+      Der Risiko-Score ist eine Heuristik aus Preis, Verkäuferkonto und Anzeigentext – kein Beweis.
+      Zahle nie per „PayPal Freunde“, Gutschein oder Vorkasse an Unbekannte, nutze „Sicher bezahlen“
+      oder hol die Ware ab. Marktpreise sind Mediane ähnlicher Kleinanzeigen-Angebote.
+    </p>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

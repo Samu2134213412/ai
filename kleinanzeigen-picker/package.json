@@ -1,0 +1,14 @@
+{
+  "name": "anzeigen-picker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PC-Teile aus Kleinanzeigen-Links zusammenstellen: Preis, Versand und Scam-Risiko auf einen Blick.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node server.js --open",
+    "test": "node --test"
+  }
+}
