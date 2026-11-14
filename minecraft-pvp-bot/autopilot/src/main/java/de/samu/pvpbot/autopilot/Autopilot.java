@@ -3,6 +3,7 @@ package de.samu.pvpbot.autopilot;
 import de.samu.pvpbot.autopilot.brain.BotBrain;
 import de.samu.pvpbot.autopilot.brain.FightOdds;
 import de.samu.pvpbot.autopilot.brain.BotBrain.Pattern;
+import de.samu.pvpbot.autopilot.brain.PvpMode;
 import de.samu.pvpbot.autopilot.brain.Kit;
 import de.samu.pvpbot.autopilot.brain.Kit.Role;
 import de.samu.pvpbot.autopilot.mixin.MinecraftInvoker;
@@ -77,6 +78,8 @@ public final class Autopilot {
     private int pearlCooldown;
     private int waterPickupTicks;
     private int drinkTicks;
+    /** Ticks until the next splash potion may be thrown (the last one has to land first). */
+    private int splashCooldown;
     private int flightCooldown;
     private int eatTicks;
     private int strayScreenTicks;
@@ -260,6 +263,7 @@ public final class Autopilot {
 
         LivingEntity t = this.target instanceof LivingEntity living ? living : null;
         if (this.pearlCooldown > 0) this.pearlCooldown--;
+        if (this.splashCooldown > 0) this.splashCooldown--;
         if (t == null && this.targetMode != TargetMode.MANUAL && this.tickFlee(p)) {
             this.applyKeys(mc);
             return;
@@ -504,6 +508,12 @@ public final class Autopilot {
 
     // ------------------------------------------------------------------ choosing
 
+    /** The PvP mode chosen with /autopilot modus (FREI if unknown). */
+    public PvpMode mode() {
+        PvpMode m = PvpMode.byId(AutopilotSettings.INSTANCE.mode);
+        return m != null ? m : PvpMode.FREI;
+    }
+
     private String kitSignature(LocalPlayer p) {
         List<ItemStack> items = new ArrayList<>(p.getInventory().getNonEquipmentItems());
         items.add(p.getItemBySlot(EquipmentSlot.CHEST));
@@ -515,7 +525,7 @@ public final class Autopilot {
         BotBrain.Env env = p.isInWater() ? BotBrain.Env.WATER : this.ceiling(p, 12) <= 10 ? BotBrain.Env.CAVE : BotBrain.Env.OPEN;
         double hDist = p.position().subtract(t.position()).horizontalDistance();
         boolean inAir = t.isFallFlying() || !t.onGround() && t.getY() - p.getY() > 4.0;
-        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, t instanceof Player, this.kitSignature(p), BotBrain.Context.foeOf(t));
+        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, t instanceof Player, this.mode().learnKey(this.kitSignature(p)), BotBrain.Context.foeOf(t));
     }
 
     private int ceiling(LocalPlayer p, int max) {
@@ -580,6 +590,7 @@ public final class Autopilot {
                     this.has(p, Role.WIND_CHARGE), p.onGround(), this.windCooldown, sees, String.format("%.1f", hDist),
                     String.format("%.1f", dy), this.ceiling(p, 8), p.getFoodData().getFoodLevel());
         }
+        out = new ArrayList<>(this.mode().filter(out));
         List<Pattern> allowed = new ArrayList<>(out);
         allowed.removeIf(x -> this.tabuUntil.getOrDefault(x, 0L) > this.ticks);
         return allowed.isEmpty() ? out : allowed;
@@ -714,7 +725,7 @@ public final class Autopilot {
 
     private void tickPattern(Minecraft mc, LocalPlayer p, LivingEntity t) {
         switch (this.pattern) {
-            case MACE_MELEE, BLADE_MELEE -> this.tickMelee(mc, p, t);
+            case MACE_MELEE, BLADE_MELEE, BLADE_RUSH, BLADE_SPACING, BLADE_CIRCLE -> this.tickMelee(mc, p, t);
             case SPEAR_KITE -> this.tickSpearKite(mc, p, t);
             case SPEAR_CHARGE -> this.tickSpearCharge(mc, p, t);
             case WIND_SMASH, WIND_LUNGE_SMASH -> this.tickWindSmash(mc, p, t);
@@ -1264,6 +1275,19 @@ public final class Autopilot {
             }
             if (low && heals || calm && missing) {
                 int slot = this.toHotbar(mc, p, i);
+                if (stack.is(net.minecraft.world.item.Items.SPLASH_POTION) && this.splashCooldown > 0) {
+                    continue;
+                }
+                if (slot >= 0 && stack.is(net.minecraft.world.item.Items.SPLASH_POTION)) {
+                    this.splashCooldown = 25;
+                    // A splash potion is thrown, not drunk: straight down at its own feet, once.
+                    p.getInventory().setSelectedSlot(slot);
+                    this.finishAttempt(mc);
+                    this.lookAt(p, p.getYRot(), 90.0F, 180.0F);
+                    this.useItemOnce(mc);
+                    this.say(mc, "§dWirft " + stack.getHoverName().getString());
+                    return true;
+                }
                 if (slot >= 0) {
                     p.getInventory().setSelectedSlot(slot);
                     this.finishAttempt(mc);

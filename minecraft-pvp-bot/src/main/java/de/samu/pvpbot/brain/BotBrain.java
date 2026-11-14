@@ -35,7 +35,12 @@ public final class BotBrain {
         ELYTRA_LANCE("Elytra-Speerflug", false),
         BLADE_MELEE("Schwert/Axt-Nahkampf", true),
         BOW_SNIPE("Bogenschüsse", true),
-        WIND_LUNGE_SMASH("Windladung → Lunge → Mace", false);
+        WIND_LUNGE_SMASH("Windladung → Lunge → Mace", false),
+        // Melee styles with sword, axe or fists: same weapon, different footwork. The bot learns
+        // which one works against whom (in Sumo and Boxing these are all it has to choose from).
+        BLADE_RUSH("Sprint-Kombo (W-Tap)", true),
+        BLADE_SPACING("Abstand halten (rein-raus)", true),
+        BLADE_CIRCLE("Umkreisen", true);
 
         public final String label;
         public final boolean melee;
@@ -57,6 +62,9 @@ public final class BotBrain {
                 case BLADE_MELEE -> "schwert";
                 case BOW_SNIPE -> "bogen";
                 case WIND_LUNGE_SMASH -> "kombo";
+                case BLADE_RUSH -> "wtap";
+                case BLADE_SPACING -> "abstand";
+                case BLADE_CIRCLE -> "kreisen";
             };
         }
 
@@ -67,6 +75,16 @@ public final class BotBrain {
                 }
             }
             return null;
+        }
+
+        /** Sword/axe/fist melee in any style. */
+        public boolean blade() {
+            return this == BLADE_MELEE || this == BLADE_RUSH || this == BLADE_SPACING || this == BLADE_CIRCLE;
+        }
+
+        /** The pattern a PvP mode's rules are written for: every blade style counts as BLADE_MELEE. */
+        public Pattern base() {
+            return this.blade() ? BLADE_MELEE : this;
         }
 
         public boolean aerial() {
@@ -145,7 +163,7 @@ public final class BotBrain {
 
         public String describe() {
             return env.label + ", " + range.label + ", Ziel " + (targetInAir ? "in der Luft" : "am Boden")
-                    + ", gegen " + foeLabel() + ", Kit " + Kit.describeSignature(kit);
+                    + ", gegen " + foeLabel() + ", Kit " + PvpMode.describeKey(kit);
         }
 
         static @Nullable Context parse(String key) {
@@ -205,6 +223,7 @@ public final class BotBrain {
                 case WIND_SMASH -> 3.0;
                 case WIND_LUNGE_SMASH -> 4.0;
                 case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> 1.5;
+                case BLADE_RUSH, BLADE_SPACING, BLADE_CIRCLE -> 1.0;
                 case BOW_SNIPE -> -3.0;
                 case SPEAR_CHARGE -> 1.0;
                 default -> -2.0;
@@ -219,7 +238,7 @@ public final class BotBrain {
                 case ELYTRA_DIVE -> 4.0;
                 case BOW_SNIPE -> 3.0;
                 case ELYTRA_LANCE, SPEAR_CHARGE -> 2.0;
-                case MACE_MELEE, SPEAR_KITE, BLADE_MELEE -> -2.0;
+                case MACE_MELEE, SPEAR_KITE, BLADE_MELEE, BLADE_RUSH, BLADE_SPACING, BLADE_CIRCLE -> -2.0;
                 default -> 0.0;
             };
         }

@@ -1,6 +1,7 @@
 package de.samu.pvpbot.autopilot;
 
 import de.samu.pvpbot.autopilot.brain.BotBrain;
+import de.samu.pvpbot.autopilot.brain.PvpMode;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.minecraft.client.gui.components.Button;
@@ -10,7 +11,7 @@ import net.minecraft.network.chat.Component;
 
 /** Settings menu for the autopilot (key N): on/off, target, tricks and which tactics it may use. */
 public class AutopilotScreen extends Screen {
-    private static final String[] PAGES = {"Steuerung", "Taktiken", "Tricks"};
+    private static final String[] PAGES = {"Steuerung", "Modi", "Taktiken", "Tricks"};
     private static int page;
 
     public AutopilotScreen() {
@@ -23,7 +24,7 @@ public class AutopilotScreen extends Screen {
         int h = 20;
         int gap = 4;
         int left = this.width / 2 - (2 * w + gap) / 2;
-        int top = 28;
+        int top = 42;
         int tabW = Math.min(110, (this.width - 20) / PAGES.length - 4);
         int tabLeft = this.width / 2 - (PAGES.length * (tabW + 4) - 4) / 2;
         for (int i = 0; i < PAGES.length; i++) {
@@ -31,7 +32,7 @@ public class AutopilotScreen extends Screen {
             Button tab = Button.builder(Component.literal(i == page ? "§e" + PAGES[i] : PAGES[i]), b -> {
                 page = index;
                 this.rebuildWidgets();
-            }).bounds(tabLeft + i * (tabW + 4), 4, tabW, h).build();
+            }).bounds(tabLeft + i * (tabW + 4), 18, tabW, h).build();
             tab.active = i != page;
             this.addRenderableWidget(tab);
         }
@@ -71,6 +72,16 @@ public class AutopilotScreen extends Screen {
                 }, "Der Autopilot fängt beim Lernen von vorne an"));
             }
             case 1 -> {
+                // PvP modes: only the attacks the mode allows, each mode with its own memory.
+                for (PvpMode m : PvpMode.values()) {
+                    place.accept(this.button(() -> (ap.mode() == m ? "§a✔ " : "") + m.label, () -> {
+                        s.mode = m.id;
+                        s.save();
+                        this.rebuildWidgets();
+                    }, m.description + " – Angriffe: " + m.describeAttacks() + ". Das Kit packst du selbst ins Inventar."));
+                }
+            }
+            case 2 -> {
                 place.accept(this.toggle("Elytra-Angriffe", () -> s.elytra, v -> s.elytra = v, "Sturzflug und Speerflug"));
                 place.accept(this.toggle("Windladungen", () -> s.windCharges, v -> s.windCharges = v, "Windladungs-Smash und Kombo"));
                 place.accept(this.toggle("Speer", () -> s.spear, v -> s.spear = v, "Ansturm und Stiche im Vorbeirennen"));
@@ -97,6 +108,18 @@ public class AutopilotScreen extends Screen {
         }
         this.addRenderableWidget(Button.builder(Component.literal("Fertig"), b -> this.onClose())
                 .bounds(this.width / 2 - 50, this.height - 26, 100, h).build());
+    }
+
+    /** A live status line above the tabs: on/off, mode, target. */
+    @Override
+    public void extractRenderState(net.minecraft.client.gui.GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        Autopilot ap = Autopilot.INSTANCE;
+        String status = "Autopilot " + (ap.isEnabled() ? "§aAN" : "§cAUS") + (ap.isFullControl() ? " §6(volle Kontrolle)" : "")
+                + " §7· Modus §e" + ap.mode().label + " §7· Ziel §f" + ap.describeTarget();
+        int w = Math.min(this.width - 8, this.font.width(status) + 16);
+        g.fill(this.width / 2 - w / 2, 2, this.width / 2 + w / 2, 15, 0xB0101018);
+        g.centeredText(this.font, Component.literal(status), this.width / 2, 5, 0xFFFFFFFF);
+        super.extractRenderState(g, mouseX, mouseY, partialTick);
     }
 
     private Button button(Supplier<String> label, Runnable action, String tip) {

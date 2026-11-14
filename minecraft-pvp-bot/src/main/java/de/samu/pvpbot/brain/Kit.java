@@ -73,7 +73,7 @@ public final class Kit {
         if (stack.is(Items.WATER_BUCKET)) {
             return Role.WATER_BUCKET;
         }
-        if (stack.is(Items.POTION)) {
+        if (stack.is(Items.POTION) || stack.is(Items.SPLASH_POTION)) {
             return Role.POTION;
         }
         if (armorSlot(stack) != null) {

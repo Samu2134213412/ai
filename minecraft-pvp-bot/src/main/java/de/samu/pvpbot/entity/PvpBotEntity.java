@@ -5,6 +5,7 @@ import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.brain.BotBrain.Pattern;
 import de.samu.pvpbot.brain.Kit;
 import de.samu.pvpbot.brain.Kit.Role;
+import de.samu.pvpbot.brain.PvpMode;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -20,6 +21,9 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -108,6 +112,54 @@ public class PvpBotEntity extends PathfinderMob {
     private boolean following = true;
     private boolean assisting = true;
     private Style style = Style.AUTO;
+    // PvP mode (Klassik, UHC, Sumo, Boxen ...): kit, allowed attacks, rules and its own memory.
+    private PvpMode pvpMode = PvpMode.FREI;
+    private int modeHits;
+    private int modeHitsTaken;
+    /** Middle of the Sumo platform: where both stood when the round began. */
+    private @Nullable Vec3 sumoCenter;
+    private boolean foughtThisRound;
+    /** A round that was decided during a hit: handled at the start of the next tick, not in the middle of an attack. */
+    private @Nullable RoundEnd pendingRound;
+    /** Sumo/Boxing: the damage its hits would have done (they do none), so it still learns what lands. */
+    private double attemptBonus;
+    /** The cooldown the last melee hit started with (for the w-tap right after a hit). */
+    private int meleeSwing;
+
+    private record RoundEnd(boolean won, String why) {
+    }
+
+    private int roundsWon;
+    private int roundsLost;
+
+    /** Sumo and Boxing rounds it has won / lost since it was created. */
+    public int roundsWon() {
+        return this.roundsWon;
+    }
+
+    public int roundsLost() {
+        return this.roundsLost;
+    }
+
+    // What the owner's menu and HUD show (synced to clients).
+    private static final EntityDataAccessor<String> DATA_MODE = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_STATE = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_KIT = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_OWNER = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<Integer> DATA_HITS = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_HITS_TAKEN = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_FLAGS = SynchedEntityData.defineId(PvpBotEntity.class, EntityDataSerializers.INT);
+    public static final int FLAG_FOLLOWING = 1;
+    public static final int FLAG_ASSISTING = 2;
+    public static final int FLAG_GATHERING = 4;
+    public static final int FLAG_TALK = 8;
+    public static final int FLAG_DUEL = 16;
+    public static final int FLAG_SURVIVAL_KIT = 32;
+    public static final int FLAG_FIGHTING = 64;
+    public static final int FLAG_AUTONOMOUS = 128;
+    public static final int FLAG_SPEEDRUN = 256;
+    public static final int FLAG_STYLE_MACE = 512;
+    public static final int FLAG_STYLE_SPEAR = 1024;
     private final Deque<UUID> targetQueue = new ArrayDeque<>();
     // No wallhacks: the bot only knows where a target is while it can see it.
     private @Nullable Vec3 lastSeenPos;
@@ -187,6 +239,66 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_MODE, PvpMode.FREI.id);
+        builder.define(DATA_STATE, "");
+        builder.define(DATA_KIT, "");
+        builder.define(DATA_OWNER, "");
+        builder.define(DATA_HITS, 0);
+        builder.define(DATA_HITS_TAKEN, 0);
+        builder.define(DATA_FLAGS, 0);
+    }
+
+    /** Server: keeps the values the menu and HUD show up to date (only changes are sent). */
+    private void syncView() {
+        SynchedEntityData data = this.getEntityData();
+        data.set(DATA_MODE, this.pvpMode.id);
+        data.set(DATA_STATE, this.describeState());
+        data.set(DATA_KIT, this.describeKit());
+        data.set(DATA_OWNER, this.ownerId == null ? "" : this.ownerId.toString());
+        data.set(DATA_HITS, this.modeHits);
+        data.set(DATA_HITS_TAKEN, this.modeHitsTaken);
+        int flags = (this.following ? FLAG_FOLLOWING : 0) | (this.assisting ? FLAG_ASSISTING : 0)
+                | (this.gatherer.isEnabled() ? FLAG_GATHERING : 0) | (this.talk ? FLAG_TALK : 0)
+                | (this.duelOwner ? FLAG_DUEL : 0) | (this.kit.isInfinite() ? 0 : FLAG_SURVIVAL_KIT)
+                | (this.getTarget() != null ? FLAG_FIGHTING : 0) | (this.gatherer.isAutonomous() ? FLAG_AUTONOMOUS : 0)
+                | (this.gatherer.isSpeedrun() ? FLAG_SPEEDRUN : 0)
+                | (this.style == Style.MACE ? FLAG_STYLE_MACE : 0) | (this.style == Style.SPEAR ? FLAG_STYLE_SPEAR : 0);
+        data.set(DATA_FLAGS, flags);
+    }
+
+    // What a client knows about the bot (for the menu and the HUD).
+    public PvpMode viewMode() {
+        PvpMode m = PvpMode.byId(this.getEntityData().get(DATA_MODE));
+        return m != null ? m : PvpMode.FREI;
+    }
+
+    public String viewState() {
+        return this.getEntityData().get(DATA_STATE);
+    }
+
+    public String viewKit() {
+        return this.getEntityData().get(DATA_KIT);
+    }
+
+    public boolean viewOwnedBy(UUID player) {
+        return player.toString().equals(this.getEntityData().get(DATA_OWNER));
+    }
+
+    public int viewHits() {
+        return this.getEntityData().get(DATA_HITS);
+    }
+
+    public int viewHitsTaken() {
+        return this.getEntityData().get(DATA_HITS_TAKEN);
+    }
+
+    public boolean viewFlag(int flag) {
+        return (this.getEntityData().get(DATA_FLAGS) & flag) != 0;
+    }
+
+    @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(1, new CombatGoal());
@@ -244,6 +356,152 @@ public class PvpBotEntity extends PathfinderMob {
 
     public void setStyle(Style style) {
         this.style = style;
+    }
+
+    public PvpMode getPvpMode() {
+        return this.pvpMode;
+    }
+
+    /**
+     * Switches to a PvP mode and hands out its kit (unlimited, fresh every round). FREI goes back
+     * to the standard kit. Only for bots with an unlimited kit (a survival kit stays untouched).
+     */
+    public void setPvpMode(PvpMode mode) {
+        this.pvpMode = mode;
+        this.resetRound();
+        if (mode == PvpMode.FREI) {
+            this.equipLoadout();
+        } else {
+            this.freshModeKit();
+        }
+    }
+
+    /** Leaves the mode without touching the kit (when it gets your own kit). */
+    public void clearPvpMode() {
+        this.pvpMode = PvpMode.FREI;
+        this.resetRound();
+    }
+
+    private void freshModeKit() {
+        List<ItemStack> items = this.pvpMode.kit(this.level().registryAccess());
+        if (items != null) {
+            this.setKit(items, true);
+            // Fair rounds: arrows, pearls, potions and apples are used up; the next round starts fresh.
+            this.kit.setRationed(true);
+            this.gapples = this.kit.count(st -> Kit.classify(st) == Role.GAPPLE);
+        }
+        this.removeAllEffects();
+        this.setHealth(this.getMaxHealth());
+    }
+
+    private void resetRound() {
+        this.modeHits = 0;
+        this.modeHitsTaken = 0;
+        this.sumoCenter = null;
+        this.pendingRound = null;
+    }
+
+    /** Decides the round; it is wrapped up at the start of the next tick. */
+    private void decideRound(boolean won, String why) {
+        if (this.pendingRound == null) {
+            this.pendingRound = new RoundEnd(won, why);
+        }
+    }
+
+    /** A Sumo or Boxing round is decided: say so, learn from it, and get ready for the next one. */
+    private void endRound(boolean won, String why) {
+        String score = this.pvpMode.hitsToWin > 0 ? " §7(" + this.modeHits + ":" + this.modeHitsTaken + " Treffer)" : "";
+        if (won) {
+            this.roundsWon++;
+        } else {
+            this.roundsLost++;
+        }
+        if (DEBUG) {
+            PvpBotMod.LOGGER.info("[SELFTEST]   round {} in {}: {} (hits {}:{})", won ? "WON" : "LOST", this.pvpMode.label, why, this.modeHits, this.modeHitsTaken);
+        }
+        this.tellOwner((won ? "§a🏆 Gewonnen! §7" : "§c✖ Verloren. §7") + why + score, true);
+        // The round result counts like a kill or a death for the attack it was using.
+        this.finishAttempt();
+        if (this.lastAttempt != null) {
+            if (won) {
+                BotBrain.INSTANCE.creditKill(this.lastAttempt.ctx(), this.lastAttempt.pattern());
+            } else {
+                BotBrain.INSTANCE.blameDeath(this.lastAttempt.ctx(), this.lastAttempt.pattern());
+            }
+        }
+        this.lastAttempt = null;
+        this.openedAgainst = null;
+        this.clearTargets();
+        this.resetRound();
+        this.freshModeKit();
+    }
+
+    /** Sumo: whoever leaves the platform (falls below it or lands in water) loses. */
+    private void tickSumo() {
+        LivingEntity t = this.getTarget();
+        if (!this.pvpMode.sumo || t == null) {
+            return;
+        }
+        if (this.sumoCenter == null) {
+            // The platform is where both stand when the round begins (same level, close together).
+            if (this.onGround() && t.onGround() && Math.abs(this.getY() - t.getY()) < 1.2 && this.distanceTo(t) < 24.0F) {
+                this.sumoCenter = this.position().add(t.position()).scale(0.5);
+            }
+            return;
+        }
+        double floor = this.sumoCenter.y - 1.5;
+        if (t.getY() < floor || t.isInWater()) {
+            this.decideRound(true, t.getName().getString() + " ist von der Plattform gefallen.");
+        } else if (this.getY() < floor || this.isInWater()) {
+            this.decideRound(false, "Ich bin von der Plattform gefallen.");
+        }
+    }
+
+    /** Sumo: is there platform floor under this spot? */
+    private boolean onPlatform(Vec3 pos) {
+        if (this.sumoCenter == null) {
+            return true;
+        }
+        BlockPos floor = BlockPos.containing(pos.x, this.sumoCenter.y - 0.5, pos.z);
+        return !this.level().getBlockState(floor).getCollisionShape(this.level(), floor).isEmpty();
+    }
+
+    /**
+     * Sumo footwork: get between the enemy and the middle of the platform, so every hit pushes
+     * them towards the edge and never us.
+     */
+    private void sumoMove(LivingEntity target, double dist) {
+        Vec3 center = this.sumoCenter != null ? this.sumoCenter : this.position();
+        Vec3 out = target.position().subtract(center).multiply(1.0, 0.0, 1.0);
+        if (out.lengthSqr() < 0.04) {
+            out = target.position().subtract(this.position()).multiply(1.0, 0.0, 1.0);
+        }
+        out = out.lengthSqr() > 1.0E-4 ? out.normalize() : this.getLookAngle().multiply(1.0, 0.0, 1.0);
+        Vec3 goal = dist > 3.0 ? target.position().subtract(out.scale(1.5)) : target.position();
+        if (this.sumoCenter != null && !this.onPlatform(goal)) {
+            goal = this.position(); // (never a step off the platform)
+        }
+        this.setSprinting(true);
+        this.getNavigation().stop();
+        this.getMoveControl().setWantedPosition(goal.x, this.getY(), goal.z, 1.3);
+    }
+
+    @Override
+    public boolean doHurtTarget(ServerLevel level, Entity target) {
+        float before = target instanceof LivingEntity living ? living.getHealth() : 0.0F;
+        boolean hit = super.doHurtTarget(level, target);
+        if (hit && target instanceof LivingEntity living && this.pvpMode != PvpMode.FREI) {
+            if (this.pvpMode.noDamage && living.isAlive()) {
+                // Only the knockback counts - but it still learns from what the hit would have done.
+                this.attemptBonus += Math.max(1.0, before - living.getHealth());
+                living.setHealth(before);
+            }
+            this.modeHits++;
+            if (this.pvpMode.hitsToWin > 0 && this.modeHits >= this.pvpMode.hitsToWin) {
+                this.decideRound(true, this.pvpMode.hitsToWin + " Treffer gelandet.");
+            }
+        }
+        return hit;
     }
 
     public void addTarget(LivingEntity target, boolean ordered) {
@@ -327,6 +585,11 @@ public class PvpBotEntity extends PathfinderMob {
         this.setOwner(owner);
         this.targetQueue.clear();
         this.duelOwner = true;
+        if (this.pvpMode != PvpMode.FREI) {
+            // Every duel round starts with a fresh kit and full health.
+            this.resetRound();
+            this.freshModeKit();
+        }
         this.setTarget(owner);
     }
 
@@ -388,9 +651,21 @@ public class PvpBotEntity extends PathfinderMob {
     @Override
     public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
         float before = this.getHealth() + this.getAbsorptionAmount();
+        float healthBefore = this.getHealth();
         boolean hurt = super.hurtServer(level, source, amount);
         if (this.pattern != null) {
             this.attemptTaken += Math.max(0.0F, before - (this.getHealth() + this.getAbsorptionAmount()));
+        }
+        if (hurt && this.pvpMode != PvpMode.FREI && source.getEntity() instanceof LivingEntity hitter && hitter != this) {
+            if (this.pvpMode.noDamage && this.isAlive()) {
+                this.setHealth(healthBefore); // (Sumo, Boxen: only the knockback counts)
+            }
+            if (hitter == this.getTarget()) {
+                this.modeHitsTaken++;
+                if (this.pvpMode.hitsToWin > 0 && this.modeHitsTaken >= this.pvpMode.hitsToWin) {
+                    this.decideRound(false, hitter.getName().getString() + " hat zuerst " + this.pvpMode.hitsToWin + " Treffer gelandet.");
+                }
+            }
         }
         // The dragon is fought with its own tactic (hit it while it sits), not like a normal enemy.
         if (hurt && source.getEntity() instanceof LivingEntity attacker && attacker != this && !this.isAlliedTo(attacker)
@@ -438,6 +713,7 @@ public class PvpBotEntity extends PathfinderMob {
         this.kit.clear();
         items.forEach(this.kit::add);
         this.kit.setInfinite(infinite);
+        this.kit.setRationed(false);
         this.gapples = MAX_GAPPLES;
         this.kit.equipBest(this, false);
         ItemStack weapon = this.style == Style.SPEAR && !this.spear().isEmpty() ? this.spear()
@@ -590,8 +866,8 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     public String describeKit() {
-        StringBuilder sb = new StringBuilder(Kit.describeSignature(this.kit.signature()));
-        sb.append(this.kit.isInfinite() ? " §8(unendlich)" : " §8(verbraucht sich)");
+        StringBuilder sb = new StringBuilder(PvpMode.describeKey(this.pvpMode.learnKey(this.kit.signature())));
+        sb.append(this.kit.consumes() ? this.kit.isInfinite() ? " §8(jede Runde frisch)" : " §8(verbraucht sich)" : " §8(unendlich)");
         return sb.toString();
     }
 
@@ -609,7 +885,7 @@ public class PvpBotEntity extends PathfinderMob {
     }
 
     private boolean hasArrows() {
-        return this.kit.has(Role.ARROW) || this.kit.isInfinite() && !this.bow().isEmpty();
+        return this.kit.has(Role.ARROW) || !this.kit.consumes() && !this.bow().isEmpty();
     }
 
     @Override
@@ -917,6 +1193,15 @@ public class PvpBotEntity extends PathfinderMob {
             this.getLookControl().setLookAt(talker, 30.0F, 30.0F);
         }
         this.guardLedge(level);
+        this.tickSumo();
+        RoundEnd decided = this.pendingRound;
+        if (decided != null) {
+            this.pendingRound = null;
+            this.endRound(decided.won(), decided.why());
+        }
+        if (this.tickCount % 5 == 0) {
+            this.syncView();
+        }
         this.checkPendingKill();
         this.tickRetreat(level);
         if (this.windCooldown > 0) this.windCooldown--;
@@ -941,11 +1226,17 @@ public class PvpBotEntity extends PathfinderMob {
 
         // Restock consumables after a while out of combat.
         if (this.getTarget() == null) {
-            if (++this.idleTicks > 600) {
+            if (this.foughtThisRound && this.pvpMode != PvpMode.FREI && this.kit.isInfinite() && this.idleTicks > 60) {
+                // Round over (enemy down): fresh mode kit and full health for the next one.
                 this.idleTicks = 0;
-                if (this.kit.isInfinite()) {
+                this.foughtThisRound = false;
+                this.resetRound();
+                this.freshModeKit();
+            } else if (++this.idleTicks > 600) {
+                this.idleTicks = 0;
+                if (this.kit.isInfinite() && this.pvpMode == PvpMode.FREI) {
                     this.gapples = MAX_GAPPLES;
-                    if (!this.kit.has(Role.TOTEM) && this.kit.signature().length() > 0) {
+                    if (this.pvpMode == PvpMode.FREI && !this.kit.has(Role.TOTEM) && this.kit.signature().length() > 0) {
                         this.kit.add(new ItemStack(Items.TOTEM_OF_UNDYING));
                     }
                 }
@@ -953,6 +1244,7 @@ public class PvpBotEntity extends PathfinderMob {
             }
         } else {
             this.idleTicks = 0;
+            this.foughtThisRound = true;
         }
 
         // Swap the elytra back for the chestplate once we are on the ground.
@@ -1560,7 +1852,7 @@ public class PvpBotEntity extends PathfinderMob {
                     }
                 }
                 this.tellOwner("§dTrinkt " + stack.getHoverName().getString(), false);
-                if (!this.kit.isInfinite()) {
+                if (this.kit.consumes()) {
                     stack.shrink(1);
                 }
                 this.potionCooldown = 40;
@@ -1717,7 +2009,57 @@ public class PvpBotEntity extends PathfinderMob {
         if (this.random.nextInt(30) == 0) {
             this.strafeDir = -this.strafeDir;
         }
-        if (useSpear) {
+        if (this.pvpMode.sumo && this.sumoCenter != null && !this.onPlatform(target.position())) {
+            // The enemy is already over the edge: stay on the platform and let it fall.
+            this.setSprinting(false);
+            this.getNavigation().stop();
+            if (this.position().subtract(this.sumoCenter).horizontalDistance() > 1.5) {
+                this.getMoveControl().setWantedPosition(this.sumoCenter.x, this.getY(), this.sumoCenter.z, 1.0);
+            }
+        } else if (this.pvpMode.sumo && this.pattern == Pattern.BLADE_MELEE) {
+            this.sumoMove(target, dist);
+        } else if (this.pattern == Pattern.BLADE_RUSH) {
+            // Sprint combo: every hit is a sprint hit. Right after a hit it lets go for a moment
+            // (w-tap), then sprints in again - the extra knockback keeps the enemy out of its reach.
+            boolean letGo = this.meleeSwing > 0 && this.meleeCooldown >= this.meleeSwing - 2 && dist < 3.0;
+            if (letGo) {
+                this.setSprinting(false);
+                this.getNavigation().stop();
+                this.safeStrafe(-0.5F, 0.0F);
+            } else if (dist > 1.8) {
+                this.setSprinting(true);
+                this.getNavigation().moveTo(target, 1.35);
+            } else {
+                this.setSprinting(true);
+                this.getNavigation().stop();
+                this.safeStrafe(0.0F, 0.5F);
+            }
+        } else if (this.pattern == Pattern.BLADE_SPACING) {
+            // In and out: step in only when the hit is ready, then back out of the enemy's reach.
+            boolean ready = this.meleeCooldown <= 4;
+            if (ready || dist > 5.5) {
+                this.setSprinting(true);
+                if (dist > 2.4) {
+                    this.getNavigation().moveTo(target, 1.3);
+                } else {
+                    this.getNavigation().stop();
+                }
+            } else {
+                this.setSprinting(false);
+                this.getNavigation().stop();
+                this.safeStrafe(dist < 4.2 ? -0.9F : 0.0F, 0.4F);
+            }
+        } else if (this.pattern == Pattern.BLADE_CIRCLE) {
+            // Circle: always moving sideways round the enemy, hard to hit and hard to shoot.
+            if (dist > 3.0) {
+                this.setSprinting(true);
+                this.getNavigation().moveTo(target, 1.25);
+            } else {
+                this.setSprinting(true);
+                this.getNavigation().stop();
+                this.safeStrafe(dist < 2.0 ? -0.3F : 0.15F, 1.0F);
+            }
+        } else if (useSpear) {
             // Hit and run: never stand still in front of the target. Run in, jab at the edge of the
             // reach (2 - 4.5 blocks), run past it, curve around and come again.
             this.setSprinting(true);
@@ -1787,6 +2129,7 @@ public class PvpBotEntity extends PathfinderMob {
                 // Same attack cooldown a player has with this weapon.
                 double speed = Kit.attackSpeed(this.getMainHandItem());
                 this.meleeCooldown = Math.max(8, (int) Math.round(20.0 / Math.max(0.5, speed)));
+                this.meleeSwing = this.meleeCooldown;
             }
         }
     }
@@ -1830,6 +2173,9 @@ public class PvpBotEntity extends PathfinderMob {
             if (depth >= 3 || level.getFluidState(col.below(depth)).is(net.minecraft.tags.FluidTags.LAVA)
                     || level.getFluidState(col.above()).is(net.minecraft.tags.FluidTags.LAVA)) {
                 return false;
+            }
+            if (this.pvpMode.sumo && (depth >= 1 || !level.getFluidState(col.below(depth)).isEmpty())) {
+                return false; // (Sumo: any step down, or water, is off the platform)
             }
         }
         return true;
@@ -1899,7 +2245,7 @@ public class PvpBotEntity extends PathfinderMob {
     private void shootArrow(ServerLevel level, LivingEntity target, ItemStack bow) {
         ItemStack arrowItem = this.kit.find(Role.ARROW);
         ItemStack ammo = arrowItem.isEmpty() ? new ItemStack(Items.ARROW) : arrowItem.copyWithCount(1);
-        if (!this.kit.isInfinite() && !arrowItem.isEmpty()) {
+        if (this.kit.consumes() && !arrowItem.isEmpty()) {
             arrowItem.shrink(1);
         }
         AbstractArrow arrow = ProjectileUtil.getMobArrow(this, ammo, BowItem.getPowerForTime(20), bow);
@@ -1922,7 +2268,7 @@ public class PvpBotEntity extends PathfinderMob {
         this.holdWeapon(bow);
         ItemStack arrowItem = this.kit.find(Role.ARROW);
         ItemStack ammo = arrowItem.isEmpty() ? new ItemStack(Items.ARROW) : arrowItem.copyWithCount(1);
-        if (!this.kit.isInfinite() && !arrowItem.isEmpty()) {
+        if (this.kit.consumes() && !arrowItem.isEmpty()) {
             arrowItem.shrink(1);
         }
         AbstractArrow arrow = ProjectileUtil.getMobArrow(this, ammo, BowItem.getPowerForTime(20), bow);
@@ -2305,7 +2651,7 @@ public class PvpBotEntity extends PathfinderMob {
                 : this.ceilingHeight(12) <= 10 ? BotBrain.Env.CAVE : BotBrain.Env.OPEN;
         double hDist = this.position().subtract(target.position()).horizontalDistance();
         boolean inAir = target.isFallFlying() || !target.onGround() && target.getY() - this.getY() > 4.0;
-        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player, this.kit.signature(),
+        return new BotBrain.Context(env, BotBrain.Range.of(hDist), inAir, target instanceof Player, this.pvpMode.learnKey(this.kit.signature()),
                 BotBrain.Context.foeOf(target));
     }
 
@@ -2333,12 +2679,23 @@ public class PvpBotEntity extends PathfinderMob {
         if (this.wantsSpear()) {
             out.add(Pattern.SPEAR_KITE);
         }
+        // Footwork styles are for PvP (a mode, a player or another bot), with a blade as the main
+        // weapon - or bare fists where there is nothing else (Sumo). Fights against mobs stay as they were.
+        boolean pvp = this.pvpMode != PvpMode.FREI || target instanceof Player || target instanceof PvpBotEntity;
+        boolean bladeMain = out.isEmpty() && pvp && (!this.kit.bestBlade().isEmpty() || this.bow().isEmpty());
         if (!this.kit.bestBlade().isEmpty() || out.isEmpty()) {
             // Sword, axe, trident – or fists when nothing else is left.
             out.add(Pattern.BLADE_MELEE);
         }
+        if (bladeMain) {
+            // The blade (or the fists) is the main weapon: also learn how to move with it.
+            out.add(Pattern.BLADE_RUSH);
+            out.add(Pattern.BLADE_SPACING);
+            out.add(Pattern.BLADE_CIRCLE);
+        }
         // (Arrows never hit an enderman: it teleports away from them.)
-        if (!this.bow().isEmpty() && this.hasArrows() && sees && hDist > 2.5 && target.getType() != EntityTypes.ENDERMAN) {
+        if (!this.bow().isEmpty() && this.hasArrows() && sees && (hDist > 2.5 || this.pvpMode == PvpMode.BOGEN)
+                && target.getType() != EntityTypes.ENDERMAN) {
             out.add(Pattern.BOW_SNIPE);
         }
         if (!flying && this.wantsMace() && this.kit.has(Role.WIND_CHARGE) && this.onGround() && this.windCooldown == 0 && sees
@@ -2362,6 +2719,7 @@ public class PvpBotEntity extends PathfinderMob {
                 out.add(Pattern.ELYTRA_LANCE);
             }
         }
+        out = new ArrayList<>(this.pvpMode.filter(out));
         long now = this.level().getGameTime();
         List<Pattern> allowed = new ArrayList<>(out);
         allowed.removeIf(p -> this.tabuUntil.getOrDefault(p, 0L) > now);
@@ -2374,6 +2732,7 @@ public class PvpBotEntity extends PathfinderMob {
         this.attemptTarget = target;
         this.attemptTargetHp = target.getHealth() + target.getAbsorptionAmount();
         this.attemptTaken = 0.0F;
+        this.attemptBonus = 0.0;
         this.attemptTicks = 0;
         if (DEBUG) {
             PvpBotMod.LOGGER.info("[SELFTEST]   try {} ({})", chosen.label, ctx.describe());
@@ -2448,7 +2807,8 @@ public class PvpBotEntity extends PathfinderMob {
         this.attemptTarget = null;
         boolean killed = target != null && !target.isAlive();
         float hpNow = target == null ? this.attemptTargetHp : killed ? 0.0F : target.getHealth() + target.getAbsorptionAmount();
-        double dealt = Math.max(0.0, this.attemptTargetHp - hpNow);
+        double dealt = Math.max(0.0, this.attemptTargetHp - hpNow) + this.attemptBonus;
+        this.attemptBonus = 0.0;
         double seconds = this.attemptTicks / 20.0;
         double score = (dealt + (killed ? BotBrain.KILL_BONUS : 0.0) - 0.8 * this.attemptTaken) / (seconds + 1.5);
         boolean died = this.dying;
@@ -2649,10 +3009,12 @@ public class PvpBotEntity extends PathfinderMob {
         output.putBoolean("PvpBotFollowing", this.following);
         output.putBoolean("PvpBotAssisting", this.assisting);
         output.putString("PvpBotStyle", this.style.name());
+        output.putString("PvpBotMode", this.pvpMode.id);
         output.putInt("PvpBotGapples", this.gapples);
         output.putBoolean("PvpBotTalk", this.talk);
         output.store("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf(), new ArrayList<>(this.kit.items()));
         output.putBoolean("PvpBotKitInfinite", this.kit.isInfinite());
+        output.putBoolean("PvpBotKitRationed", this.kit.consumes() && this.kit.isInfinite());
         output.putBoolean("PvpBotDuel", this.duelOwner);
         output.putBoolean("PvpBotGather", this.gatherer.isEnabled());
         output.putBoolean("PvpBotSpeedrun", this.gatherer.isSpeedrun());
@@ -2690,6 +3052,8 @@ public class PvpBotEntity extends PathfinderMob {
         } catch (IllegalArgumentException e) {
             this.style = Style.AUTO;
         }
+        PvpMode savedMode = PvpMode.byId(input.getStringOr("PvpBotMode", "frei"));
+        this.pvpMode = savedMode != null ? savedMode : PvpMode.FREI;
         this.gapples = input.getIntOr("PvpBotGapples", MAX_GAPPLES);
         this.talk = input.getBooleanOr("PvpBotTalk", true);
         this.duelOwner = input.getBooleanOr("PvpBotDuel", false);
@@ -2722,6 +3086,7 @@ public class PvpBotEntity extends PathfinderMob {
         } else {
             saved.forEach(this.kit::add);
             this.kit.setInfinite(input.getBooleanOr("PvpBotKitInfinite", true));
+            this.kit.setRationed(input.getBooleanOr("PvpBotKitRationed", false));
             // Re-link worn and held items with the kit's stacks so swapping keeps working.
             for (EquipmentSlot slot : EquipmentSlot.values()) {
                 ItemStack worn = this.getItemBySlot(slot);

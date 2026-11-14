@@ -61,6 +61,8 @@ final class SelfTest {
 
     /** X offset of a 1x1 stone pit (4 high) the bot starts in and has to get out of. */
     private static final int PIT_X = -40;
+    /** Sumo platform: 7x7 at ground level with a ditch round it (2 deep, 3 wide). */
+    private static final int SUMO_X = 90;
     private static final int HOME_X = 120;
 
     private static List<ItemStack> swordKit() {
@@ -132,6 +134,23 @@ final class SelfTest {
                 level -> List.of(golem(level, 20, 3, true)), SelfTest::bowKit));
         SCENARIOS.add(new Scenario("Grube: Schwert-Kit, Ziel draussen", PvpBotEntity.Style.AUTO, 2400, PIT_X,
                 level -> List.of(zombie(level, 7, 2)), SelfTest::swordKit));
+        // PvP modes: each with its own kit and only the attacks the mode allows.
+        // (Bow first, then the sword; the golem stands still - with plain diamond armor it would lose a brawl.)
+        SCENARIOS.add(new Scenario("Modus klassik: Eisengolem (NoAI, 14 Bloecke)", PvpBotEntity.Style.AUTO, 2400,
+                level -> List.of(golem(level, 14, 2, true))));
+        SCENARIOS.add(new Scenario("Modus uhc: 3 Zombies", PvpBotEntity.Style.AUTO, 1800,
+                level -> List.of(zombie(level, 6, 4), zombie(level, -6, 3), zombie(level, 5, -7))));
+        SCENARIOS.add(new Scenario("Modus nodebuff: 3 Zombies", PvpBotEntity.Style.AUTO, 1800,
+                level -> List.of(zombie(level, 6, -4), zombie(level, -6, -3), zombie(level, 5, 7))));
+        SCENARIOS.add(new Scenario("Modus mace: Eisengolem", PvpBotEntity.Style.AUTO, 1800,
+                level -> List.of(golem(level, 7, -3, false))));
+        SCENARIOS.add(new Scenario("Modus bogen: Eisengolem (NoAI, 18 Bloecke)", PvpBotEntity.Style.AUTO, 2400,
+                level -> List.of(golem(level, 18, 3, true))));
+        // Sumo and Boxing: no damage, the round is won by knocking the zombie off / by 100 hits.
+        SCENARIOS.add(new Scenario("Modus sumo: Zombie von der Plattform", PvpBotEntity.Style.AUTO, 3600, SUMO_X,
+                level -> List.of(zombie(level, 2, 1)), null, b -> b.roundsWon() > 0));
+        SCENARIOS.add(new Scenario("Modus boxen: 100 Treffer gegen Zombie", PvpBotEntity.Style.AUTO, 4800, 0,
+                level -> List.of(zombie(level, 4, 2)), null, b -> b.roundsWon() > 0));
         SCENARIOS.add(new Scenario("Survival: besorgt sich alles selbst", PvpBotEntity.Style.AUTO, 12000, SURVIVAL_X,
                 level -> List.of(), List::of, SelfTest::fullyGeared));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
@@ -167,6 +186,11 @@ final class SelfTest {
             for (Parcours.Course c : Parcours.COURSES.values()) {
                 SCENARIOS.add(new Scenario(c.name(), PvpBotEntity.Style.AUTO, c.timeout(), 0, level -> List.of(), c.kit(), c.goal()));
             }
+        }
+        // -Dpvpbot.only=Modus: only the scenarios whose name starts like that (a quick run of one group).
+        String only = System.getProperty("pvpbot.only");
+        if (only != null && !only.isBlank()) {
+            SCENARIOS.removeIf(sc -> !sc.name().startsWith(only));
         }
         ServerLifecycleEvents.SERVER_STARTED.register(SelfTest::setup);
         ServerTickEvents.END_SERVER_TICK.register(SelfTest::tick);
@@ -228,6 +252,15 @@ final class SelfTest {
             }
         }
         buildResourceIsland(level, origin.offset(SURVIVAL_X, 0, 0));
+        BlockPos sumo = origin.offset(SUMO_X, 0, 0);
+        for (int sx = -6; sx <= 6; sx++) {
+            for (int sz = -6; sz <= 6; sz++) {
+                if (Math.max(Math.abs(sx), Math.abs(sz)) > 3) {
+                    level.setBlock(sumo.offset(sx, -1, sz), Blocks.AIR.defaultBlockState(), 3);
+                    level.setBlock(sumo.offset(sx, -2, sz), Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
         BlockPos pit = origin.offset(PIT_X, 0, 0);
         for (int py = 0; py <= 3; py++) {
             for (int px = -1; px <= 1; px++) {
@@ -569,6 +602,15 @@ final class SelfTest {
             bot.setKit(scenario.kit().get().stream().map(ItemStack::copy).toList(), false);
         } else {
             bot.equipLoadout();
+        }
+        if (scenario.name().startsWith("Modus ")) {
+            // "Modus <id>: ..." - fights with that PvP mode's kit and allowed attacks.
+            String id = scenario.name().substring(6, scenario.name().indexOf(':'));
+            de.samu.pvpbot.brain.PvpMode mode = de.samu.pvpbot.brain.PvpMode.byId(id);
+            if (mode != null) {
+                bot.setPvpMode(mode);
+                PvpBotMod.LOGGER.info(TAG + "  (info) mode " + mode.label + ", kit " + bot.describeKit());
+            }
         }
         level.addFreshEntity(bot);
         spawned.add(bot);

@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import de.samu.pvpbot.ai.BotAi;
 import de.samu.pvpbot.brain.BotBrain;
+import de.samu.pvpbot.brain.PvpMode;
 import de.samu.pvpbot.voice.BotVoice;
 import de.samu.pvpbot.entity.PvpBotEntity;
 import java.util.Collection;
@@ -55,9 +56,20 @@ public final class BotCommands {
                         .then(Commands.literal("set").executes(BotCommands::homeSet))
                         .then(Commands.literal("go").executes(BotCommands::homeGo))
                         .then(Commands.literal("clear").executes(BotCommands::homeClear)))
-                .then(Commands.literal("duel").executes(BotCommands::duel))
+                .then(Commands.literal("duel").executes(BotCommands::duel)
+                        .then(Commands.argument("modus", StringArgumentType.word()).suggests(BotCommands::suggestModes)
+                                .executes(BotCommands::duelMode)))
+                .then(Commands.literal("modus")
+                        .executes(BotCommands::modeShow)
+                        .then(Commands.argument("modus", StringArgumentType.word()).suggests(BotCommands::suggestModes)
+                                .executes(BotCommands::modeSet)))
+                .then(Commands.literal("mode")
+                        .executes(BotCommands::modeShow)
+                        .then(Commands.argument("modus", StringArgumentType.word()).suggests(BotCommands::suggestModes)
+                                .executes(BotCommands::modeSet)))
                 .then(Commands.literal("kit")
                         .executes(BotCommands::kitShow)
+                        .then(Commands.literal("holen").executes(BotCommands::kitFetch))
                         .then(Commands.literal("default").executes(BotCommands::kitDefault))
                         .then(Commands.literal("copy").executes(BotCommands::kitCopy))
                         .then(Commands.literal("give").executes(BotCommands::kitGive))
@@ -329,10 +341,131 @@ public final class BotCommands {
                 ctx.getSource().sendFailure(Component.literal(bot.getName().getString() + " hat noch dein Survival-Kit – hol es erst mit /pvpbot kit take zurück."));
                 continue;
             }
-            bot.equipLoadout();
+            bot.setPvpMode(PvpMode.FREI);
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§aStandard-Kit: Mace, Speer, Elytra."), false);
         return bots.size();
+    }
+
+    // ------------------------------------------------------------------ PvP modes
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestModes(
+            CommandContext<CommandSourceStack> ctx, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        for (PvpMode m : PvpMode.values()) {
+            builder.suggest(m.id);
+        }
+        return builder.buildFuture();
+    }
+
+    private static @org.jspecify.annotations.Nullable PvpMode modeArg(CommandContext<CommandSourceStack> ctx) {
+        PvpMode mode = PvpMode.byId(StringArgumentType.getString(ctx, "modus"));
+        if (mode == null) {
+            ctx.getSource().sendFailure(Component.literal("Unbekannter Modus. Möglich: "
+                    + String.join(", ", java.util.Arrays.stream(PvpMode.values()).map(m -> m.id).toList())));
+        }
+        return mode;
+    }
+
+    private static int modeShow(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        for (PvpBotEntity bot : myBots(ctx)) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§f" + bot.getName().getString() + "§7: Modus §e" + bot.getPvpMode().label), false);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§6PvP-Modi §7(§f/pvpbot modus <name>§7, Duell: §f/pvpbot duel <name>§7):"), false);
+        for (PvpMode m : PvpMode.values()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("  §e" + m.id + " §7– " + m.description), false);
+        }
+        return 1;
+    }
+
+    private static int modeSet(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        PvpMode mode = modeArg(ctx);
+        if (mode == null) {
+            return 0;
+        }
+        return applyMode(ctx, mode).size();
+    }
+
+    private static List<PvpBotEntity> applyMode(CommandContext<CommandSourceStack> ctx, PvpMode mode) throws CommandSyntaxException {
+        List<PvpBotEntity> done = new java.util.ArrayList<>();
+        for (PvpBotEntity bot : myBots(ctx)) {
+            if (!bot.getKit().isInfinite()) {
+                ctx.getSource().sendFailure(Component.literal(bot.getName().getString() + " hat noch dein Survival-Kit – hol es erst mit /pvpbot kit take zurück."));
+                continue;
+            }
+            bot.clearTargets();
+            bot.setPvpMode(mode);
+            done.add(bot);
+        }
+        if (!done.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§aModus §e" + mode.label + "§a: §7" + mode.description
+                    + (mode == PvpMode.FREI ? "" : ". §fDas gleiche Kit für dich: /pvpbot kit holen")), false);
+        }
+        return done;
+    }
+
+    /** Duel in a mode: the bots switch to it and fight you, each round with a fresh kit. */
+    private static int duelMode(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        PvpMode mode = modeArg(ctx);
+        if (mode == null) {
+            return 0;
+        }
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        if (player.isCreative() || player.isSpectator()) {
+            ctx.getSource().sendFailure(Component.literal("Im Kreativmodus kann dir der Bot nichts tun. Wechsle mit /gamemode survival in den Überlebensmodus."));
+            return 0;
+        }
+        List<PvpBotEntity> bots = applyMode(ctx, mode);
+        bots.forEach(b -> b.startDuel(player));
+        if (!bots.isEmpty()) {
+            String rules = mode.sumo ? " Wer von der Plattform fällt, verliert."
+                    : mode.hitsToWin > 0 ? " Wer zuerst " + mode.hitsToWin + " Treffer landet, gewinnt." : "";
+            ctx.getSource().sendSuccess(() -> Component.literal("§c⚔ " + mode.label + "-Duell!§7" + rules + " Aufgeben mit §f/pvpbot stop§7."), false);
+        }
+        return bots.size();
+    }
+
+    /**
+     * Gives you the kit of your bots' mode, so both fight with the same gear. Only with an empty
+     * inventory, so nothing of yours gets mixed up or lost.
+     */
+    private static int kitFetch(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        PvpBotEntity bot = nearestBot(ctx);
+        if (bot == null) {
+            return 0;
+        }
+        PvpMode mode = bot.getPvpMode();
+        List<ItemStack> items = mode.kit(ctx.getSource().getServer().registryAccess());
+        if (items == null) {
+            ctx.getSource().sendFailure(Component.literal("Dein Bot ist im Modus Frei – der hat kein eigenes Kit. Wähle erst einen mit /pvpbot modus <name>."));
+            return 0;
+        }
+        // Real items out of nothing: only where that is allowed anyway (creative mode, or an operator).
+        if (!player.isCreative() && !ctx.getSource().permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
+            ctx.getSource().sendFailure(Component.literal("Das Kit gibt es nur im Kreativmodus oder für Operatoren – sonst wäre es geschenkte Ausrüstung."));
+            return 0;
+        }
+        boolean empty = playerKitItems(player, false).isEmpty();
+        if (!empty) {
+            ctx.getSource().sendFailure(Component.literal("Leere erst dein Inventar (auch Rüstung und Zweithand) – dann bekommst du das " + mode.label + "-Kit."));
+            return 0;
+        }
+        for (ItemStack stack : items) {
+            EquipmentSlot slot = de.samu.pvpbot.brain.Kit.armorSlot(stack);
+            if (slot != null && player.getItemBySlot(slot).isEmpty()) {
+                player.setItemSlot(slot, stack);
+            } else if (stack.is(net.minecraft.world.item.Items.SHIELD) || stack.is(net.minecraft.world.item.Items.TOTEM_OF_UNDYING)) {
+                if (player.getItemBySlot(EquipmentSlot.OFFHAND).isEmpty()) {
+                    player.setItemSlot(EquipmentSlot.OFFHAND, stack);
+                } else {
+                    player.getInventory().add(stack);
+                }
+            } else if (!player.getInventory().add(stack)) {
+                player.spawnAtLocation(ctx.getSource().getLevel(), stack);
+            }
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§aDu hast das " + mode.label + "-Kit."), false);
+        return 1;
     }
 
     private static List<ItemStack> playerKitItems(ServerPlayer player, boolean hotbarOnly) {
@@ -359,6 +492,7 @@ public final class BotCommands {
             if (!bot.getKit().isInfinite()) {
                 continue;
             }
+            bot.clearPvpMode();
             bot.setKit(playerKitItems(player, false).stream().map(ItemStack::copy).toList(), true);
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§aDeine Bots haben jetzt eine Kopie deines Kits. Sie lernen selbst, wie man damit kämpft."), false);
@@ -388,6 +522,7 @@ public final class BotCommands {
         for (int i = 0; i < 9; i++) {
             inventory.set(i, ItemStack.EMPTY);
         }
+        bot.clearPvpMode();
         bot.setKit(items, false);
         ctx.getSource().sendSuccess(() -> Component.literal("§a" + bot.getName().getString() + " kämpft jetzt mit deinem Kit (" + bot.describeKit()
                 + "§a). Stirbt er, lässt er alles fallen. Zurück mit §f/pvpbot kit take§a."), false);

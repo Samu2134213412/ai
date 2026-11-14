@@ -30,6 +30,9 @@ Beide lernen dazu (siehe unten) und passen sich an das Kit an, das sie gerade ha
 
 Es gibt **8 Angriffsmuster**: Mace-Nahkampf, Speer-Stiche, Windladungs-Smash, Speer-Ansturm,
 Elytra-Mace-Sturzflug, Elytra-Speerflug, Schwert/Axt-Nahkampf und Bogenschüsse.
+Dazu kommen im PvP (gegen Spieler, andere Bots und in jedem PvP-Modus) **drei Nahkampf-Stile** mit Schwert, Axt
+oder Fäusten: *Sprint-Kombo (W-Tap)*, *Abstand halten (rein-raus)* und *Umkreisen*. Gleiche Waffe, andere Laufwege –
+der Bot lernt, welcher Stil gegen wen klappt. In Sumo und Boxen sind das die Dinge, zwischen denen er wählt.
 Welches er nimmt, entscheidet er selbst:
 
 1. **Er erkennt die Situation**: im Freien, in einer Höhle (Decke niedriger als 10 Blöcke) oder
@@ -55,6 +58,42 @@ diese Attacke gegen diesen Gegner einen dicken Minuspunkt (mehr als jeder Kill b
 schlechter bewertet – beim nächsten Mal probiert er eine andere. Klappt die besser, **eröffnet er den nächsten Kampf
 gegen diesen Gegner direkt mit ihr**. Was er lernt, behält er für sich (kein Chat) – nachsehen kannst du es mit
 `/pvpbot brain` bzw. `/autopilot brain` (Kills und Tode je Attacke).
+## PvP-Modi
+
+Wie auf PvP-Servern: Jeder Modus hat ein eigenes Kit (jede Runde frisch), erlaubt nur bestimmte
+Angriffe und hat eigene Regeln. **Jeder Modus lernt für sich**: Was der Bot in Sumo lernt, vermischt
+sich nicht mit dem, was er in UHC lernt (`/pvpbot brain` zeigt den Modus beim Kit an).
+
+| Modus | Kit | Erlaubte Angriffe | Regeln |
+|---|---|---|---|
+| `frei` | was er gerade hat (Standard) | alle | – |
+| `klassik` | Diamant-Schwert und -Rüstung, Bogen, 16 Pfeile, 3 goldene Äpfel | Schwert, Bogen | – |
+| `nodebuff` | Schwert (Schärfe III), Prot-II-Rüstung, 28 Wurf-Heiltränke, Speed-Tränke, 16 Enderperlen | Schwert | – |
+| `uhc` | Schwert, Axt, Power-Bogen, Schild, 6 goldene Äpfel, Wassereimer, Blöcke | Schwert/Axt, Bogen | – |
+| `axt` | Netherite-Axt, Schild, Netherite-Rüstung | Axt (bricht Schilde) | – |
+| `mace` | Mace, Windladungen, Axt (Attribut-Tausch), Totem | Mace, Windladungs-Smash, Axt | – |
+| `speer` | Netherite-Speer mit Lunge, Schwert | Speer-Stiche, Speer-Ansturm, Schwert | – |
+| `elytra` | Mace, Speer, Elytra, Raketen, Windladungen | alle | – |
+| `bogen` | Bogen (Power III, Punch), Pfeile, Leder-Rüstung | Bogen (ganz nah: Fäuste) | – |
+| `sumo` | nichts | Fäuste | kein Schaden; wer von der Plattform fällt (oder ins Wasser), verliert |
+| `boxen` | Diamant-Schwert, keine Rüstung | Schwert | kein Schaden; wer zuerst 100 Treffer landet, gewinnt |
+
+- `/pvpbot modus` zeigt alle Modi, `/pvpbot modus <name>` stellt deine Bots um (auch im Menü **O → Modi**).
+- `/pvpbot duel <name>` startet direkt ein Duell gegen dich in diesem Modus.
+- `/pvpbot kit holen` gibt dir das gleiche Kit wie dem Bot (nur mit leerem Inventar, damit nichts verloren geht;
+  nur im Kreativmodus oder als Operator, weil es sonst geschenkte Ausrüstung wäre).
+- **Faire Runden:** Das Modus-Kit verbraucht sich innerhalb einer Runde wirklich (16 Pfeile sind 16 Pfeile,
+  3 goldene Äpfel sind 3). Nach der Runde gibt es ein frisches Kit und volle Leben.
+- **Sumo-Taktik:** Der Bot stellt sich zwischen dich und die Mitte der Plattform, damit jeder Treffer dich zum
+  Rand schiebt und nie ihn. Die Plattform ist da, wo ihr beide zu Rundenbeginn steht (gleiche Höhe). Er tritt
+  nie selbst über die Kante oder ins Wasser und läuft dir nicht hinterher, wenn du schon fällst.
+- In Sumo und Boxen zählt eine gewonnene Runde für den Angriff, den er benutzt hat, wie ein Kill,
+  eine verlorene wie ein Tod.
+- `/pvpbot kit default`, `copy` oder `give` schalten zurück auf `frei`.
+- **Autopilot:** `/autopilot modus <name>` beschränkt ihn auf die Angriffe des Modus, mit eigenem Gedächtnis.
+  Das Kit legst du selbst ins Inventar. Die Sumo- und Boxen-Regeln (kein Schaden, Trefferzählung, Sumo-Laufwege)
+  gibt es nur beim Bot, weil der Autopilot nichts am Server ändern kann.
+
 ## Ressourcen selbst beschaffen (Survival-Bot)
 
 Mit `/pvpbot survival [Name]` erschaffst du einen Bot mit **leerem Inventar**. Fehlt ihm etwas
@@ -107,9 +146,13 @@ Selbst bauen geht auch mit `./gradlew build` (Java 25 nötig).
 
 ## Menüs
 
-- **Taste O**: PvP-Bot-Menü (Bot erschaffen, angreifen, Duell, folgen, Kit, Sammeln, Durchspielen, Tricks, Gelerntes …).
-  Jeder Button führt einfach den passenden `/pvpbot`-Befehl aus.
-- **Taste N**: Autopilot-Menü (an/aus, Ziel, Tricks) und Schalter für jede Taktik
+- **Taste O**: PvP-Bot-Menü. Oben siehst du deinen Bot **live**: Name, Leben, Modus, was er gerade tut, sein Kit und
+  was er trägt. Darunter die Seiten *Kampf, Modi, Kit, Verhalten, Zuhause, Tricks*. Schalter zeigen den echten Zustand
+  (z. B. „Mir folgen: AN“), auf der Seite *Modi* ist der aktuelle Modus markiert und der Modus unter der Maus wird
+  erklärt. Jeder Button führt weiterhin einfach den passenden `/pvpbot`-Befehl aus.
+- **Anzeige im Spiel**: Solange dein Bot kämpft oder in einem PvP-Modus ist, zeigt ein kleines Feld oben links sein
+  Leben, den Modus, was er tut und beim Boxen den Trefferstand. Abschalten: Menü **O → Verhalten → Anzeige im Spiel**.
+- **Taste N**: Autopilot-Menü (an/aus, Ziel, Modi, Tricks) und Schalter für jede Taktik
 - **Volle Kontrolle** (ganz oben im Menü oder `/autopilot full`): der Autopilot übernimmt den ganzen Account – kämpft gegen Monster und Spieler, die er sieht, isst, sammelt Beute und zieht sonst umher (weicht Abgründen, Lava und Wasser aus). Taste K schaltet wieder aus.
   (Elytra, Windladungen, Speer, Bogen, Attribute-Swap, Schild, W-Tap, Enderperlen, Wassereimer, Tränke, Essen, Beute, Chat).
   Die Schalter werden in `config/pvpbot-autopilot.properties` gespeichert.

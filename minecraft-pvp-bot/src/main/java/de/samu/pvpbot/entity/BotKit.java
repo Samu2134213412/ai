@@ -18,6 +18,8 @@ public final class BotKit {
 
     private final List<ItemStack> items = new ArrayList<>();
     private boolean infinite = true;
+    /** A PvP mode kit: nothing is dropped or gathered (infinite), but consumables are used up within a round. */
+    private boolean rationed;
 
     public List<ItemStack> items() {
         this.items.removeIf(ItemStack::isEmpty);
@@ -30,6 +32,15 @@ public final class BotKit {
 
     public void setInfinite(boolean infinite) {
         this.infinite = infinite;
+    }
+
+    public void setRationed(boolean rationed) {
+        this.rationed = rationed;
+    }
+
+    /** Arrows, pearls, potions ... are used up for real (a survival kit, or a PvP mode kit). */
+    public boolean consumes() {
+        return !this.infinite || this.rationed;
     }
 
     public void clear() {
@@ -111,7 +122,7 @@ public final class BotKit {
         if (stack.isEmpty()) {
             return false;
         }
-        if (!this.infinite) {
+        if (this.consumes()) {
             stack.shrink(1);
         }
         return true;

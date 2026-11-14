@@ -24,6 +24,8 @@ public final class AutopilotSettings {
     public boolean autoEat = true;
     public boolean lootPickup = true;
     public boolean chat = true;
+    /** PvP mode (an id from PvpMode): which attacks are allowed, with its own memory. */
+    public String mode = "frei";
     /** Home set by the player ({@code /autopilot home set}): chests within 10 blocks, comes back here when idle. */
     public boolean homeSet;
     public int homeX;
@@ -61,6 +63,7 @@ public final class AutopilotSettings {
         this.autoEat = get(p, "autoEat", this.autoEat);
         this.lootPickup = get(p, "lootPickup", this.lootPickup);
         this.chat = get(p, "chat", this.chat);
+        this.mode = p.getProperty("mode", this.mode);
         this.homeSet = get(p, "homeSet", false);
         try {
             this.homeX = Integer.parseInt(p.getProperty("homeX", "0"));
@@ -90,6 +93,7 @@ public final class AutopilotSettings {
         p.setProperty("autoEat", Boolean.toString(this.autoEat));
         p.setProperty("lootPickup", Boolean.toString(this.lootPickup));
         p.setProperty("chat", Boolean.toString(this.chat));
+        p.setProperty("mode", this.mode);
         p.setProperty("homeSet", Boolean.toString(this.homeSet));
         p.setProperty("homeX", Integer.toString(this.homeX));
         p.setProperty("homeY", Integer.toString(this.homeY));

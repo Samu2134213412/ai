@@ -54,6 +54,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
             survivalTest(ctx);
             return;
         }
+        if (Boolean.getBoolean("pvpbot.uitest")) {
+            uiTest(ctx);
+            return;
+        }
         try (TestSingleplayerContext sp = ctx.worldBuilder().create()) {
             ctx.waitTicks(60);
             run(sp, "difficulty normal");
@@ -240,8 +244,55 @@ public class AutopilotGameTest implements FabricClientGameTest {
     }
 
     /** Screenshots of both settings menus (every tab). */
+    /**
+     * Only the menus and the HUD (-Dpvpbot.uitest=true): a bot in Boxing mode, every menu page, then
+     * the status box and the menu during a duel. Quick, for looking at the screens.
+     */
+    private void uiTest(ClientGameTestContext ctx) {
+        try (TestSingleplayerContext sp = ctx.worldBuilder().create()) {
+            ctx.waitTicks(60);
+            run(sp, "time set day");
+            run(sp, "gamemode survival @a");
+            boolean bot = FabricLoader.getInstance().isModLoaded("pvpbot");
+            if (bot) {
+                menuShotOf(ctx, "de.samu.pvpbot.client.PvpBotScreen", 0, "Menue_PvPBot_ohne_Bot");
+                run(sp, "execute as @a at @s run pvpbot spawn");
+                ctx.waitTicks(20);
+                run(sp, "execute as @a at @s run pvpbot modus boxen");
+                ctx.waitTicks(20);
+            }
+            menuShots(ctx);
+            if (bot) {
+                run(sp, "execute as @a at @s run pvpbot duel boxen");
+                ctx.waitTicks(120);
+                menuShot(ctx, "HUD_Boxen_Duell");
+                menuShotOf(ctx, "de.samu.pvpbot.client.PvpBotScreen", 1, "Menue_PvPBot_Modi_im_Duell");
+                run(sp, "execute as @a at @s run pvpbot stop");
+            }
+            ctx.runOnClient(mc -> mc.gui.setScreen(null));
+            ctx.waitTicks(5);
+            System.out.println(TAG + "UI TEST DONE");
+        }
+    }
+
+    private void menuShotOf(ClientGameTestContext ctx, String screenClass, int tab, String name) {
+        ctx.runOnClient(mc -> {
+            try {
+                Class<?> cls = Class.forName(screenClass);
+                var field = cls.getDeclaredField("page");
+                field.setAccessible(true);
+                field.setInt(null, tab);
+                mc.gui.setScreen((net.minecraft.client.gui.screens.Screen) cls.getConstructor().newInstance());
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        ctx.waitTicks(8);
+        menuShot(ctx, name);
+    }
+
     private void menuShots(ClientGameTestContext ctx) {
-        for (int tab = 0; tab < 3; tab++) {
+        for (int tab = 0; tab < 4; tab++) {
             int t = tab;
             ctx.runOnClient(mc -> {
                 try {
@@ -257,7 +308,7 @@ public class AutopilotGameTest implements FabricClientGameTest {
             menuShot(ctx, "Menue_Autopilot_" + (tab + 1));
         }
         if (FabricLoader.getInstance().isModLoaded("pvpbot")) {
-            for (int tab = 0; tab < 5; tab++) {
+            for (int tab = 0; tab < 6; tab++) {
                 int t = tab;
                 ctx.runOnClient(mc -> {
                     try {
@@ -281,6 +332,10 @@ public class AutopilotGameTest implements FabricClientGameTest {
     private void menuShot(ClientGameTestContext ctx, String name) {
         try {
             Path path = ctx.takeScreenshot(name);
+            System.out.println(TAG + "screenshot " + name + " -> " + path.toAbsolutePath());
+            if (Boolean.getBoolean("pvpbot.uitest")) {
+                return; // (looked at as files; no need to print them into the log)
+            }
             BufferedImage img = ImageIO.read(path.toFile());
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ImageIO.write(img, "png", out);

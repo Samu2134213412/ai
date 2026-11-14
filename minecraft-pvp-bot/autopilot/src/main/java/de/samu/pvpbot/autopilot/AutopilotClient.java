@@ -2,6 +2,7 @@ package de.samu.pvpbot.autopilot;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import de.samu.pvpbot.autopilot.brain.BotBrain;
+import de.samu.pvpbot.autopilot.brain.PvpMode;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
@@ -133,6 +134,33 @@ public class AutopilotClient implements ClientModInitializer {
                                             }
                                             ctx.getSource().sendError(Component.literal("Spieler " + name + " ist nicht in Sichtweite."));
                                             return 0;
+                                        })))
+                        .then(ClientCommands.literal("modus")
+                                .executes(ctx -> {
+                                    ctx.getSource().sendFeedback(Component.literal("§6Modus: §e" + Autopilot.INSTANCE.mode().label
+                                            + " §7– ändern mit §f/autopilot modus <name>"));
+                                    for (PvpMode m : PvpMode.values()) {
+                                        ctx.getSource().sendFeedback(Component.literal("  §e" + m.id + " §7– " + m.description));
+                                    }
+                                    return 1;
+                                })
+                                .then(ClientCommands.argument("modus", StringArgumentType.word())
+                                        .suggests((c, sb) -> {
+                                            for (PvpMode m : PvpMode.values()) {
+                                                sb.suggest(m.id);
+                                            }
+                                            return sb.buildFuture();
+                                        })
+                                        .executes(ctx -> {
+                                            PvpMode m = PvpMode.byId(StringArgumentType.getString(ctx, "modus"));
+                                            if (m == null) {
+                                                ctx.getSource().sendError(Component.literal("Unbekannter Modus – /autopilot modus zeigt alle."));
+                                                return 0;
+                                            }
+                                            AutopilotSettings.INSTANCE.mode = m.id;
+                                            AutopilotSettings.INSTANCE.save();
+                                            ctx.getSource().sendFeedback(Component.literal("§aModus §e" + m.label + "§a: §7nur Angriffe, die dort erlaubt sind; eigenes Gedächtnis. Das Kit packst du selbst ins Inventar."));
+                                            return 1;
                                         })))
                         .then(ClientCommands.literal("trick")
                                 .then(ClientCommands.argument("name", StringArgumentType.word())
