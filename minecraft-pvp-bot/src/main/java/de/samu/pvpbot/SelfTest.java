@@ -88,6 +88,11 @@ final class SelfTest {
     private static int ticks;
     private static int warmup = 100;
     private static PvpBotEntity bot;
+    /** Solo scenarios: the monster the bot may (or should not) pick a fight with on its own. */
+    private static LivingEntity soloFoe;
+    /** "Wiederkehr": the bot was killed by the test / came back by itself. */
+    private static boolean testKilled;
+    private static boolean cameBack;
     private static List<LivingEntity> targets = List.of();
     private static BlockPos origin;
     private static int maxHeight;
@@ -151,6 +156,22 @@ final class SelfTest {
                 level -> List.of(zombie(level, 2, 1)), null, b -> b.roundsWon() > 0));
         SCENARIOS.add(new Scenario("Modus boxen: 100 Treffer gegen Zombie", PvpBotEntity.Style.AUTO, 4800, 0,
                 level -> List.of(zombie(level, 4, 2)), null, b -> b.roundsWon() > 0));
+        // Playing on its own: it picks a fight it can win by itself; after three deaths in iron armor it
+        // leaves the same foe alone; and after a death it comes back without anyone doing anything.
+        SCENARIOS.add(new Scenario("Allein: jagt einen Zombie von selbst", PvpBotEntity.Style.AUTO, 1200, 0,
+                level -> {
+                    soloFoe = zombie(level, 6, 2);
+                    return List.of();
+                }, SelfTest::swordKit, b -> soloFoe != null && !soloFoe.isAlive()));
+        SCENARIOS.add(new Scenario("Vorsicht: nach drei Toden in Eisen laesst er den Zombie in Ruhe", PvpBotEntity.Style.AUTO, 600, 0,
+                level -> {
+                    // (A zombie with a sword: a fight an iron-armored bot would normally still pick.)
+                    soloFoe = zombie(level, 6, -2);
+                    soloFoe.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+                    return List.of();
+                }, SelfTest::swordKit, b -> b.tickCount > 300 && soloFoe != null && soloFoe.isAlive() && b.getTarget() == null));
+        SCENARIOS.add(new Scenario("Wiederkehr: kommt nach dem Tod von selbst zurueck", PvpBotEntity.Style.AUTO, 600, 0,
+                level -> List.of(), null, b -> cameBack && b.isAlive() && b.isSolo()));
         SCENARIOS.add(new Scenario("Survival: besorgt sich alles selbst", PvpBotEntity.Style.AUTO, 12000, SURVIVAL_X,
                 level -> List.of(), List::of, SelfTest::fullyGeared));
         SCENARIOS.add(new Scenario("Befehlsliste: 4 Zombies", PvpBotEntity.Style.AUTO, 1800,
@@ -603,6 +624,21 @@ final class SelfTest {
         } else {
             bot.equipLoadout();
         }
+        testKilled = false;
+        cameBack = false;
+        de.samu.pvpbot.brain.Caution.INSTANCE.reset();
+        if (scenario.name().startsWith("Allein") || scenario.name().startsWith("Vorsicht") || scenario.name().startsWith("Wiederkehr")) {
+            if (scenario.name().startsWith("Vorsicht")) {
+                // As if it had died to a zombie three times wearing exactly this armor.
+                for (int i = 0; i < 3; i++) {
+                    de.samu.pvpbot.brain.Caution.INSTANCE.learnDeath("zombie", de.samu.pvpbot.brain.Caution.tier(bot));
+                }
+            }
+            bot.setSolo(true);
+            // (Only the fighting is tested here, not the gathering.)
+            bot.setAutonomous(false);
+            bot.setGathering(false);
+        }
         if (scenario.name().startsWith("Modus ")) {
             // "Modus <id>: ..." - fights with that PvP mode's kit and allowed attacks.
             String id = scenario.name().substring(6, scenario.name().indexOf(':'));
@@ -646,6 +682,24 @@ final class SelfTest {
 
     private static boolean finished() {
         Scenario current = SCENARIOS.get(index);
+        if (current.name().startsWith("Wiederkehr")) {
+            if (!testKilled && ticks >= 20 && bot.level() instanceof ServerLevel level) {
+                testKilled = true;
+                bot.hurtServer(level, bot.damageSources().genericKill(), Float.MAX_VALUE);
+            }
+            if (!bot.isAlive()) {
+                if (bot.level() instanceof ServerLevel level) {
+                    for (PvpBotEntity back : level.getEntitiesOfClass(PvpBotEntity.class, bot.getBoundingBox().inflate(64.0), Entity::isAlive)) {
+                        PvpBotMod.LOGGER.info(TAG + "  came back by itself after " + ticks + " ticks at " + back.blockPosition().toShortString());
+                        bot = back;
+                        spawned.add(back);
+                        cameBack = true;
+                        return false;
+                    }
+                }
+                return ticks >= current.timeoutTicks();
+            }
+        }
         if (current.goal() != null) {
             if (ticks % 400 == 0) {
                 PvpBotMod.LOGGER.info(TAG + "  kit: " + bot.getKit().items().stream()

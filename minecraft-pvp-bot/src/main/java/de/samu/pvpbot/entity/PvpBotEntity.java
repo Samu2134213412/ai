@@ -3,6 +3,7 @@ package de.samu.pvpbot.entity;
 import de.samu.pvpbot.PvpBotMod;
 import de.samu.pvpbot.brain.BotBrain;
 import de.samu.pvpbot.brain.BotBrain.Pattern;
+import de.samu.pvpbot.brain.Caution;
 import de.samu.pvpbot.brain.Kit;
 import de.samu.pvpbot.brain.Kit.Role;
 import de.samu.pvpbot.brain.PvpMode;
@@ -160,6 +161,156 @@ public class PvpBotEntity extends PathfinderMob {
     public static final int FLAG_SPEEDRUN = 256;
     public static final int FLAG_STYLE_MACE = 512;
     public static final int FLAG_STYLE_SPEAR = 1024;
+    public static final int FLAG_SOLO = 2048;
+
+    // Playing on its own: it looks after itself, picks its own fights (only ones it expects to win)
+    // and comes back after a death. Trusted players may give it orders in the chat, like its owner.
+    private boolean solo;
+    private final Map<UUID, String> trusted = new java.util.LinkedHashMap<>();
+    /** Whom it follows: a trusted player who called it, else its owner. */
+    private @Nullable UUID leaderId;
+
+    public boolean isSolo() {
+        return this.solo;
+    }
+
+    /**
+     * Solo on: nobody has to do anything. A survival bot gets its gear itself (up to diamond) and
+     * keeps its home stocked; every bot fights monsters it can beat and respawns after a death.
+     */
+    public void setSolo(boolean on) {
+        this.solo = on;
+        if (on) {
+            this.following = false;
+            this.leaderId = null;
+            if (this.getHome() == null) {
+                this.setHome(this.blockPosition());
+            }
+        }
+        if (!this.kit.isInfinite()) {
+            if (on) {
+                this.gatherer.setEnabled(true);
+            }
+            this.gatherer.setAutonomous(on);
+        }
+    }
+
+    public boolean trust(Player player) {
+        if (this.isOwnedBy(player)) {
+            return false;
+        }
+        return this.trusted.put(player.getUUID(), player.getName().getString()) == null;
+    }
+
+    public boolean untrust(String name) {
+        return this.trusted.values().removeIf(n -> n.equalsIgnoreCase(name));
+    }
+
+    public List<String> trustedNames() {
+        return new ArrayList<>(this.trusted.values());
+    }
+
+    public boolean isTrusted(Entity entity) {
+        return this.trusted.containsKey(entity.getUUID());
+    }
+
+    /** Its owner and the players its owner trusts may give it orders. */
+    public boolean mayCommand(Entity entity) {
+        return this.isOwnedBy(entity) || this.isTrusted(entity);
+    }
+
+    /** Follow this player from now on (null: its owner again). */
+    public void setLeader(@Nullable Player leader) {
+        this.leaderId = leader == null || this.isOwnedBy(leader) ? null : leader.getUUID();
+    }
+
+    private @Nullable Player getLeader() {
+        if (this.leaderId != null) {
+            Player leader = this.level().getPlayerByUUID(this.leaderId);
+            if (leader != null && this.isTrusted(leader)) {
+                return leader;
+            }
+            this.leaderId = null;
+        }
+        return this.getOwner();
+    }
+
+    /** Solo: now and then it picks a fight itself - with a monster it sees and expects to beat. */
+    private void tickSolo(ServerLevel level) {
+        if (!this.solo || this.tickCount % 40 != 0 || this.getTarget() != null || this.isRetreating() || this.getHealth() < 12.0F
+                || this.pvpMode != PvpMode.FREI) {
+            return;
+        }
+        LivingEntity best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, this.getBoundingBox().inflate(16.0, 6.0, 16.0),
+                e -> e instanceof net.minecraft.world.entity.monster.Enemy && e.isAlive() && this.isValidTarget(e))) {
+            double d = this.distanceToSqr(e);
+            if (d < bestDist && this.getSensing().hasLineOfSight(e)
+                    && !this.outmatchedBy(e, de.samu.pvpbot.brain.FightOdds.START * 1.3)) {
+                best = e;
+                bestDist = d;
+            }
+        }
+        if (best != null) {
+            this.addTarget(best, false);
+        }
+    }
+
+    // ------------------------------------------------------------------ respawn (solo)
+
+    private record Respawn(ResourceKey<Level> dim, BlockPos pos, @Nullable UUID owner, String name, Map<UUID, String> trusted,
+                           @Nullable BlockPos home, @Nullable ResourceKey<Level> homeDim, boolean survival, PvpMode mode, int[] ticks) {
+    }
+
+    private static final List<Respawn> RESPAWNS = new ArrayList<>();
+
+    /** Called every server tick ({@code now}: the server is stopping - bring everyone back at once). */
+    public static void tickRespawns(net.minecraft.server.MinecraftServer server, boolean now) {
+        for (java.util.Iterator<Respawn> it = RESPAWNS.iterator(); it.hasNext(); ) {
+            Respawn r = it.next();
+            if (!now && --r.ticks()[0] > 0) {
+                continue;
+            }
+            it.remove();
+            boolean atHome = r.home() != null && r.homeDim() != null;
+            ServerLevel level = server.getLevel(atHome ? r.homeDim() : r.dim());
+            if (level == null) {
+                level = server.getLevel(Level.OVERWORLD);
+            }
+            if (level == null) {
+                continue;
+            }
+            BlockPos pos = atHome ? r.home() : r.pos();
+            level.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+            if (!atHome && level.dimension() == Level.OVERWORLD) {
+                // Like a player who respawns: back on the surface, not in the cave it died in.
+                pos = new BlockPos(pos.getX(), level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, pos.getX(), pos.getZ()), pos.getZ());
+            }
+            PvpBotEntity bot = PvpBotMod.PVP_BOT.create(level, EntitySpawnReason.COMMAND);
+            if (bot == null) {
+                continue;
+            }
+            bot.snapTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 0.0F, 0.0F);
+            bot.setCustomName(Component.literal(r.name()));
+            bot.setCustomNameVisible(true);
+            bot.ownerId = r.owner();
+            bot.trusted.putAll(r.trusted());
+            if (r.survival()) {
+                bot.setKit(List.of(), false);
+            } else if (r.mode() != PvpMode.FREI) {
+                bot.setPvpMode(r.mode());
+            } else {
+                bot.equipLoadout();
+            }
+            if (atHome) {
+                bot.gatherer.setHome(r.home(), r.homeDim());
+            }
+            level.addFreshEntity(bot);
+            bot.setSolo(true);
+            bot.tellOwner("§aIch bin wieder da" + (r.survival() ? " und fange neu an." : "."), true);
+        }
+    }
     private final Deque<UUID> targetQueue = new ArrayDeque<>();
     // No wallhacks: the bot only knows where a target is while it can see it.
     private @Nullable Vec3 lastSeenPos;
@@ -264,7 +415,8 @@ public class PvpBotEntity extends PathfinderMob {
                 | (this.duelOwner ? FLAG_DUEL : 0) | (this.kit.isInfinite() ? 0 : FLAG_SURVIVAL_KIT)
                 | (this.getTarget() != null ? FLAG_FIGHTING : 0) | (this.gatherer.isAutonomous() ? FLAG_AUTONOMOUS : 0)
                 | (this.gatherer.isSpeedrun() ? FLAG_SPEEDRUN : 0)
-                | (this.style == Style.MACE ? FLAG_STYLE_MACE : 0) | (this.style == Style.SPEAR ? FLAG_STYLE_SPEAR : 0);
+                | (this.style == Style.MACE ? FLAG_STYLE_MACE : 0) | (this.style == Style.SPEAR ? FLAG_STYLE_SPEAR : 0)
+                | (this.solo ? FLAG_SOLO : 0);
         data.set(DATA_FLAGS, flags);
     }
 
@@ -548,7 +700,9 @@ public class PvpBotEntity extends PathfinderMob {
 
     /** Below this share of the enemy's (and its friends') strength? */
     private boolean outmatchedBy(LivingEntity enemy, double share) {
-        return de.samu.pvpbot.brain.FightOdds.odds(this, this.ownDamage(), de.samu.pvpbot.brain.FightOdds.group(this, enemy)) < share;
+        // What it learned from dying: against a foe that killed it in this armor (or better) it wants better odds.
+        double need = Caution.INSTANCE.need(BotBrain.Context.foeOf(enemy), Caution.tier(this));
+        return de.samu.pvpbot.brain.FightOdds.odds(this, this.ownDamage(), de.samu.pvpbot.brain.FightOdds.group(this, enemy)) < share * need;
     }
 
     private void retreatFrom(LivingEntity enemy) {
@@ -624,6 +778,9 @@ public class PvpBotEntity extends PathfinderMob {
 
     @Override
     protected boolean considersEntityAsAlly(Entity other) {
+        if (this.trusted.containsKey(other.getUUID())) {
+            return true;
+        }
         if (this.ownerId != null) {
             if (this.ownerId.equals(other.getUUID())) {
                 return !this.duelOwner;
@@ -1193,6 +1350,7 @@ public class PvpBotEntity extends PathfinderMob {
             this.getLookControl().setLookAt(talker, 30.0F, 30.0F);
         }
         this.guardLedge(level);
+        this.tickSolo(level);
         this.tickSumo();
         RoundEnd decided = this.pendingRound;
         if (decided != null) {
@@ -2806,6 +2964,9 @@ public class PvpBotEntity extends PathfinderMob {
         LivingEntity target = this.attemptTarget;
         this.attemptTarget = null;
         boolean killed = target != null && !target.isAlive();
+        if (killed && this.pvpMode == PvpMode.FREI && !this.dying) {
+            Caution.INSTANCE.learnWin(BotBrain.Context.foeOf(target), Caution.tier(this));
+        }
         float hpNow = target == null ? this.attemptTargetHp : killed ? 0.0F : target.getHealth() + target.getAbsorptionAmount();
         double dealt = Math.max(0.0, this.attemptTargetHp - hpNow) + this.attemptBonus;
         this.attemptBonus = 0.0;
@@ -2860,6 +3021,23 @@ public class PvpBotEntity extends PathfinderMob {
         }
         this.lastAttempt = null;
         this.openedAgainst = null;
+        // Learn from the failure itself: whoever killed it, in the armor it wore - not that fight again like that.
+        LivingEntity killer = source.getEntity() instanceof LivingEntity living && living != this ? living : this.getTarget();
+        if (killer != null && this.pvpMode == PvpMode.FREI && !this.duelOwner) {
+            int tier = Caution.tier(this);
+            double need = Caution.INSTANCE.learnDeath(BotBrain.Context.foeOf(killer), tier);
+            this.tellOwner("§cGegen " + killer.getName().getString() + " bin ich mit " + Caution.TIER_LABELS[tier] + " gestorben. §7Nächstes Mal "
+                    + (need >= 2.5 ? "weiche ich aus, solange ich nicht deutlich stärker bin." : "bin ich vorsichtiger."), true);
+            if (DEBUG) {
+                PvpBotMod.LOGGER.info("[SELFTEST]   caution: died to {} in tier {} -> needs {}x odds", killer.getName().getString(), tier, need);
+            }
+        }
+        if (this.solo && this.level() instanceof ServerLevel) {
+            // Solo: it comes back by itself, like a player who respawns (5 s later, at home if it has one).
+            RESPAWNS.add(new Respawn(this.level().dimension(), this.blockPosition(), this.ownerId, this.getName().getString(),
+                    new java.util.LinkedHashMap<>(this.trusted), this.gatherer.home(), this.gatherer.homeLevel(),
+                    !this.kit.isInfinite(), this.pvpMode, new int[]{100}));
+        }
         super.die(source);
     }
 
@@ -2944,14 +3122,14 @@ public class PvpBotEntity extends PathfinderMob {
 
         @Override
         public boolean canUse() {
-            Player owner = PvpBotEntity.this.getOwner();
+            Player owner = PvpBotEntity.this.getLeader();
             return PvpBotEntity.this.following && owner != null && PvpBotEntity.this.getTarget() == null
                     && !owner.isSpectator() && PvpBotEntity.this.distanceToSqr(owner) > 36.0;
         }
 
         @Override
         public boolean canContinueToUse() {
-            Player owner = PvpBotEntity.this.getOwner();
+            Player owner = PvpBotEntity.this.getLeader();
             return PvpBotEntity.this.following && owner != null && PvpBotEntity.this.getTarget() == null
                     && PvpBotEntity.this.distanceToSqr(owner) > 9.0;
         }
@@ -2965,7 +3143,7 @@ public class PvpBotEntity extends PathfinderMob {
         @Override
         public void tick() {
             PvpBotEntity bot = PvpBotEntity.this;
-            Player owner = bot.getOwner();
+            Player owner = bot.getLeader();
             if (owner == null) {
                 return;
             }
@@ -3010,6 +3188,10 @@ public class PvpBotEntity extends PathfinderMob {
         output.putBoolean("PvpBotAssisting", this.assisting);
         output.putString("PvpBotStyle", this.style.name());
         output.putString("PvpBotMode", this.pvpMode.id);
+        output.putBoolean("PvpBotSolo", this.solo);
+        List<String> friends = new ArrayList<>();
+        this.trusted.forEach((id, name) -> friends.add(id + "=" + name));
+        output.store("PvpBotTrusted", com.mojang.serialization.Codec.STRING.listOf(), friends);
         output.putInt("PvpBotGapples", this.gapples);
         output.putBoolean("PvpBotTalk", this.talk);
         output.store("PvpBotKit", ItemStack.OPTIONAL_CODEC.listOf(), new ArrayList<>(this.kit.items()));
@@ -3054,6 +3236,16 @@ public class PvpBotEntity extends PathfinderMob {
         }
         PvpMode savedMode = PvpMode.byId(input.getStringOr("PvpBotMode", "frei"));
         this.pvpMode = savedMode != null ? savedMode : PvpMode.FREI;
+        this.solo = input.getBooleanOr("PvpBotSolo", false);
+        this.trusted.clear();
+        for (String friend : input.read("PvpBotTrusted", com.mojang.serialization.Codec.STRING.listOf()).orElse(List.of())) {
+            int eq = friend.indexOf('=');
+            try {
+                this.trusted.put(UUID.fromString(friend.substring(0, Math.max(0, eq))), friend.substring(eq + 1));
+            } catch (IllegalArgumentException e) {
+                // a broken entry: skip it
+            }
+        }
         this.gapples = input.getIntOr("PvpBotGapples", MAX_GAPPLES);
         this.talk = input.getBooleanOr("PvpBotTalk", true);
         this.duelOwner = input.getBooleanOr("PvpBotDuel", false);

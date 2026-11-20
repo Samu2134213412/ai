@@ -152,7 +152,16 @@ public final class BotAi {
      */
     public boolean onChat(ServerPlayer sender, String text) {
         String msg = text.strip();
-        List<PvpBotEntity> bots = PvpBotEntity.botsOf(sender);
+        List<PvpBotEntity> bots = new java.util.ArrayList<>(PvpBotEntity.botsOf(sender));
+        // Bots of other players that trust the sender listen too (within earshot).
+        if (sender.level() instanceof ServerLevel level) {
+            for (PvpBotEntity other : level.getEntitiesOfClass(PvpBotEntity.class, sender.getBoundingBox().inflate(64.0),
+                    b -> b.isAlive() && b.isTrusted(sender))) {
+                if (!bots.contains(other)) {
+                    bots.add(other);
+                }
+            }
+        }
         if (bots.isEmpty() || msg.isEmpty()) {
             return false;
         }
@@ -168,7 +177,18 @@ public final class BotAi {
                 rest = msg.substring(name.length() + 1);
             }
             if (rest != null) {
-                this.ask(sender, bot, rest.replaceFirst("^[\\s,:]+", ""));
+                String words = rest.replaceFirst("^[\\s,:]+", "");
+                // Plain orders work without the AI; anything else goes to the AI (if the speaker has a key).
+                String answer = BotOrders.run(bot, sender, words);
+                if (answer != null) {
+                    PvpBotMod.LOGGER.info("[Befehl] {} -> {}: {}", sender.getName().getString(), bot.getName().getString(), words);
+                    this.reply(((ServerLevel) bot.level()).getServer(), bot.getUUID(), sender.getUUID(), answer);
+                } else if (this.keyOf(sender.getUUID()) == null) {
+                    sender.sendSystemMessage(Component.literal("§b[" + bot.getName().getString() + "] §7Das verstehe ich nicht. Ich kann: §f"
+                            + BotOrders.HELP + " §7(mit §f/pvpbot ki key§7 verstehe ich auch ganze Sätze)"));
+                } else {
+                    this.ask(sender, bot, words);
+                }
                 return true;
             }
         }
@@ -434,12 +454,12 @@ public final class BotAi {
         return "Ziel gesetzt: " + goal;
     }
 
-    private String attack(PvpBotEntity bot, @Nullable ServerPlayer player, String what) {
+    String attack(PvpBotEntity bot, @Nullable ServerPlayer player, String what) {
         String w = what.toLowerCase(Locale.ROOT).strip();
         LivingEntity best = null;
         double bestDist = Double.MAX_VALUE;
         for (LivingEntity e : bot.level().getEntitiesOfClass(LivingEntity.class, bot.getBoundingBox().inflate(32.0))) {
-            if (e == bot || e == player || e instanceof PvpBotEntity || !bot.hasLineOfSight(e)) {
+            if (e == bot || e == player || e instanceof PvpBotEntity || bot.mayCommand(e) || !bot.hasLineOfSight(e)) {
                 continue; // (fair: only what it can see)
             }
             String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();

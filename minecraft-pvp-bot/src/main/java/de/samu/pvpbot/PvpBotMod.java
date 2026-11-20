@@ -2,6 +2,7 @@ package de.samu.pvpbot;
 
 import de.samu.pvpbot.ai.BotAi;
 import de.samu.pvpbot.brain.BotBrain;
+import de.samu.pvpbot.brain.Caution;
 import de.samu.pvpbot.brain.TaskLearner;
 import de.samu.pvpbot.entity.PvpBotEntity;
 import net.fabricmc.api.ModInitializer;
@@ -87,17 +88,22 @@ public class PvpBotMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             BotBrain.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-memory.json"));
             TaskLearner.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-tasks.json"));
+            Caution.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-caution.json"));
             BotAi.INSTANCE.load(FabricLoader.getInstance().getConfigDir().resolve("pvpbot-ai.json"));
         });
 
         // Talking to your bot in the chat: "@bot ..." - answered by the AI (with the player's own API key).
         ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> BotAi.INSTANCE.onChat(sender, message.signedContent()));
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            PvpBotEntity.tickRespawns(server, true);
+            Caution.INSTANCE.save();
             BotBrain.INSTANCE.save();
             TaskLearner.INSTANCE.save();
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            PvpBotEntity.tickRespawns(server, false);
             if (server.getTickCount() % 1200 == 0) {
+                Caution.INSTANCE.saveIfDirty();
                 BotBrain.INSTANCE.saveIfDirty();
                 TaskLearner.INSTANCE.saveIfDirty();
             }

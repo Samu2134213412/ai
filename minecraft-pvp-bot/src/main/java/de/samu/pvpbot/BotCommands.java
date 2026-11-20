@@ -51,6 +51,16 @@ public final class BotCommands {
                         .executes(ctx -> setAutonomous(ctx, true))
                         .then(Commands.literal("on").executes(ctx -> setAutonomous(ctx, true)))
                         .then(Commands.literal("off").executes(ctx -> setAutonomous(ctx, false))))
+                .then(Commands.literal("allein")
+                        .executes(ctx -> setSolo(ctx, true))
+                        .then(Commands.literal("on").executes(ctx -> setSolo(ctx, true)))
+                        .then(Commands.literal("off").executes(ctx -> setSolo(ctx, false))))
+                .then(Commands.literal("vertraue")
+                        .then(Commands.argument("spieler", EntityArgument.player()).executes(BotCommands::trust)))
+                .then(Commands.literal("misstraue")
+                        .then(Commands.argument("name", StringArgumentType.word()).executes(BotCommands::untrust)))
+                .then(Commands.literal("vertraute").executes(BotCommands::trusted))
+                .then(Commands.literal("vorsicht").executes(BotCommands::caution))
                 .then(Commands.literal("home")
                         .executes(BotCommands::homeInfo)
                         .then(Commands.literal("set").executes(BotCommands::homeSet))
@@ -578,6 +588,76 @@ public final class BotCommands {
         return bots.size();
     }
 
+    // ------------------------------------------------------------------ solo, trusted players, caution
+
+    private static int setSolo(CommandContext<CommandSourceStack> ctx, boolean on) throws CommandSyntaxException {
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.setSolo(on));
+        if (!bots.isEmpty()) {
+            boolean survival = bots.stream().anyMatch(b -> !b.getKit().isInfinite());
+            ctx.getSource().sendSuccess(() -> Component.literal(on
+                    ? "§6Allein-Modus: §fDu musst nichts mehr tun. " + (survival
+                            ? "Er besorgt sich seine Ausrüstung selbst (bis Diamant) und lagert Vorräte zu Hause. " : "")
+                            + "Er kämpft gegen Monster, die er schlagen kann, weicht aus, wo er schon gestorben ist, und kommt nach einem Tod von selbst zurück. "
+                            + "Zuhause ist, wo er jetzt steht (ändern: /pvpbot home set). Befehle im Chat: §e@bot hilfe"
+                    : "§eAllein-Modus aus."), false);
+        }
+        return bots.size();
+    }
+
+    private static int trust(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer friend = EntityArgument.getPlayer(ctx, "spieler");
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        if (friend == player) {
+            ctx.getSource().sendFailure(Component.literal("Dir selbst gehorcht er sowieso."));
+            return 0;
+        }
+        List<PvpBotEntity> bots = myBots(ctx);
+        bots.forEach(b -> b.trust(friend));
+        if (!bots.isEmpty()) {
+            String name = friend.getName().getString();
+            ctx.getSource().sendSuccess(() -> Component.literal("§a" + name + " darf deinen Bots jetzt im Chat Befehle geben (§f@bot komm§a, §f@bot hilfe§a …) und wird nie angegriffen. Zurücknehmen: §f/pvpbot misstraue " + name), false);
+            friend.sendSystemMessage(Component.literal("§b" + player.getName().getString() + " vertraut dir seine Bots an. Schreib §f@bot hilfe§b in den Chat."));
+        }
+        return bots.size();
+    }
+
+    private static int untrust(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(ctx, "name");
+        int n = 0;
+        for (PvpBotEntity bot : myBots(ctx)) {
+            if (bot.untrust(name)) {
+                n++;
+            }
+        }
+        int count = n;
+        ctx.getSource().sendSuccess(() -> Component.literal(count > 0 ? "§e" + name + " kann deinen Bots nichts mehr befehlen."
+                : "§7" + name + " stand bei keinem deiner Bots auf der Liste."), false);
+        return n;
+    }
+
+    private static int trusted(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        for (PvpBotEntity bot : myBots(ctx)) {
+            List<String> names = bot.trustedNames();
+            ctx.getSource().sendSuccess(() -> Component.literal("§f" + bot.getName().getString() + "§7 hört außer auf dich auf: §e"
+                    + (names.isEmpty() ? "niemanden §7(/pvpbot vertraue <Spieler>)" : String.join(", ", names))), false);
+        }
+        return 1;
+    }
+
+    private static int caution(CommandContext<CommandSourceStack> ctx) {
+        List<String> lines = de.samu.pvpbot.brain.Caution.INSTANCE.summary(14);
+        if (lines.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§7Noch keine Lehren aus Kämpfen – er ist noch nie gestorben und hat noch nichts besiegt."), false);
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§6Was die Bots aus Siegen und Toden gelernt haben §7(wem sie mit welcher Rüstung ausweichen):"), false);
+        for (String line : lines) {
+            ctx.getSource().sendSuccess(() -> Component.literal(line), false);
+        }
+        return lines.size();
+    }
+
     private static int brain(CommandContext<CommandSourceStack> ctx) {
         List<String> lines = BotBrain.INSTANCE.summary(12);
         if (lines.isEmpty()) {
@@ -593,6 +673,7 @@ public final class BotCommands {
 
     private static int brainReset(CommandContext<CommandSourceStack> ctx) {
         BotBrain.INSTANCE.reset();
+        de.samu.pvpbot.brain.Caution.INSTANCE.reset();
         ctx.getSource().sendSuccess(() -> Component.literal("§eGedächtnis gelöscht – die Bots fangen wieder von vorne an zu lernen."), false);
         return 1;
     }

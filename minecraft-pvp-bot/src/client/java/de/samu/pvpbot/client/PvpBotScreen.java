@@ -139,6 +139,12 @@ public class PvpBotScreen extends Screen {
                     this.rebuildWidgets();
                 }).size(10, 20).tooltip(Tooltip.create(Component.literal("Kleines Feld oben links: Leben, Modus und Treffer deines Bots, solange er kämpft"))).build();
                 this.row(this.command("Waffe: " + weapon, "pvpbot weapon " + nextWeapon, "Klick wechselt: automatisch → nur Mace → nur Speer", has), hud);
+                this.row(this.toggle("§6Allein spielen", PvpBotEntity.FLAG_SOLO, "pvpbot allein on", "pvpbot allein off",
+                                "Du musst nichts mehr tun: er rüstet sich aus, kämpft nur, was er schlagen kann, lernt aus jedem Tod und kommt danach von selbst zurück"),
+                        this.command("Lehren aus Toden", "pvpbot vorsicht", "Wem er mit welcher Rüstung ausweicht (im Chat)", true));
+                this.row(this.command("Nächstem Spieler vertrauen", "pvpbot vertraue @p[distance=0.5..]",
+                                "Dieser Spieler darf dem Bot im Chat Befehle geben (@bot komm, @bot hilfe) und wird nie angegriffen", has),
+                        this.command("Vertraute anzeigen", "pvpbot vertraute", "Zurücknehmen: /pvpbot misstraue <Name>", has));
                 this.row(this.command("Gelerntes anzeigen", "pvpbot brain", "Was gegen wen wie gut klappt (im Chat)", true),
                         this.command("§cGelerntes löschen", "pvpbot brain reset", "Die Bots fangen beim Lernen von vorne an", true));
             }
@@ -214,7 +220,7 @@ public class PvpBotScreen extends Screen {
             return "-";
         }
         int flags = 0;
-        for (int f = 1; f <= PvpBotEntity.FLAG_STYLE_SPEAR; f <<= 1) {
+        for (int f = 1; f <= PvpBotEntity.FLAG_SOLO; f <<= 1) {
             // (Fighting flickers on and off and no button shows it.)
             if (f != PvpBotEntity.FLAG_FIGHTING && b.viewFlag(f)) {
                 flags |= f;

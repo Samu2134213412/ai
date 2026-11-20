@@ -94,6 +94,25 @@ sich nicht mit dem, was er in UHC lernt (`/pvpbot brain` zeigt den Modus beim Ki
   Das Kit legst du selbst ins Inventar. Die Sumo- und Boxen-Regeln (kein Schaden, Trefferzählung, Sumo-Laufwege)
   gibt es nur beim Bot, weil der Autopilot nichts am Server ändern kann.
 
+## Allein spielen, Vertraute und Lernen aus dem Scheitern
+
+- **Allein-Modus** (`/pvpbot allein on`, Menü **O → Verhalten → Allein spielen**, oder im Chat `@bot allein`):
+  Du musst nichts mehr tun. Ein Survival-Bot besorgt sich seine Ausrüstung selbst (bis Diamant) und lagert Vorräte
+  zu Hause; jeder Bot greift von sich aus Monster an, die er sieht und voraussichtlich schlägt. Stirbt er, kommt er
+  nach 5 Sekunden von selbst zurück (zu Hause, sonst an der Oberfläche über der Todesstelle) – ein Survival-Bot mit
+  leeren Händen, wie ein Spieler. Zuhause ist, wo er beim Einschalten steht (ändern mit `/pvpbot home set`).
+- **Lernen aus dem Scheitern:** Stirbt er, merkt er sich, *gegen wen* und *mit welcher Rüstung* (ohne, leicht, Eisen,
+  Diamant, Netherite). Gegen diesen Gegner will er danach deutlich bessere Chancen, bevor er wieder kämpft – mit
+  derselben oder schlechterer Rüstung weicht er aus und rennt weg. Mit besserer Rüstung traut er sich wieder. Siege
+  machen ihn langsam wieder mutiger. Beispiel: mit voller Eisen-Rüstung gegen einen Spieler gestorben → beim nächsten
+  Mal flieht er in Eisen vor ihm. `/pvpbot vorsicht` zeigt die Lehren; gespeichert in `config/pvpbot-caution.json`.
+  Ziele, die du ausdrücklich befiehlst, greift er trotzdem an. In Duellen und PvP-Modi lernt er das nicht.
+- **Vertraute** (`/pvpbot vertraue <Spieler>`, `/pvpbot misstraue <Name>`, `/pvpbot vertraute`): Diese Spieler dürfen
+  dem Bot im Chat Befehle geben und werden nie angegriffen. „Komm“ lässt ihn dem folgen, der es sagt.
+- **Befehle im Chat, ohne KI-Key:** `@bot komm`, `@bot bleib`, `@bot stopp`, `@bot heim`, `@bot greif den zombie an`,
+  `@bot hol 10 eisen`, `@bot status`, `@bot hilfe`; nur der Besitzer: `@bot allein an/aus`, `@bot durchspielen`.
+  Alles andere geht an die KI, wenn der Sprecher einen Key gesetzt hat.
+
 ## Ressourcen selbst beschaffen (Survival-Bot)
 
 Mit `/pvpbot survival [Name]` erschaffst du einen Bot mit **leerem Inventar**. Fehlt ihm etwas
